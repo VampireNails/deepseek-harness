@@ -477,11 +477,13 @@
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
 
-    # MCP client bridge: lets any preset mount external MCP servers (e.g. the local
-    # macro-clean-db server) as native tools. First-party, opt-in per preset — a
-    # preset adds its own `mcp-client` instance row (with serverName/command) to use it.
-    - id: mcp-client
-      name: '@deepseek-ai/dsh-mcp-client'
+    # MCP client bridge: NOT mounted here. `@deepseek-ai/dsh-mcp-client` is a
+    # per-instance plugin — each preset that needs external MCP tools declares its
+    # own `mcp-client` instance row (with serverName/transport/command) in its
+    # agent.cordis.yml. Mounting it bare at the bundle layer passes an undefined
+    # config to its `apply`, which dereferences `config.reconnect` and crashes
+    # every profile that inherits dsh-base. Cross-preset reuse of the macro
+    # database is achieved by each preset listing the same macro-clean-db server.
 
     # ── rows every mode mounts, whose values each overlay may state ──────────────
 
