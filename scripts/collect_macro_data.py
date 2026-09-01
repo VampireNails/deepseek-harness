@@ -301,13 +301,13 @@ def build_report(conn: sqlite3.Connection, report_path: Path, collected_at: str,
     checks = conn.execute("SELECT source,status,dataset,detail FROM collection_checks WHERE checked_at=? ORDER BY id", (collected_at,)).fetchall()
     fallback = any(s == "fred_csv" and st == "ok" for s, st, _, _ in checks)
     visible_errors = [e for e in errors if not (fallback and e.startswith("bls:"))]
-    lines = ["# 宏观数据回溯与预判采集报告", "", f"- 本次采集时点：`{collected_at}`", f"- 本次新增 vintage 行：`{inserted}`", f"- 库内累计行数：`{total}`", f"- 修订行数：`{revisions}`", f"- 覆盖指标：{', '.join(indicators) if indicators else '暂无'}", f"- 网络路由：`{_NETWORK_ROUTE}`（凭据不落库）", "", "## 数据源与口径", "- 中国 CPI/PPI/PMI：东方财富固定报表，来源标记 `eastmoney`。", "- 美国就业：首选 BLS；BLS 不可达时使用 FRED PAYEMS/UNRATE，并在 checks 中标记真实来源。", "- 所有观测保留 period、collected_at、source、source_series、raw_json；修订 append-only，不覆盖历史。", "", "## 本次质量检查", "", "| 来源 | 状态 | 数据集 | 详情 |", "|---|---|---|---|"]
+    lines = ["# 宏观数据采集报告", "", f"- 本次采集时点：`{collected_at}`", f"- 本次新增 vintage 行：`{inserted}`", f"- 库内累计行数：`{total}`", f"- 修订行数：`{revisions}`", f"- 覆盖指标：{', '.join(indicators) if indicators else '暂无'}", f"- 网络路由：`{_NETWORK_ROUTE}`（凭据不落库）", "", "## 数据源与口径", "- 中国 CPI/PPI/PMI：东方财富固定报表，来源标记 `eastmoney`。", "- 美国就业：首选 BLS；BLS 不可达时使用 FRED PAYEMS/UNRATE，并在 checks 中标记真实来源。", "- 所有观测保留 period、collected_at、source、source_series、raw_json；修订 append-only，不覆盖历史。", "", "## 本次质量检查", "", "| 来源 | 状态 | 数据集 | 详情 |", "|---|---|---|---|"]
     lines.extend(f"| {s} | {st} | {ds} | {detail.replace('|', '/')[:180]} |" for s, st, ds, detail in checks)
     lines += ["", "## 待核项", ""]
     if visible_errors: lines.extend(f"- {e}" for e in visible_errors)
     elif fallback: lines.append("- BLS 当前不可达，已由 FRED 成功兜底；未伪称为 BLS API。")
     else: lines.append("- 本次采集未记录网络或数据源错误。")
-    lines += ["", "## 预判状态", "", "- 数据采集报告只记录可验证事实；Agent 必须在 Verify 通过后基于 vintage 数据进行 Analyze/Predict。", "- 时序不足时只能给方向、区间、置信度和反向声音，不得编造模型结论。", ""]
+    lines += ["", "## 后续处理", "", "- 采集报告只记录可验证事实；Agent 在 Verify 通过后运行 clean_macro_data.py 重建清洗库，供 MCP server 只读获取。", ""]
     report_path.write_text("\n".join(lines), encoding="utf-8")
 
 
