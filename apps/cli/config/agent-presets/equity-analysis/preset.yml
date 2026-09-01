@@ -1,0 +1,3 @@
+name: 个股因子分析
+description: 个股因子与行情 vintage Agent：采集个股公告基本面因子（官方一手）与日行情（第三方如实标注），append-only 入库，独立 Proof 校验，量化引擎（IC/回测/风险指标）验证因子有效性，本地 MCP server 只读供数（8 工具）。不直接产出操盘建议；建议由决策层多 agent 编排 + 人工 gate 形成。
+order: 6

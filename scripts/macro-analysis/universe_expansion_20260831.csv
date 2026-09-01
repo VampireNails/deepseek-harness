@@ -1,0 +1,61 @@
+﻿ticker,name_zh,sector,currency
+hk02318,中国平安,Financials,kCNY
+hk03988,中国银行,Financials,kCNY
+hk01288,农业银行,Financials,kCNY
+hk03328,交通银行,Financials,kCNY
+hk01988,民生银行,Financials,kCNY
+hk06030,中信证券,Financials,kCNY
+hk06886,华泰证券,Financials,kCNY
+hk01336,新华保险,Financials,kCNY
+hk02388,中银香港,Financials,kHKD
+hk00011,恒生银行,Financials,kHKD
+hk00268,金蝶国际,Information Technology,kCNY
+hk01347,华虹半导体,Information Technology,kUSD
+hk00020,商汤,Information Technology,kCNY
+hk03888,金山软件,Information Technology,kCNY
+hk02018,瑞声科技,Information Technology,kCNY
+hk09999,网易,Communication Services,kCNY
+hk09888,百度集团,Communication Services,kCNY
+hk00788,中国铁塔,Communication Services,kCNY
+hk00772,阅文集团,Communication Services,kCNY
+hk09626,哔哩哔哩,Communication Services,kUSD
+hk02331,李宁,Consumer Discretionary,kCNY
+hk03998,波司登,Consumer Discretionary,kCNY
+hk09992,泡泡玛特,Consumer Discretionary,kCNY
+hk09961,携程集团,Consumer Discretionary,kCNY
+hk01179,华住集团,Consumer Discretionary,kCNY
+hk06862,海底捞,Consumer Discretionary,kCNY
+hk09868,小鹏汽车,Consumer Discretionary,kCNY
+hk06186,中国飞鹤,Consumer Staples,kCNY
+hk00288,万洲国际,Consumer Staples,kCNY
+hk01044,恒安国际,Consumer Staples,kCNY
+hk01579,颐海国际,Consumer Staples,kCNY
+hk09987,百胜中国,Consumer Staples,kUSD
+hk01099,国药控股,Healthcare,kCNY
+hk02607,上海医药,Healthcare,kCNY
+hk03320,华润医药,Healthcare,kCNY
+hk03692,翰森制药,Healthcare,kCNY
+hk01801,信达生物,Healthcare,kCNY
+hk09926,康方生物,Healthcare,kCNY
+hk00386,中国石油化工股份,Energy,kCNY
+hk02883,中海油田服务,Energy,kCNY
+hk00135,昆仑能源,Energy,kCNY
+hk00914,海螺水泥,Materials,kCNY
+hk03323,中国建材,Materials,kCNY
+hk01378,中国宏桥,Materials,kCNY
+hk01772,赣锋锂业,Materials,kCNY
+hk03993,洛阳钼业,Materials,kCNY
+hk02057,中通快递,Industrials,kCNY
+hk02338,潍柴动力,Industrials,kCNY
+hk01766,中国中车,Industrials,kCNY
+hk00293,国泰航空,Industrials,kHKD
+hk01186,中国铁建,Industrials,kCNY
+hk00836,华润电力,Utilities,kHKD
+hk00916,龙源电力,Utilities,kCNY
+hk02688,新奥能源,Utilities,kCNY
+hk00270,粤海投资,Utilities,kHKD
+hk00016,新鸿基地产,Real Estate,kHKD
+hk01113,长实集团,Real Estate,kHKD
+hk00960,龙湖集团,Real Estate,kCNY
+hk02202,万科企业,Real Estate,kCNY
+hk01209,华润万象生活,Real Estate,kCNY
