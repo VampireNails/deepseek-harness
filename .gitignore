@@ -44,5 +44,5 @@ worktrees/
 # Local macro-analysis Agent data, credentials, generated overlay, and runs.
 outputs/
 .dsh_home/
-scripts/macro_proxy.env
-scripts/macro-analysis-headless.yml
+scripts/macro-analysis/macro_proxy.env
+scripts/macro-analysis/macro-analysis-headless.yml

@@ -6,7 +6,7 @@
 ## 0. 核心定位与固定产物
 
 - 核心使命：每日按发布日历采集中美宏观指标，保存 vintage 快照与修订历史，构建清洗后的宏观分析数据库，通过 MCP server 对外只读提供。不做预测、不做自我学习。
-- 工作区脚本：`scripts/collect_macro_data.py`、`scripts/verify_macro_data.py`、`scripts/clean_macro_data.py`、`scripts/macro_mcp_server.py`。
+- 工作区脚本：`scripts/macro-analysis/collect_macro_data.py`、`scripts/macro-analysis/verify_macro_data.py`、`scripts/macro-analysis/clean_macro_data.py`、`scripts/macro-analysis/macro_mcp_server.py`。
 - 原始数据库：`outputs/<YYYY-MM-DD>/macro_indicators.sqlite`。
 - 清洗数据库：`outputs/macro_clean.sqlite`（MCP server 的只读数据源）。
 - 采集报告：`outputs/<YYYY-MM-DD>/macro_collection_report.md`。
@@ -29,7 +29,7 @@
 
 ## 2. 网络代理契约
 
-- 配置优先级：`--proxy-url` → `MACRO_PROXY_URL` → `MACRO_PROXY_CONFIG` 指向的文件 → `scripts/macro_proxy.env` → `HTTPS_PROXY/HTTP_PROXY/ALL_PROXY`。
+- 配置优先级：`--proxy-url` → `MACRO_PROXY_URL` → `MACRO_PROXY_CONFIG` 指向的文件 → `scripts/macro-analysis/macro_proxy.env` → `HTTPS_PROXY/HTTP_PROXY/ALL_PROXY`。
 - 只支持 HTTP/HTTPS 代理；SOCKS 必须由本机代理软件提供 HTTP 监听端口，采集器不得静默绕过。
 - 代理凭据不得写入 stdout、报告、SQLite、`raw_json` 或错误日志；报告最多显示代理主机/端口。
 - 代理关闭时按固定降级：记录 BLS 失败 → 尝试 FRED → 两者都失败则 Proof 失败，不编造数据。
@@ -47,7 +47,7 @@
 
 ## 4. Collect（采集）
 
-- 固定入口：`python scripts/collect_macro_data.py --output-root outputs --date YYYY-MM-DD`。
+- 固定入口：`python scripts/macro-analysis/collect_macro_data.py --output-root outputs --date YYYY-MM-DD`。
 - 每个来源记录成功、空结果或错误；原始响应保存到 `raw_json`，统一把 `period` 归一化为 `YYYY-MM`。
 - Collect 只写 `macro_collection_report.md`；不得覆盖清洗库或历史报告。
 - `release_date` 只有来源返回真实发布日期时才填写，不得用通常发布日推算冒充。
@@ -55,7 +55,7 @@
 
 ## 5. Verify（独立 Proof）
 
-- 固定入口：`python scripts/verify_macro_data.py --output-root outputs --date YYYY-MM-DD --strict`。
+- 固定入口：`python scripts/macro-analysis/verify_macro_data.py --output-root outputs --date YYYY-MM-DD --strict`。
 - Proof 独立读取 SQLite，不采信 Agent 自述；检查数据库、报告、必需指标、非空值、当前批次 source check、美国 BLS/FRED 至少一路成功。
 - strict 额外检查 raw/period 一致性、vintage 唯一键、修订行的原始值、报告与数据库行数/修订数对账。
 - Proof 不通过，必须停止后续步骤，先报告缺口与错误；清洗与 MCP 只读服务不受影响（清洗只处理已入库的真实数据）。
@@ -69,10 +69,10 @@
 
 ## 7. Clean（清洗入库）
 
-- 固定入口：`python scripts/clean_macro_data.py --output-root outputs`。
+- 固定入口：`python scripts/macro-analysis/clean_macro_data.py --output-root outputs`。
 - 幂等重建 `outputs/macro_clean.sqlite`：源优先级去重 → 单位/口径归一 → 周期对齐(YYYY-MM) → 缺失值插补(线性，MAX_GAP=6 上限，长缺口保持 NULL 不虚构) → STL 季节调整(仅 level 型指标)。
 - 产物三表：`clean_series`(规范时序)、`indicators`(指标元数据)、`vintage_traces`(每次采集的值变化点)。
-- 清洗只做确定性变换，不做预测、不做趋势判断；对外由 `scripts/macro_mcp_server.py` 以本地 stdio 只读暴露。
+- 清洗只做确定性变换，不做预测、不做趋势判断；对外由 `scripts/macro-analysis/macro_mcp_server.py` 以本地 stdio 只读暴露。
 
 ## 红线
 

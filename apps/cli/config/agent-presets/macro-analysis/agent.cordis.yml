@@ -8,7 +8,7 @@
 #
 # Tools wired here:
 #   - fs (read / write / edit) + fs-search (glob / grep) for reports & data
-#   - bash / pwsh to run the collector & proof scripts under scripts/
+#   - bash / pwsh to run the collector & proof scripts under scripts/macro-analysis/
 #   - web to pull macro data when the collector needs a manual fetch
 #   - skill / goal / todo / workflow / ask-user for orchestration
 #   - subagent delegation for heavy analysis slices
@@ -39,7 +39,7 @@
 
 # ── shells ──────────────────────────────────────────────────────────────────
 
-# Run the collector / proof scripts and any data wrangling under scripts/.
+# Run the collector / proof scripts and any data wrangling under scripts/macro-analysis/.
 - id: tool-bash
   name: '@deepseek-ai/dsh-tool-bash'
 

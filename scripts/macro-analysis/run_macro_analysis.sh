@@ -5,7 +5,7 @@ set -euo pipefail
 
 PY_BIN="/c/Users/Administrator/.workbuddy/binaries/python/versions/3.13.12/python.exe"
 CLEAN_PY_BIN="/c/Users/Administrator/.workbuddy/binaries/python/envs/default/Scripts/python.exe"
-GIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+GIT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WIN_SCRIPT_DIR="$(cygpath -w "$SCRIPT_DIR")"
 OUT_ROOT="${MACRO_OUTPUT_ROOT:-$(cygpath -w "$GIT_ROOT/../../outputs")}"

@@ -6,10 +6,10 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `scripts/macro_mcp_server.py` | MCP server（stdio，mcp 2.0 low-level `Server`） |
-| `scripts/clean_macro_data.py` | 进阶清洗脚本：合并原始库 → 源优先级去重 → 插补(MAX_GAP=6) → STL 季节调整 → 写 `outputs/macro_clean.sqlite` |
-| `scripts/collect_macro_data.py` | 原始采集（东财/BLS/FRED），append-only vintage 原始库 |
-| `scripts/test_mcp_server.py` | 端到端自检（官方 MCP 客户端跑一遍 5 个工具） |
+| `scripts/macro-analysis/macro_mcp_server.py` | MCP server（stdio，mcp 2.0 low-level `Server`） |
+| `scripts/macro-analysis/clean_macro_data.py` | 进阶清洗脚本：合并原始库 → 源优先级去重 → 插补(MAX_GAP=6) → STL 季节调整 → 写 `outputs/macro_clean.sqlite` |
+| `scripts/macro-analysis/collect_macro_data.py` | 原始采集（东财/BLS/FRED），append-only vintage 原始库 |
+| `scripts/macro-analysis/test_mcp_server.py` | 端到端自检（官方 MCP 客户端跑一遍 5 个工具） |
 | `outputs/macro_clean.sqlite` | 清洗结果库（对外暴露的数据源） |
 
 依赖：managed venv `C:\Users\Administrator\.workbuddy\binaries\python\envs\default`（已装 `mcp 2.0.0`、`pandas`、`numpy`、`statsmodels`）。
@@ -20,9 +20,9 @@ server 只读 `outputs/macro_clean.sqlite`，不存在会报错。生成/更新�
 
 ```bat
 :: 先采集原始（可选；已有原始库可跳过）
-%VENV%\Scripts\python.exe scripts\collect_macro_data.py
+%VENV%\Scripts\python.exe scripts\macro-analysis\collect_macro_data.py
 :: 跑清洗，生成 macro_clean.sqlite
-%VENV%\Scripts\python.exe scripts\clean_macro_data.py
+%VENV%\Scripts\python.exe scripts\macro-analysis\clean_macro_data.py
 ```
 
 `%VENV%` = `C:\Users\Administrator\.workbuddy\binaries\python\envs\default`
@@ -38,7 +38,7 @@ server 只读 `outputs/macro_clean.sqlite`，不存在会报错。生成/更新�
   "mcpServers": {
     "macro-clean-db": {
       "command": "C:\\Users\\Administrator\\.workbuddy\\binaries\\python\\envs\\default\\Scripts\\python.exe",
-      "args": ["D:\\tmp\\deepseek-harness\\scripts\\macro_mcp_server.py"]
+      "args": ["D:\\tmp\\deepseek-harness\\my-deepseek-harness\\deepseek-harness\\scripts\\macro-analysis\\macro_mcp_server.py"]
     }
   }
 }
@@ -64,7 +64,7 @@ server 只读 `outputs/macro_clean.sqlite`，不存在会报错。生成/更新�
 ## 5. 自检
 
 ```bat
-%VENV%\Scripts\python.exe scripts\test_mcp_server.py
+%VENV%\Scripts\python.exe scripts\macro-analysis\test_mcp_server.py
 ```
 
 预期：完成 `initialize` 握手、列出 5 个工具、逐个调用返回合法 JSON，最后一行为 `PASS 6/7 calls returned valid non-error JSON`（第 7 个是故意触发的报错用例）。

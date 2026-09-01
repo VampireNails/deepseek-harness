@@ -1,0 +1,8 @@
+# dsh headless 的 fetch 能力 overlay（复验结论：headless 已挂 web search，仅缺 fetch）
+# web / web-search-deepseek / tool-web 已由 base bundle 挂载；此处只开 fetch + 挂 fetch provider
+- id: tool-web
+  config:
+    fetch: true
+- insert:
+    - id: web-fetch-http
+      name: '@deepseek-ai/dsh-web-fetch-http'
