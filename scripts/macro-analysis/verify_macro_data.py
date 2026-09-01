@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import os
 import re
@@ -31,6 +32,75 @@ def raw_period(raw: dict) -> str | None:
     if raw.get("period"):
         return norm_period(raw["period"])
     return None
+
+
+# --------------------------------------------------------------------------
+# 校验智慧飞轮（轮 A）：失败案例库 + 模式标签 + 历史命中。
+# 借鉴 Great Expectations 的「失败留档(run history)」思路，用本地 sqlite 实现
+# 迷你版，不引入 GE 重依赖。失败案例写入独立库 outputs/macro_verify.sqlite，
+# 绝不回写数据层（原始库 / 清洗库）。
+# --------------------------------------------------------------------------
+
+def fail_tag(message: str) -> str:
+    """把校验失败文案归类为稳定模式标签，用于跨日期的「已知坏法」命中。"""
+    m = message.lower()
+    if "table missing" in m:
+        return "missing_table"
+    if "has no rows" in m:
+        return "empty_db"
+    if "empty indicator/value" in m:
+        return "bad_row"
+    if "required indicators missing" in m:
+        return "missing_indicator"
+    if "no collection_checks" in m:
+        return "missing_checks"
+    if "neither bls nor fred" in m:
+        return "us_source_down"
+    if "raw/period mismatch" in m:
+        return "period_mismatch"
+    if "duplicate vintage-key" in m:
+        return "dup_vintage"
+    if "revision rows without original" in m:
+        return "rev_no_original"
+    if "invalid raw_json" in m:
+        return "bad_raw_json"
+    if "macro_collection_report.md" in m and "not found" in m:
+        return "report_missing"
+    if "!=" in m:
+        return "report_mismatch"
+    return "other"
+
+
+def record_failures(root: Path, date: str, failures: list[str]) -> list[dict]:
+    """把本批失败 append 到独立失败案例库，并返回每条的「是否历史已知模式」。"""
+    if not failures:
+        return []
+    verify_db = root / "macro_verify.sqlite"
+    checked_at = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    conn = sqlite3.connect(str(verify_db))
+    catalog: list[dict] = []
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS verify_failures (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            checked_at TEXT NOT NULL, date TEXT NOT NULL,
+            fail_tag TEXT NOT NULL, message TEXT NOT NULL
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_vf_tag ON verify_failures(fail_tag)")
+        for msg in failures:
+            tag = fail_tag(msg)
+            prior = conn.execute(
+                "SELECT COUNT(*), MIN(date) FROM verify_failures WHERE fail_tag=?", (tag,)).fetchone()
+            conn.execute("INSERT INTO verify_failures(checked_at,date,fail_tag,message) VALUES(?,?,?,?)",
+                         (checked_at, date, tag, msg))
+            catalog.append({
+                "tag": tag, "message": msg,
+                "known": prior[0] > 0 and (prior[1] or date) < date,
+                "prior_count": prior[0], "first_seen": prior[1],
+            })
+        conn.commit()
+    finally:
+        conn.close()
+    return catalog
 
 
 def check(db_path: Path, date: str, strict: bool) -> dict:
@@ -86,7 +156,8 @@ def check(db_path: Path, date: str, strict: bool) -> dict:
                 if not m_rev: failures.append("report does not expose revision count")
                 elif int(m_rev.group(1)) != revision_count: failures.append(f"report revisions {m_rev.group(1)} != db revisions {revision_count}")
 
-        result = {"ok": not failures, "date": date, "db": str(db_path), "report": str(db_path.parent / "macro_collection_report.md"), "rows": total, "bad_rows": bad, "indicators": sorted(indicators), "missing_required": missing, "revision_rows": revision_count, "checks": [list(r) for r in checks], "sources": [list(r) for r in sources], "warnings": warnings, "failures": failures, "strict": strict}
+        failure_catalog = record_failures(db_path.parent.parent, date, failures)
+        result = {"ok": not failures, "date": date, "db": str(db_path), "report": str(db_path.parent / "macro_collection_report.md"), "rows": total, "bad_rows": bad, "indicators": sorted(indicators), "missing_required": missing, "revision_rows": revision_count, "checks": [list(r) for r in checks], "sources": [list(r) for r in sources], "warnings": warnings, "failures": failures, "failure_catalog": failure_catalog, "strict": strict}
         return result
     finally:
         conn.close()
