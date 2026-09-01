@@ -39,6 +39,19 @@ METRICS: dict[str, dict[str, Any]] = {
     "ppi_accumulated":      {"label": "中国 PPI 累计同比指数", "unit": "年初至今累计=100", "sa": False},
     "manufacturing_pmi":    {"label": "中国制造业 PMI",       "unit": "点",  "sa": False},
     "nonmanufacturing_pmi": {"label": "中国非制造业 PMI",     "unit": "点",  "sa": False},
+    "composite_pmi":        {"label": "中国综合 PMI 产出指数", "unit": "点",  "sa": False},
+    "cn_unemployment_rate": {"label": "中国城镇调查失业率",    "unit": "%",   "sa": False},
+    "ppi_mom":              {"label": "中国 PPI 环比",        "unit": "%",   "sa": False},
+    "m0":                   {"label": "中国 M0 期末余额",     "unit": "亿元", "sa": False},
+    "m0_yoy":               {"label": "中国 M0 同比",         "unit": "%",   "sa": False},
+    "m1":                   {"label": "中国 M1 期末余额",     "unit": "亿元", "sa": False},
+    "m1_yoy":               {"label": "中国 M1 同比",         "unit": "%",   "sa": False},
+    "m2":                   {"label": "中国 M2 期末余额",     "unit": "亿元", "sa": False},
+    "m2_yoy":               {"label": "中国 M2 同比",         "unit": "%",   "sa": False},
+    "gdp_nominal":          {"label": "中国 GDP 现价当季",    "unit": "亿元", "sa": False, "freq": "Q"},
+    "gdp_real":             {"label": "中国 GDP 不变价当季",  "unit": "亿元", "sa": False, "freq": "Q"},
+    "gdp_yoy":              {"label": "中国 GDP 同比",        "unit": "%",   "sa": False, "freq": "Q"},
+    "gdp_qoq":              {"label": "中国 GDP 环比",        "unit": "%",   "sa": False, "freq": "Q"},
     "nonfarm_payroll_level":   {"label": "美国非农就业人数",  "unit": "千人", "sa": True},
     "nonfarm_payroll_change":  {"label": "美国非农就业环比变化", "unit": "千人", "sa": False},
     "unemployment_rate":    {"label": "美国失业率",           "unit": "%",   "sa": False},
@@ -48,6 +61,10 @@ KEEP_VALUE_TYPE: dict[str, str] = {
     "cpi_yoy": "reported", "cpi_mom": "reported", "cpi_base": "reported",
     "ppi_yoy": "reported", "ppi_base": "reported", "ppi_accumulated": "reported",
     "manufacturing_pmi": "reported", "nonmanufacturing_pmi": "reported",
+    "composite_pmi": "reported", "cn_unemployment_rate": "reported", "ppi_mom": "reported",
+    "m0": "reported", "m0_yoy": "reported", "m1": "reported", "m1_yoy": "reported",
+    "m2": "reported", "m2_yoy": "reported",
+    "gdp_nominal": "reported", "gdp_real": "reported", "gdp_yoy": "reported", "gdp_qoq": "reported",
     "nonfarm_payroll_level": "level_thousand_sa", "nonfarm_payroll_change": "thousand_persons_sa_mom",
     "unemployment_rate": "percent_sa",
 }
@@ -67,7 +84,7 @@ def try_imports():
 def norm_period(value: Any) -> str:
     import re
     text = str(value or "").strip()
-    m = re.search(r"(20\d{2})\D{0,5}(0?[1-9]|1[0-2])", text)
+    m = re.search(r"(20\d{2})\D{0,5}(1[0-2]|0?[1-9])", text)
     return f"{m.group(1)}-{int(m.group(2)):02d}" if m else text[:10]
 
 
@@ -150,36 +167,46 @@ def build_clean(rows: list[dict[str, Any]], pd, STL, sa_enabled: bool):
         items.sort(key=lambda x: x["period"])
         periods = [x["period"] for x in items]
         raw_vals = [x["value"] for x in items]
-        # build a complete monthly index and align
-        import pandas as pd_local
-        full_idx = pd_local.period_range(periods[0], periods[-1], freq="M").astype(str).tolist()
+        meta = METRICS.get(ind, {})
+        freq = meta.get("freq", "M")
         val_map = {x["period"]: x["value"] for x in items}
         src_map = {x["period"]: x["source"] for x in items}
         rel_map = {x["period"]: x["release_date"] for x in items}
         col_map = {x["period"]: x["collected_at"] for x in items}
-        aligned = [val_map.get(p) for p in full_idx]
-        # imputation (advanced): linear interpolation, but only for SHORT gaps
-        # (<= MAX_GAP months). Long gaps stay NULL so we never fabricate history.
-        MAX_GAP = 6
-        s = pd_local.Series(aligned, index=full_idx)
-        is_imp = [1 if v is None else 0 for v in aligned]
-        s_interp = s.interpolate(method="linear", limit=MAX_GAP, limit_direction="both")
-        imputed = [None if (is_imp[i] == 0 or s_interp.iloc[i] is None or (isinstance(s_interp.iloc[i], float) and s_interp.iloc[i] != s_interp.iloc[i]))
-                   else round(float(s_interp.iloc[i]), 6) for i in range(len(full_idx))]
-        value_sa = [None] * len(full_idx)
         sa_method = "not_applicable"
-        meta = METRICS.get(ind, {})
-        if sa_enabled and meta.get("sa") and STL is not None:
-            adj = stl_adjust(full_idx, [float(x) for x in s_interp.tolist()], STL)
-            if adj is not None:
-                value_sa = adj
-                sa_method = "STL"
-        # When seasonal adjustment is not applicable (official series already
-        # SA / YoY / MoM), value_sa falls back to the interpolated series so
-        # the field is never empty for external consumers.
-        if sa_method == "not_applicable":
+        if freq == "Q":
+            # 季度指标：period 已是季末月（如 2026-06），保持原样；不做月度插值/STL。
+            full_idx = periods
+            aligned = list(raw_vals)
+            is_imp = [0] * len(full_idx)
+            imputed = [None] * len(full_idx)
             value_sa = [None if (v is None or (isinstance(v, float) and v != v)) else round(float(v), 6)
-                        for v in s_interp.tolist()]
+                        for v in aligned]
+        else:
+            # 月度指标：补齐连续月索引 + 短缺口线性插值 + 可选 STL。
+            import pandas as pd_local
+            full_idx = pd_local.period_range(periods[0], periods[-1], freq="M").astype(str).tolist()
+            aligned = [val_map.get(p) for p in full_idx]
+            # imputation (advanced): linear interpolation, but only for SHORT gaps
+            # (<= MAX_GAP months). Long gaps stay NULL so we never fabricate history.
+            MAX_GAP = 6
+            s = pd_local.Series(aligned, index=full_idx)
+            is_imp = [1 if v is None else 0 for v in aligned]
+            s_interp = s.interpolate(method="linear", limit=MAX_GAP, limit_direction="both")
+            imputed = [None if (is_imp[i] == 0 or s_interp.iloc[i] is None or (isinstance(s_interp.iloc[i], float) and s_interp.iloc[i] != s_interp.iloc[i]))
+                       else round(float(s_interp.iloc[i]), 6) for i in range(len(full_idx))]
+            value_sa = [None] * len(full_idx)
+            if sa_enabled and meta.get("sa") and STL is not None:
+                adj = stl_adjust(full_idx, [float(x) for x in s_interp.tolist()], STL)
+                if adj is not None:
+                    value_sa = adj
+                    sa_method = "STL"
+            # When seasonal adjustment is not applicable (official series already
+            # SA / YoY / MoM), value_sa falls back to the interpolated series so
+            # the field is never empty for external consumers.
+            if sa_method == "not_applicable":
+                value_sa = [None if (v is None or (isinstance(v, float) and v != v)) else round(float(v), 6)
+                            for v in s_interp.tolist()]
         for i, p in enumerate(full_idx):
             clean_rows.append({
                 "indicator": ind, "country": cty, "period": p,
@@ -196,7 +223,7 @@ def build_clean(rows: list[dict[str, Any]], pd, STL, sa_enabled: bool):
         indicators_meta.append({
             "indicator": ind, "country": cty,
             "label": meta.get("label", ind), "unit": meta.get("unit", ""),
-            "frequency": "M", "sa_method": sa_method,
+            "frequency": freq, "sa_method": sa_method,
             "first_period": full_idx[0], "last_period": full_idx[-1],
             "n_obs": n_obs, "n_imputed": n_imp,
             "last_updated": dt.datetime.now().astimezone().isoformat(timespec="seconds"),

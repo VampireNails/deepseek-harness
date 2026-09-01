@@ -63,6 +63,8 @@
 - 2026-08-24 方向纠正：定位从「预测预判越用越聪明」改为「数据实时/准确/可靠越用越好」；飞轮③ 从「案例沉淀」改为「源可信度治理」。
 - 2026-08-24 轮 B+轮 C 落地并验证：`revision_stats`+`source_trust`+MCP `get_source_trust`；NBS 官方一手源接入（easyquery 已于 2026-05 废弃，改用 nbsc 库封装的新 UUID API），5 核心中国指标切换官方一手。验证发现：BLS 一手源 `nonfarm_payroll_change` 捕获 79 次修订（平均 145.6 千人），东财第三方 n_rev=0——量化印证「官方一手有修订可捕获、第三方没有」。
 - 2026-08-24 新增飞轮④（候选发现）：落地 `discover_candidates.py`（官方覆盖度扫描 v1），枚举 nbsc 25 官方系列差集出 17 个候选（13 核心：GDP×4、M0/M1/M2×6、城镇调查失业率、综合 PMI、PPI 环比）。新闻反查(GDELT)/FRED 日历/NBS 树 diff 评估后延后（噪声/需 key/易碎）。
+- 2026-08-24 注册 13 核心指标（GDP×4、M0/M1/M2×6、城镇调查失业率、综合 PMI、PPI 环比）：`collect_macro_data.py` 增 `NBS_INDICATORS` + `norm_nbs_period`（季度 Period → 季末月）；`clean_macro_data.py` 增 `METRICS`（GDP 加 `freq=Q`）+ `KEEP_VALUE_TYPE` + `build_clean` 季度分支（不做月度插值/STL）。中国官方一手指标 5→18。验证：24 指标、真实库 strict `ok=true`、GDP 季度 period=季末月无插补、非农 2025 全年 12 个月齐全。
+- 2026-08-24 **修复月份正则 bug**：三处 `normalize_period`/`norm_period` 的正则 `(0?[1-9]|1[0-2])` 交替顺序错误，导致 **10/11/12 月被错配成 "01"**（BLS 10/11/12 月真实数据在采集时被静默丢弃、clean 里变成插补值）。改为 `(1[0-2]|0?[1-9])`（collect/clean/verify 三处同步）。修复后重采，非农 2025-10/11/12 恢复真实 BLS 值。
 
 ## 8. 新增统计维度：持续导入与跟踪 SOP
 

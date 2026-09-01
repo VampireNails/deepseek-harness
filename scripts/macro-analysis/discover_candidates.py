@@ -43,7 +43,7 @@ CANDIDATES: dict[str, tuple] = {
     # ---- GDP（季度，7 个系列中最该跟踪的 4 个口径） ----
     "gdp_nominal":  ("中国 GDP 现价当季",          "GDP", True,  "亿元", "quarter", "get_gdp_nominal"),
     "gdp_real":     ("中国 GDP 不变价当季",        "GDP", True,  "亿元", "quarter", "get_gdp_real"),
-    "gdp_index_yoy":("中国 GDP 同比指数",          "GDP", True,  "上年同期=100", "quarter", "get_gdp_index"),
+    "gdp_yoy":      ("中国 GDP 同比",             "GDP", True,  "%",   "quarter", "get_gdp_index"),
     "gdp_qoq":      ("中国 GDP 环比增速",          "GDP", True,  "%",   "quarter", "get_gdp_qoq_growth"),
     # ---- 货币供应（月度，M0/M1/M2 存量 + 同比） ----
     "m2":           ("中国 M2 期末余额",           "货币供应", True,  "亿元", "month", "get_m2"),

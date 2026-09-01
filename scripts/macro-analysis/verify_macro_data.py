@@ -16,7 +16,7 @@ REQUIRED = {"cpi_yoy", "ppi_yoy", "manufacturing_pmi", "nonfarm_payroll_level", 
 
 def norm_period(value: object) -> str:
     text = str(value or "").strip()
-    m = re.search(r"(20\d{2})\D{0,5}(0?[1-9]|1[0-2])", text)
+    m = re.search(r"(20\d{2})\D{0,5}(1[0-2]|0?[1-9])", text)
     return f"{m.group(1)}-{int(m.group(2)):02d}" if m else text[:10]
 
 

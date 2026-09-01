@@ -136,7 +136,7 @@ def to_float(value: Any) -> float | None:
 
 def normalize_period(value: Any) -> str:
     text = str(value or "").strip()
-    m = re.search(r"(20\d{2})\D{0,5}(0?[1-9]|1[0-2])", text)
+    m = re.search(r"(20\d{2})\D{0,5}(1[0-2]|0?[1-9])", text)
     if m:
         return f"{m.group(1)}-{int(m.group(2)):02d}"
     return text[:10]
@@ -301,9 +301,35 @@ NBS_INDICATORS = {
     "cpi_yoy": ("get_annual_inflation", lambda v: round(v * 100, 4)),
     "cpi_mom": ("get_recent_inflation", lambda v: round(v * 100, 4)),
     "ppi_yoy": ("get_ppi_yoy", lambda v: round(v - 100, 4)),
+    "ppi_mom": ("get_ppi_mom", lambda v: round(v - 100, 4)),
     "manufacturing_pmi": ("get_manufacturing_pmi", lambda v: round(v, 4)),
     "nonmanufacturing_pmi": ("get_non_manufacturing_pmi", lambda v: round(v, 4)),
+    "composite_pmi": ("get_composite_pmi", lambda v: round(v, 4)),
+    "cn_unemployment_rate": ("get_unemployment_rate", lambda v: round(v, 4)),
+    "m0": ("get_m0", lambda v: round(v, 4)),
+    "m0_yoy": ("get_m0_yoy", lambda v: round(v, 4)),
+    "m1": ("get_m1", lambda v: round(v, 4)),
+    "m1_yoy": ("get_m1_yoy", lambda v: round(v, 4)),
+    "m2": ("get_m2", lambda v: round(v, 4)),
+    "m2_yoy": ("get_m2_yoy", lambda v: round(v, 4)),
+    "gdp_nominal": ("get_gdp_nominal", lambda v: round(v, 4)),
+    "gdp_real": ("get_gdp_real", lambda v: round(v, 4)),
+    "gdp_yoy": ("get_gdp_index", lambda v: round(v - 100, 4)),
+    "gdp_qoq": ("get_gdp_qoq_growth", lambda v: round(v, 4)),
 }
+
+
+def norm_nbs_period(period) -> str:
+    """把 nbsc 返回的 pandas Period 归一为 'YYYY-MM'。
+
+    季度 Period（如 2026Q2）→ 季末月（2026-06），与全系统 'YYYY-MM' 周期格式对齐；
+    月度 Period → 原 normalize_period。GDP 等季度指标由此保持正确的季末月标签。
+    """
+    ps = str(period)
+    m = re.match(r"(20\d{2})Q([1-4])", ps)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)) * 3:02d}"
+    return normalize_period(ps)
 
 
 def collect_nbs(conn: sqlite3.Connection, collected_at: str, years: int = 2) -> tuple[int, list[str]]:
@@ -323,7 +349,7 @@ def collect_nbs(conn: sqlite3.Connection, collected_at: str, years: int = 2) -> 
                 raw_f = float(raw)
                 if raw_f != raw_f:  # NaN guard
                     continue
-                p = normalize_period(str(period))
+                p = norm_nbs_period(period)
                 if insert_vintage(conn, indicator=indicator, country="CN", period=p, value=transform(raw_f),
                                   value_type="reported", release_date=None, collected_at=collected_at,
                                   source="nbs", source_series=fn_name,
