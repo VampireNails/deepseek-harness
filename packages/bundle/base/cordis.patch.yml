@@ -467,6 +467,16 @@
         fetch: false
         searchTimeoutMs: 60000
 
+    # Host-plane anonymous HTTP(S) fetch provider for the web capability seam
+    # (ctx.web). Solidified here (previously only injected via
+    # scripts/workspace/web-fetch-overlay.yml) so the `--patch` overlay is no
+    # longer required: every profile that bundles dsh-base mounts this provider,
+    # and `web_fetch` resolves at runtime once the tool flag is enabled by a
+    # preset. dsh-base declares the dependency, so the package is in the profile
+    # module closure and Node-resolvable from any profile.
+    - id: web-fetch-http
+      name: '@deepseek-ai/dsh-web-fetch-http'
+
     # ── rows every mode mounts, whose values each overlay may state ──────────────
 
     # The tool registry. Presentation mode is a deployment choice; omitting it here
