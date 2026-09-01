@@ -23,6 +23,7 @@
 | upstream 走 HTTPS 代理 | `git -c http.proxy=http://127.0.0.1:10809 -c https.proxy=http://127.0.0.1:10809 fetch upstream` |
 | 工作区干净 | `git status --short` 为空；有改动先 commit 或 stash。 |
 | 沙箱外执行 rebase | 见步骤 4，rebase 必须在 `dangerouslyDisableSandbox=true` 下跑。 |
+| `upstream/master` 本地引用不可靠 | 本环境（tsbx 沙箱）无法持久化 `upstream/master` 远程跟踪引用：`git fetch`/`update-ref` 报成功但引用不落盘，`git log upstream/master` 会误报 `unknown revision`，并令 `git merge-base --is-ancestor X upstream/master || echo 已最新` 的 `||` 分支**误判「已是最新」**。**权威核查改用 `git ls-remote upstream`（网络层实时）**，详见步骤 2。 |
 
 ## 2. 标准步骤
 
@@ -31,12 +32,18 @@
    git fetch origin
    git -c http.proxy=http://127.0.0.1:10809 -c https.proxy=http://127.0.0.1:10809 fetch upstream
    ```
-2. **确认最新版本**（不要用旧记忆，每次都查）
+2. **确认最新版本**（不要用旧记忆，每次都查；**禁止依赖本地 `upstream/master` 引用**）
    ```bash
-   git tag --sort=-creatordate | head
-   git log --oneline -1 upstream/master
+   # 权威（网络层实时；本环境 upstream/master 本地引用不可靠，见 §1）
+   git -c http.proxy=http://127.0.0.1:10809 -c https.proxy=http://127.0.0.1:10809 ls-remote --tags upstream | grep -oE 'dsh-v[0-9].*' | sort -V | tail -3   # 最新 tag
+   git -c http.proxy=http://127.0.0.1:10809 -c https.proxy=http://127.0.0.1:10809 ls-remote upstream HEAD                                                      # upstream 真实 master SHA
    ```
-   选定基座：通常是 `upstream/master` 或最新 `dsh-v0.1.x-rc.x` tag 对应的 commit。
+   选定基座：最新 `dsh-v0.1.x-rc.x` tag 对应 commit，或 `ls-remote upstream HEAD` 对应的 SHA。
+   **本地是否已在最新（无需 rebase 的快速判定）**：
+   ```bash
+   git merge-base --is-ancestor <upstream_HEAD_SHA> master && echo "已是最新，无需整合" || echo "需要 rebase"
+   # 例：git merge-base --is-ancestor b150a551b8d465e31e418e1b2eaf5e79bbb7d28e master
+   ```
 3. **确认本地 macro 提交**（列出要搬运的提交，心里有数）
    ```bash
    git log --oneline <old_base>..master      # 例如 528c682e06..master
