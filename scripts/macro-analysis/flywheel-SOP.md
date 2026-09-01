@@ -62,6 +62,7 @@
 - 2026-08-24 定稿三飞轮 + 开源借鉴；落地轮 A（校验智慧飞轮）。
 - 2026-08-24 方向纠正：定位从「预测预判越用越聪明」改为「数据实时/准确/可靠越用越好」；飞轮③ 从「案例沉淀」改为「源可信度治理」。
 - 2026-08-24 轮 B+轮 C 落地并验证：`revision_stats`+`source_trust`+MCP `get_source_trust`；NBS 官方一手源接入（easyquery 已于 2026-05 废弃，改用 nbsc 库封装的新 UUID API），5 核心中国指标切换官方一手。验证发现：BLS 一手源 `nonfarm_payroll_change` 捕获 79 次修订（平均 145.6 千人），东财第三方 n_rev=0——量化印证「官方一手有修订可捕获、第三方没有」。
+- 2026-08-24 新增飞轮④（候选发现）：落地 `discover_candidates.py`（官方覆盖度扫描 v1），枚举 nbsc 25 官方系列差集出 17 个候选（13 核心：GDP×4、M0/M1/M2×6、城镇调查失业率、综合 PMI、PPI 环比）。新闻反查(GDELT)/FRED 日历/NBS 树 diff 评估后延后（噪声/需 key/易碎）。
 
 ## 8. 新增统计维度：持续导入与跟踪 SOP
 
@@ -103,3 +104,35 @@ clean 库经 MCP 6 工具只读暴露（`list_indicators`/`get_series`/`get_late
 ### 8.5 已知增强方向（未做，可选）
 
 当前维度是「硬编码注册表」，新增需改 3 处文件。可收敛为**单一声明式 `dimensions.yaml`**（collect/clean/verify 均从它读取），新增维度只改一个文件。评估：当前 11 个维度改动频率低、收益有限；维度数显著增长（>30）时再做。
+
+## 9. 飞轮④：候选发现（信号驱动的主动扩维）
+
+**核心结论**：注册是手动的，但「发现哪些维度该注册」可以自动化。v1 采用**官方一手覆盖度扫描**（确定性差集，零网络/零 LLM/零 key），而不是新闻反查——因为官方一手"已能提供但漏跟踪"的缺口，比新闻热点更可靠、更该先补。
+
+### 9.1 开源思路映射（2026-08-24 核验当前可用性）
+
+| 环节 | 思路 | 状态 | 结论 |
+|---|---|---|---|
+| 热点探测 | GDELT 2.0 DOC API（免费、无 key、15 分钟刷新，volume/tone） | 可用 | **v3**：噪声大 + 滞后于官方发布，需关键词映射 + LLM |
+| 反向查源(美) | FRED API `series/search` + `releases/dates`（80 万+ 序列） | 可用 | **v2**：需 FRED API key（项目现无） |
+| 反向查源(中) | NBS 目录树实时 diff（nbsc 已暴露 root UUID + `external/new/` 树接口） | 可用但**易碎** | **v2**：NBS 2026-06 已换 endpoint、有 WAF JS 挑战、UUID 会失效 |
+| 结构变更门 | Airbyte schema-change「Detect & approve myself」 | 可用 | 借鉴其**人工审批 gate** 模式，已落入 §9.3 状态机 |
+
+### 9.2 v1 落地：官方覆盖度扫描
+
+`discover_candidates.py`：枚举 nbsc `codes.json` 的 **25 个官方 NBS 系列** + 精选 `CANDIDATES` 目录（17 个逻辑指标，含中文标签/分类/core/单位/频率/nbsc 函数），与已跟踪集合（动态从 `NBS_INDICATORS` ∪ `METRICS` 推导）做差集，输出候选。
+
+**核验发现**：官方一手已能提供但漏跟踪的核心缺口 = **GDP（7 系列）、M0/M1/M2（6 系列）、中国城镇调查失业率、综合 PMI、PPI 环比**——共 13 个核心 + 4 个次要候选。
+
+### 9.3 提案库 schema 与状态机
+
+独立库 `outputs/macro_discovery.sqlite`，表 `candidate_dimensions`：
+
+| 字段 | 含义 |
+|---|---|
+| suggested_name / label_zh / category / core / unit / freq | 建议指标名、中文标签、分类、是否核心、单位、频率 |
+| source / authority_level | `nbs` / `official_primary`（如实，绝不冒充一手） |
+| nbsc_fn | 审批通过后要接入的 nbsc 访问函数 |
+| confidence / status | 置信度（v1 恒 1.0，确定性）；`pending→approved→registered`（可 `rejected`） |
+
+状态机：`pending`（自动产出）→ 人工 `approved` → 走 §8 的 3 文件注册 → `registered`。**红线**：本脚本只读 + 只写独立提案库，绝不调用 collect、绝不写 `macro_indicators`/`macro_clean`。
