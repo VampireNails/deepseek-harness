@@ -17,7 +17,7 @@ exit /b 2
 :start
 set "NODE_OPTIONS="
 set "DSH_PERMISSION_MODE=danger-full-access"
-set "DSH_HOME=%ROOT%\.dsh_home"
+set "DSH_HOME=%USERPROFILE%\.dsh"
 set "DEEPSEEK_API_KEY="
 rem Parse DEEPSEEK_API_KEY from the repo .env (non-standard "deepseek API key = sk-..." line)
 for /f "usebackq tokens=* delims=" %%l in (`findstr /i "deepseek" "%REPO%\.env" 2^>nul`) do (
