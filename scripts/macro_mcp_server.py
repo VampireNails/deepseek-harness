@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+"""Macro clean-data MCP server (stdio transport, mcp 2.0 low-level Server).
+
+Exposes the cleaned macro database (macro_clean.sqlite) built by
+clean_macro_data.py to any MCP client (Claude Desktop / Cline / Cursor ...).
+
+Transport: local stdio (spawned by the client as a subprocess).
+No network, no predictions, no self-learning — read-only access to the
+cleaned vintage macro dataset.
+
+Tools (each returns a single structured object wrapped in one text block):
+  list_indicators  -> {"indicators": [...]}
+  get_series       -> {"indicator","country","field","data":[...]}
+  get_latest       -> {"indicator","country","latest":[...]}
+  get_vintage      -> {"indicator","period","country","revisions":[...]}
+  get_metadata     -> {"indicator","country","metadata":[...]}
+
+Configure the DB path with the MACRO_CLEAN_DB environment variable.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sqlite3
+from pathlib import Path
+
+from mcp.server.lowlevel import Server
+from mcp.server.stdio import stdio_server
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+)
+
+DEFAULT_DB = Path(__file__).resolve().parents[1] / "outputs" / "macro_clean.sqlite"
+DB = Path(os.environ.get("MACRO_CLEAN_DB", str(DEFAULT_DB)))
+
+server = Server("macro-clean-db")
+
+# --------------------------------------------------------------------------
+# DB access
+# --------------------------------------------------------------------------
+
+VALID_FIELDS = ("value", "value_sa", "value_imputed")
+
+
+def _conn() -> sqlite3.Connection:
+    if not DB.exists():
+        raise RuntimeError(f"clean DB not found: {DB}; run clean_macro_data.py first")
+    c = sqlite3.connect(str(DB))
+    c.row_factory = sqlite3.Row
+    return c
+
+
+def _json_default(o):
+    # sqlite3.Row already converted to dict; this guards any stray types.
+    if isinstance(o, (sqlite3.Row,)):
+        return dict(o)
+    raise TypeError(f"not JSON serializable: {type(o)}")
+
+
+# --------------------------------------------------------------------------
+# Tool implementations (return plain dicts)
+# --------------------------------------------------------------------------
+
+def _list_indicators() -> dict:
+    c = _conn()
+    try:
+        rows = c.execute(
+            "SELECT indicator,country,label,unit,frequency,sa_method,"
+            "first_period,last_period,n_obs,n_imputed,last_updated FROM indicators "
+            "ORDER BY country,indicator").fetchall()
+        return {"indicators": [dict(r) for r in rows]}
+    finally:
+        c.close()
+
+
+def _get_series(args: dict) -> dict:
+    indicator = args.get("indicator")
+    if not indicator:
+        raise ValueError("indicator is required")
+    country = (args.get("country") or "").strip()
+    field = args.get("field") or "value"
+    if field not in VALID_FIELDS:
+        field = "value"
+    start = args.get("start") or ""
+    end = args.get("end") or ""
+    c = _conn()
+    try:
+        q = ("SELECT period,country,value,value_sa,value_imputed,is_imputed,source "
+             "FROM clean_series WHERE indicator=?")
+        a: list = [indicator]
+        if country:
+            q += " AND country=?"; a.append(country)
+        if start:
+            q += " AND period>=?"; a.append(start)
+        if end:
+            q += " AND period<=?"; a.append(end)
+        q += " ORDER BY country,period"
+        rows = c.execute(q, a).fetchall()
+        data = [{
+            "period": r["period"], "country": r["country"], "value": r[field],
+            "is_imputed": r["is_imputed"], "source": r["source"],
+        } for r in rows]
+        return {"indicator": indicator, "country": country or "ALL",
+                "field": field, "data": data}
+    finally:
+        c.close()
+
+
+def _get_latest(args: dict) -> dict:
+    indicator = args.get("indicator")
+    if not indicator:
+        raise ValueError("indicator is required")
+    country = (args.get("country") or "").strip()
+    c = _conn()
+    try:
+        q = ("SELECT country,period,value,value_sa,value_imputed,is_imputed,source,"
+             "release_date,collected_at FROM clean_series WHERE indicator=?")
+        a: list = [indicator]
+        if country:
+            q += " AND country=?"; a.append(country)
+        q += " ORDER BY country,period DESC"
+        rows = c.execute(q, a).fetchall()
+        # keep only the latest per country
+        best: dict[str, sqlite3.Row] = {}
+        for r in rows:
+            best.setdefault(r["country"], r)
+        latest = [dict(best[k]) for k in sorted(best)]
+        return {"indicator": indicator, "country": country or "ALL", "latest": latest}
+    finally:
+        c.close()
+
+
+def _get_vintage(args: dict) -> dict:
+    indicator = args.get("indicator")
+    period = args.get("period")
+    if not indicator:
+        raise ValueError("indicator is required")
+    if not period:
+        raise ValueError("period is required (e.g. 2024-01)")
+    country = (args.get("country") or "").strip()
+    c = _conn()
+    try:
+        q = ("SELECT country,collected_at,value,original_value,is_revision,source,value_type "
+             "FROM vintage_traces WHERE indicator=? AND period=?")
+        a: list = [indicator, period]
+        if country:
+            q += " AND country=?"; a.append(country)
+        q += " ORDER BY country,collected_at"
+        rows = c.execute(q, a).fetchall()
+        revisions = [dict(r) for r in rows]
+        return {"indicator": indicator, "period": period,
+                "country": country or "ALL", "revisions": revisions}
+    finally:
+        c.close()
+
+
+def _get_metadata(args: dict) -> dict:
+    indicator = args.get("indicator")
+    if not indicator:
+        raise ValueError("indicator is required")
+    country = (args.get("country") or "").strip()
+    c = _conn()
+    try:
+        q = ("SELECT indicator,country,label,unit,frequency,sa_method,"
+             "first_period,last_period,n_obs,n_imputed,last_updated "
+             "FROM indicators WHERE indicator=?")
+        a: list = [indicator]
+        if country:
+            q += " AND country=?"; a.append(country)
+        q += " ORDER BY country"
+        rows = c.execute(q, a).fetchall()
+        return {"indicator": indicator, "country": country or "ALL",
+                "metadata": [dict(r) for r in rows]}
+    finally:
+        c.close()
+
+
+# --------------------------------------------------------------------------
+# Tool registry (name -> (handler, description, input_schema))
+# --------------------------------------------------------------------------
+
+TOOLS: list[Tool] = [
+    Tool(
+        name="list_indicators",
+        description="列出清洗库中可用的宏观指标（中美 CPI/PPI/PMI/非农/失业率）。返回 indicators 列表，每项含标签、单位、频率、季节调整方法、覆盖区间与观测数。",
+        input_schema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="get_series",
+        description="获取某指标的规范月度时序。field 默认 value(原始规范观测，始终有值)；可选 value_sa(季节调整后/插补回退) / value_imputed(插补填充值)。start/end 形如 2024-01。country 省略时返回所有国家。返回 {indicator,country,field,data:[{period,country,value,is_imputed,source}]}。",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "indicator": {"type": "string", "description": "指标键，如 cpi_yoy / nonfarm_payroll_change"},
+                "country": {"type": "string", "description": "国家代码 CN/US，省略则返回所有国家", "default": "CN"},
+                "field": {"type": "string", "enum": ["value", "value_sa", "value_imputed"], "default": "value"},
+                "start": {"type": "string", "description": "起始期 YYYY-MM"},
+                "end": {"type": "string", "description": "结束期 YYYY-MM"},
+            },
+            "required": ["indicator"],
+        },
+    ),
+    Tool(
+        name="get_latest",
+        description="获取某指标最新一期（每匹配国家一条）：含原始/季节调整后/插补值、来源、发布日、采集时点。",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "indicator": {"type": "string"},
+                "country": {"type": "string", "description": "国家代码，省略则返回所有国家最新值", "default": "CN"},
+            },
+            "required": ["indicator"],
+        },
+    ),
+    Tool(
+        name="get_vintage",
+        description="获取某指标在某发布周期的历史采集快照（vintage）：每次采集的 collected_at、值、是否修订、初值、来源。免费源返回稳定修订值，故记录每次采集的值变化点。",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "indicator": {"type": "string"},
+                "period": {"type": "string", "description": "发布周期 YYYY-MM"},
+                "country": {"type": "string", "description": "国家代码，省略则返回所有国家", "default": "CN"},
+            },
+            "required": ["indicator", "period"],
+        },
+    ),
+    Tool(
+        name="get_metadata",
+        description="获取某指标元数据：标签、单位、频率、季节调整方法、覆盖区间、观测数、插补数、最后更新时间。",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "indicator": {"type": "string"},
+                "country": {"type": "string", "description": "国家代码，省略则返回所有国家", "default": "CN"},
+            },
+            "required": ["indicator"],
+        },
+    ),
+]
+
+_DISPATCH = {
+    "list_indicators": lambda a: _list_indicators(),
+    "get_series": _get_series,
+    "get_latest": _get_latest,
+    "get_vintage": _get_vintage,
+    "get_metadata": _get_metadata,
+}
+
+
+# --------------------------------------------------------------------------
+# Low-level request handlers (mcp 2.0 contract)
+# --------------------------------------------------------------------------
+
+async def _list_tools(_ctx, _params: PaginatedRequestParams) -> ListToolsResult:
+    return ListToolsResult(tools=TOOLS)
+
+
+async def _call_tool(_ctx, params: CallToolRequestParams) -> CallToolResult:
+    name = params.name
+    args = params.arguments or {}
+    handler = _DISPATCH.get(name)
+    if handler is None:
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(
+                {"error": f"unknown tool: {name}"}, ensure_ascii=False))],
+            is_error=True,
+        )
+    try:
+        result = handler(args)
+    except Exception as e:  # surface errors to the client instead of crashing
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(
+                {"error": str(e)}, ensure_ascii=False))],
+            is_error=True,
+        )
+    text = json.dumps(result, ensure_ascii=False, default=_json_default)
+    return CallToolResult(
+        content=[TextContent(type="text", text=text)],
+        is_error=False,
+        structured_content=result,
+    )
+
+
+server.add_request_handler("tools/list", PaginatedRequestParams, _list_tools)
+server.add_request_handler("tools/call", CallToolRequestParams, _call_tool)
+
+
+# --------------------------------------------------------------------------
+# Entry point
+# --------------------------------------------------------------------------
+
+async def _main() -> None:
+    async with stdio_server() as (read, write):
+        await server.run(read, write, server.create_initialization_options())
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())
