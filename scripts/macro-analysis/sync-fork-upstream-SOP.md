@@ -24,6 +24,7 @@
 | 工作区干净 | `git status --short` 为空；有改动先 commit 或 stash。 |
 | 沙箱外执行 rebase | 见步骤 4，rebase 必须在 `dangerouslyDisableSandbox=true` 下跑。 |
 | `upstream/master` 本地引用不可靠 | 本环境（tsbx 沙箱）无法持久化 `upstream/master` 远程跟踪引用：`git fetch`/`update-ref` 报成功但引用不落盘，`git log upstream/master` 会误报 `unknown revision`，并令 `git merge-base --is-ancestor X upstream/master || echo 已最新` 的 `||` 分支**误判「已是最新」**。**权威核查改用 `git ls-remote upstream`（网络层实时）**，详见步骤 2。 |
+| `origin/master` 本地引用也不可靠 | 同沙箱限制下 `origin/master` 远程跟踪引用同样可能 stale（指向旧 SHA），且 `git fetch origin` **无法刷新**它。`git rev-list --left-right --count origin/master...master` 会显示错乱的 0/862 之类大数。**后果：标准 `--force-with-lease`（无显式 ref）会拿 stale 的 origin/master 与远端比较 → 报 "stale info" 拒绝推送**。解法见步骤 6：改用显式 `--force-with-lease=master:<REMOTE_SHA>`，其中 `<REMOTE_SHA>` 取自 `git ls-remote origin HEAD`（网络层真实远端值）。**复核也勿用 `git rev-parse origin/master`**，改用 `git ls-remote origin HEAD`。 |
 
 ## 2. 标准步骤
 
@@ -61,26 +62,30 @@
    git status --short
    ```
    优先用 `git rm` 而非裸 `rm`（`git rm` 的 unlink 不受 safe-delete 拦）。发现整套目录异常消失立即 `git restore <dir>`。
-6. **推送**（force-with-lease + 跳过重型 pre-push 门禁）
+6. **推送**（⚠️ 本地 origin/master 引用不可靠 → 必须显式 force-with-lease；+ 跳过重型 pre-push 门禁）
    ```bash
-   git ls-remote origin               # 推送前验证 SSH 隧道
-   git push --force-with-lease --no-verify origin master
+   git -c http.proxy=http://127.0.0.1:10809 -c https.proxy=http://127.0.0.1:10809 ls-remote origin HEAD   # 取真实远端 SHA（权威）
+   # 假设上一步返回的远端 SHA 是 <REMOTE_SHA>，本地要推到 master：
+   git -c http.proxy=http://127.0.0.1:10809 -c https.proxy=http://127.0.0.1:10809 \
+       push --force-with-lease=master:<REMOTE_SHA> --no-verify origin master
    ```
+   - **为何不用裸 `--force-with-lease`**：本沙箱 `origin/master` 远程跟踪引用会 stale（且 fetch 刷不新），标准 `--force-with-lease` 拿 stale 引用与远端比较 → 报 "stale info" 拒绝。显式 `=master:<REMOTE_SHA>` 直接以 `ls-remote` 验证的真实远端值为基准，绕过 stale 引用。
    - `--no-verify`：跳过 pre-push 的 `pnpm run typecheck`（全仓 tsc，沙箱无 TTY 下 pnpm install 会卡死）。macro 改动是 Python 脚本 + YAML/md，不影响 TS 构建。
-   - force-with-lease：仅当远端 master 自上次 fetch 后未被他人改动才更新，安全。
-7. **推送后复核**
+   - 推送无 "forced update" 字样、呈 `8d73683864..e4225b9867` 推进状即正常（线性 ahead 时本就是 fast-forward）。
+7. **推送后复核**（⚠️ 本地 origin/master 引用不可靠，勿用 `git rev-parse origin/master`）
    ```bash
-   git fetch origin
-   git rev-parse origin/master        # 应 == 本地 HEAD
+   git -c http.proxy=http://127.0.0.1:10809 -c https.proxy=http://127.0.0.1:10809 ls-remote origin HEAD   # 权威，应 == 本地 HEAD
+   git rev-parse master                                                                                        # 本地 HEAD
    ```
+   两者 SHA 一致即推送完整生效。
 
 ## 3. 推送前必做的「丢失风险」核查
 
-force 推送会用本地历史整体覆盖 fork，故先确认 fork 上是否有**本地没有、但不该丢**的文件：
+force 推送会用本地历史整体覆盖 fork，故先确认 fork 上是否有**本地没有、但不该丢**的文件（⚠️ 用 `ls-remote` 取真实远端 SHA，勿用 stale 的 `origin/master` 引用）：
 ```bash
-git fetch origin
-# 找出 fork 独有、本地缺失的文件（diff 两个 tip 的树）
-git diff --name-only origin/master master   # 仅列改动文件
+REMOTE=$(git -c http.proxy=http://127.0.0.1:10809 -c https.proxy=http://127.0.0.1:10809 ls-remote origin HEAD | cut -f1)
+# 找出 fork 独有、本地缺失的【删除】文件（force 推送会真正丢失这些）
+git diff --name-only --diff-filter=D $REMOTE master
 # 对可疑文件逐个确认
 git cat-file -e "本地HEAD:$file" && echo PRESENT || echo MISSING
 ```
@@ -93,6 +98,7 @@ git cat-file -e "本地HEAD:$file" && echo PRESENT || echo MISSING
 |---|---|---|---|---|
 | 2026-08-21 | `528c682e06` | `dsh-v0.1.1-rc.1` | `73247034d2` add workflow → `535d011d65` drop prediction → `45efa02a9d` add clean+MCP → `f1abd533cd` unify env | ✅ force-with-lease 推送成功；fork 旧 tip `5982084f`（rc.8+旧 macro）被覆盖，`analyze_macro_data.py` 移除 |
 | 2026-08-23 | `b150a551b8` | `dsh-v0.1.1-rc.2` | `f04330234f` add workflow → `5f296dca17` drop prediction → `2779c06edb` add clean+MCP → `2e0aba07f7` unify env → `e11e6268f6` docs SOP → `07e2222987` consolidate scripts | ✅ rc.1→rc.2 rebase（6/6 无冲突）+ force-with-lease 推送成功。推送前丢失核查：upstream 在 rc.2 自删 `.agents/notes/` 10 文件（rc.1 有、rc.2 无），已确认非本 fork 文件，安全覆盖 |
+| 2026-08-24 | `b150a551b8` | `dsh-v0.1.1-rc.2` | （无 rebase；已是最新）仅 ahead 1 个 SOP 文档提交 `e4225b9867` | ✅ 检查确认 upstream 无推进（no-op）。推送 `e4225b9867` 成功。实测发现 **本地 `origin/master` 引用也 stale**（指向旧 SHA），标准 `--force-with-lease` 报 "stale info" 拒绝 → 改用显式 `--force-with-lease=master:8d73683864...` 推送成功；SOP 推送/复核步骤已同步修正 |
 
 ## 5. 关联坑位速查（详情见项目 `MEMORY.md`）
 
@@ -100,3 +106,4 @@ git cat-file -e "本地HEAD:$file" && echo PRESENT || echo MISSING
 - **lefthook 平台二进制缺失**：手动下 `lefthook-windows-x64@2.1.9` tgz，解压 `lefthook.exe` 放 pnpm 虚拟 store 依赖位。
 - **pnpm install 卡死**：清 `NODE_OPTIONS` + 国内镜像 `--registry=https://registry.npmmirror.com` + `--store-dir=C:/Users/Administrator/.pnpm-store`。
 - **macro 脚本环境变量覆盖**（已落地）：`MACRO_OUTPUT_ROOT` 覆盖 outputs 根，`MACRO_CLEAN_DB` 覆盖清洗库路径；优先级 CLI > env > 脚本位置默认。
+- **`origin/master` 跟踪引用也 stale（2026-08-24 实测）**：`git fetch origin` 刷不新、`git rev-parse origin/master` 显示旧 SHA、`git rev-list ...origin/master...master` 显示错乱大数。标准 `--force-with-lease` 因此报 "stale info" 拒绝推送。解法：推送用显式 `--force-with-lease=master:<REMOTE_SHA>`（`<REMOTE_SHA>` = `git ls-remote origin HEAD` 真实值）；复核用 `git ls-remote origin HEAD` 而非 `git rev-parse origin/master`。
