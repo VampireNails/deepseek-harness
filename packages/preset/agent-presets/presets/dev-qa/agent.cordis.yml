@@ -14,9 +14,21 @@
   config:
     # Single source of truth: workflow.md drives Web preset and headless alike.
     text: !!js >-
-      process.getBuiltinModule('node:fs').readFileSync(
-      process.getBuiltinModule('node:path').join(process.cwd(),
-      'apps', 'cli', 'config', 'agent-presets', 'dev-qa', 'workflow.md'), 'utf8')
+      (function () {
+      const fs = process.getBuiltinModule('node:fs');
+      const path = process.getBuiltinModule('node:path');
+      const home = process.env.USERPROFILE || process.env.HOME || process.getBuiltinModule('node:os').homedir();
+      const cands = [
+      path.join(process.cwd(), 'packages', 'preset', 'agent-presets', 'presets', 'dev-qa', 'workflow.md'),
+      path.join(home, '.dsh', '.agent-presets', 'dev-qa', 'workflow.md')
+      ];
+      for (const c of cands) {
+      try {
+      return fs.readFileSync(c, 'utf8');
+      } catch (e) {}
+      }
+      throw new Error('preset dev-qa: workflow.md not found; tried ' + cands.join(' | '));
+      })()
 
 # ── filesystem ──────────────────────────────────────────────────────────────
 

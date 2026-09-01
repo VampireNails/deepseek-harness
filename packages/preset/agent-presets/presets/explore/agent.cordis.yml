@@ -12,9 +12,21 @@
   name: '@deepseek-ai/dsh-persona'
   config:
     text: !!js >-
-      process.getBuiltinModule('node:fs').readFileSync(
-      process.getBuiltinModule('node:path').join(process.cwd(),
-      'apps', 'cli', 'config', 'agent-presets', 'explore', 'workflow.md'), 'utf8')
+      (function () {
+      const fs = process.getBuiltinModule('node:fs');
+      const path = process.getBuiltinModule('node:path');
+      const home = process.env.USERPROFILE || process.env.HOME || process.getBuiltinModule('node:os').homedir();
+      const cands = [
+      path.join(process.cwd(), 'packages', 'preset', 'agent-presets', 'presets', 'explore', 'workflow.md'),
+      path.join(home, '.dsh', '.agent-presets', 'explore', 'workflow.md')
+      ];
+      for (const c of cands) {
+      try {
+      return fs.readFileSync(c, 'utf8');
+      } catch (e) {}
+      }
+      throw new Error('preset explore: workflow.md not found; tried ' + cands.join(' | '));
+      })()
 
 # ── filesystem (read-only) ──────────────────────────────────────────────────
 
