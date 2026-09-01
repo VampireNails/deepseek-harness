@@ -92,8 +92,8 @@ def _get_series(args: dict) -> dict:
     end = args.get("end") or ""
     c = _conn()
     try:
-        q = ("SELECT period,country,value,value_sa,value_imputed,is_imputed,source "
-             "FROM clean_series WHERE indicator=?")
+        q = ("SELECT period,country,value,value_sa,value_imputed,is_imputed,source,"
+             "layer,derived_from,transform FROM clean_series WHERE indicator=?")
         a: list = [indicator]
         if country:
             q += " AND country=?"; a.append(country)
@@ -106,6 +106,7 @@ def _get_series(args: dict) -> dict:
         data = [{
             "period": r["period"], "country": r["country"], "value": r[field],
             "is_imputed": r["is_imputed"], "source": r["source"],
+            "layer": r["layer"], "derived_from": r["derived_from"], "transform": r["transform"],
         } for r in rows]
         return {"indicator": indicator, "country": country or "ALL",
                 "field": field, "data": data}
@@ -193,6 +194,32 @@ def _get_source_trust() -> dict:
         c.close()
 
 
+def _get_derivation(args: dict) -> dict:
+    """返回某指标的派生血缘：layer / derived_from / transform / 版本 / 计算时点，
+    以及观测值 vs 公式派生值的一致性对账（derived_checks）。数据基石透明度工具。"""
+    indicator = args.get("indicator")
+    if not indicator:
+        raise ValueError("indicator is required")
+    country = (args.get("country") or "").strip()
+    c = _conn()
+    try:
+        q = ("SELECT DISTINCT layer, derived_from, transform, transform_version, computed_at "
+             "FROM clean_series WHERE indicator=?")
+        a: list = [indicator]
+        if country:
+            q += " AND country=?"; a.append(country)
+        rows = c.execute(q, a).fetchall()
+        lineage = [dict(r) for r in rows]
+        cc = c.execute(
+            "SELECT country,period,observed_value,derived_value,delta,abs_delta,consistent,"
+            "transform,transform_version FROM derived_checks WHERE indicator=?", (indicator,)).fetchall()
+        checks = [dict(r) for r in cc]
+        return {"indicator": indicator, "country": country or "ALL",
+                "lineage": lineage, "consistency_checks": checks}
+    finally:
+        c.close()
+
+
 # --------------------------------------------------------------------------
 # Tool registry (name -> (handler, description, input_schema))
 # --------------------------------------------------------------------------
@@ -205,7 +232,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="get_series",
-        description="获取某指标的规范月度时序。field 默认 value(原始规范观测，始终有值)；可选 value_sa(季节调整后/插补回退) / value_imputed(插补填充值)。start/end 形如 2024-01。country 省略时返回所有国家。返回 {indicator,country,field,data:[{period,country,value,is_imputed,source}]}。",
+        description="获取某指标的规范月度时序。field 默认 value(原始规范观测，始终有值)；可选 value_sa(季节调整后/插补回退) / value_imputed(插补填充值)。start/end 形如 2024-01。country 省略时返回所有国家。返回 data 每项含 layer(observed=官方出版 / derived=公式派生兜底) 与 derived_from/transform 血缘，供消费方判断数据性质。",
         input_schema={
             "type": "object",
             "properties": {
@@ -260,6 +287,18 @@ TOOLS: list[Tool] = [
         description="列出数据源可信度分级（官方一手 > 官方二次 > 第三方），含 authority/attribution/priority。用于判断某指标是否来自官方第一手数据。",
         input_schema={"type": "object", "properties": {}},
     ),
+    Tool(
+        name="get_derivation",
+        description="返回某指标的派生血缘与一致性对账（数据基石透明度）：layer(observed/derived)、derived_from(底层源指标)、transform(变换id)、transform_version(版本)、computed_at(计算时点)；若该派生指标有官方出版值，同时返回 derived_checks 里「观测值 vs 公式派生值」的偏差与一致性标记。用于确认某个同比/环比/变化量是否为官方出版、还是公式兜底。",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "indicator": {"type": "string", "description": "指标键，如 m2_yoy / gdp_qoq / nonfarm_payroll_change"},
+                "country": {"type": "string", "description": "国家代码，省略则返回所有国家", "default": "CN"},
+            },
+            "required": ["indicator"],
+        },
+    ),
 ]
 
 _DISPATCH = {
@@ -269,6 +308,7 @@ _DISPATCH = {
     "get_vintage": _get_vintage,
     "get_metadata": _get_metadata,
     "get_source_trust": lambda a: _get_source_trust(),
+    "get_derivation": _get_derivation,
 }
 
 

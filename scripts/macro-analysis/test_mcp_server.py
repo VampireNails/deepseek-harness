@@ -27,6 +27,8 @@ CALLS = [
     ("get_vintage", {"indicator": "cpi_yoy", "country": "CN", "period": "2024-01"}),
     ("get_metadata", {"indicator": "manufacturing_pmi", "country": "CN"}),
     ("get_source_trust", {}),
+    ("get_derivation", {"indicator": "m2_yoy", "country": "CN"}),
+    ("get_derivation", {"indicator": "nonfarm_payroll_change", "country": "US"}),
     # error path: missing required arg
     ("get_series", {}),
 ]

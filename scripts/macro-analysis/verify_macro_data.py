@@ -163,11 +163,70 @@ def check(db_path: Path, date: str, strict: bool) -> dict:
         conn.close()
 
 
+# --------------------------------------------------------------------------
+# 派生层校验（飞轮③延伸）：校验 clean 库的 derived 行与一致性对账。
+# 借鉴 Great Expectations / Soda 的「列级断言」思路：派生值可复现、版本化、
+# 区间合理；观测值 vs 公式派生值的一致性偏差受控。
+# --------------------------------------------------------------------------
+
+def check_clean(clean_db: Path, strict: bool) -> dict:
+    uri = f"file:{clean_db.as_posix()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    failures: list[str] = []
+    warnings: list[str] = []
+    try:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "clean_series" not in tables:
+            return {"ok": True, "skipped": "no clean_series table", "failures": [], "warnings": []}
+        derived = conn.execute(
+            "SELECT indicator,country,period,value,transform,transform_version,derived_from "
+            "FROM clean_series WHERE layer='derived'").fetchall()
+        for ind, cty, per, val, tr, ver, df in derived:
+            if ver is None or not str(ver).strip():
+                failures.append(f"derived row {ind}/{cty}/{per} missing transform_version")
+            if df is None or not str(df).strip():
+                failures.append(f"derived row {ind}/{cty}/{per} missing derived_from")
+            if val is None or val != val:
+                failures.append(f"derived row {ind}/{cty}/{per} has NaN/None value")
+                continue
+            # 区间断言：同比/环比(%) ∈ [-100,100]；变化量(千人) ∈ [-10000,10000]
+            lo, hi = (-100.0, 100.0) if tr != "diff_level" else (-10000.0, 10000.0)
+            if not (lo <= val <= hi):
+                failures.append(f"derived row {ind}/{cty}/{per} value {val} out of [{lo},{hi}]")
+        checks = conn.execute(
+            "SELECT COUNT(*), SUM(CASE WHEN consistent=0 THEN 1 ELSE 0 END), "
+            "MAX(abs_delta) FROM derived_checks").fetchone()
+        total = checks[0] or 0
+        inconsistent = checks[1] or 0
+        max_abs = checks[2]
+        if total and inconsistent:
+            msg = f"{inconsistent}/{total} derived_checks inconsistent (max |delta|={max_abs})"
+            if strict:
+                failures.append(msg + " — 出版值与方法派生值不一致，需人工核查")
+            else:
+                warnings.append(msg)
+        return {
+            "ok": not failures, "derived_rows": len(derived),
+            "derived_checks": total, "derived_inconsistent": inconsistent,
+            "max_abs_delta": max_abs, "failures": failures, "warnings": warnings,
+        }
+    finally:
+        conn.close()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(); ap.add_argument("--output-root", default=None); ap.add_argument("--date", required=True); ap.add_argument("--strict", action="store_true")
     args = ap.parse_args(); root = Path(args.output_root or os.environ.get("MACRO_OUTPUT_ROOT") or Path(__file__).resolve().parents[1] / "outputs"); db = root / args.date / DB_NAME
     if not db.exists(): print(json.dumps({"ok": False, "error": f"db not found: {db}"}, ensure_ascii=False)); return 1
-    result = check(db, args.date, args.strict); print(json.dumps(result, ensure_ascii=False, indent=2)); return 0 if result["ok"] else 1
+    result = check(db, args.date, args.strict)
+    clean_db = Path(os.environ.get("MACRO_CLEAN_DB") or str(root / "macro_clean.sqlite"))
+    if clean_db.exists():
+        clean_res = check_clean(clean_db, args.strict)
+        result["failures"].extend(clean_res["failures"])
+        result["warnings"].extend(clean_res["warnings"])
+        result["clean_layer"] = clean_res
+        result["ok"] = result["ok"] and clean_res["ok"]
+    print(json.dumps(result, ensure_ascii=False, indent=2)); return 0 if result["ok"] else 1
 
 
 if __name__ == "__main__": raise SystemExit(main())

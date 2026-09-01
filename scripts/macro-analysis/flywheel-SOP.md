@@ -138,3 +138,42 @@ clean 库经 MCP 6 工具只读暴露（`list_indicators`/`get_series`/`get_late
 | confidence / status | 置信度（v1 恒 1.0，确定性）；`pending→approved→registered`（可 `rejected`） |
 
 状态机：`pending`（自动产出）→ 人工 `approved` → 走 §8 的 3 文件注册 → `registered`。**红线**：本脚本只读 + 只写独立提案库，绝不调用 collect、绝不写 `macro_indicators`/`macro_clean`。
+
+## 10. 派生指标治理（observed / derived 分层）
+
+**核心结论（2026-08-24 评估）**：作为数据基石，派生指标**需要记录**，但必须以独立的「派生层」与「观测层」严格分层存储，并带血缘 + 变换版本 + 计算时点。**派生值绝不与观测值混存、绝不覆盖官方出版值。**
+
+### 10.1 评估：派生指标要不要记？
+
+| 维度 | 结论 | 理由 |
+|---|---|---|
+| 是否记录 | **记**，但独立分层 | 数据基石对外服务分析（MCP 只读）；若每个消费方各自重算，会出现逻辑分叉与隐性 bug。集中物化 = 分析就绪数据的唯一可审计真相源 |
+| 与观测值关系 | 严格分层 `layer` | 派生 ≠ 观测；每派生值须能追溯「由哪些观测值 + 哪个版本变换 + 何时算出」，否则不可审计、且易被误当官方事实（违反 FAIR/溯源红线） |
+| 物化性质 | 可复现（幂等重建） | 给定（源 vintage + 固定变换版本）结果确定，clean 库可整体重建；持久化是为了稳定与「当时所见」审计，而非因为它是真相 |
+| 官方出版优先 | 派生值不覆盖 | NBS/BLS 直接出版的变换（cpi_mom、gdp_qoq、nonfarm_payroll_change…）属观测层；公式仅作一致性对账 + 缺口兜底 |
+
+**哪些算派生、哪些不算**（本项目口径）：
+- 真·派生（由底层水平/指数按公式算出，且口径可与出版值对账）：`m2_yoy/m1_yoy/m0_yoy`（=水平同比，年比消季节性，可对账）、`nonfarm_payroll_change`（=level 差分，BLS 出版值即水平差分，可精确对账）。NBS/BLS 也出版这些值 → 观测层存在，公式作一致性对账 + 缺口兜底。
+- **不算派生（纯观测）**：`gdp_qoq` —— NBS 出版的是**季节调整后环比**，而 `gdp_real` 是未季调水平，NSA 水平差额 ≠ SA 出版环比，口径不可比，故**不做公式对账/兜底**，仅作观测层记录。这正说明「派生层」不是无脑套公式，必须核对口径一致性。
+- 非派生（第三方出版的指数，无简单底层 level）：`cpi_base`/`ppi_base`/`ppi_accumulated`（东财第三方）。保持「第三方观测」标注，**不**加公式派生（与 §2 评估一致，不冒充一手、不冗余造数）。
+
+### 10.2 开源借鉴（落地映射）
+
+| 开源 | 借鉴点 | 本项目落地 |
+|---|---|---|
+| **dbt** | 分层（staging 原始 → marts 派生）、变换版本化入 VCS、对产出做测试 | `clean_series.layer` + `transform_registry`（变换定义+版本+公式+输入） |
+| **OpenLineage / Marquez / DataHub** | 数据血缘图谱 | `clean_series.derived_from`（底层源指标）+ `computed_at`（源 vintage 时点） |
+| **Great Expectations / Soda** | 列级断言（区间、非空、版本必填） | `verify_macro_data.py::check_clean` + `derived_checks` 一致性对账 |
+| **ALFRED** | 同时发布观测值与变换值（SA），均带变换说明 + vintage 追踪 | observed/derived 分层 + 变换说明，对齐其「官方也发布变换序列」实践 |
+
+### 10.3 落地（代码）
+
+- `clean_macro_data.py`：`clean_series` 加 `layer`/`derived_from`/`transform`/`transform_version`/`computed_at`；新增 `transform_registry` 表（2 个变换 v1：yoy_from_level / diff_level）+ `derived_checks` 表（观测 vs 派生一致性对账）；`build_derived` 按 `DERIVED_SPECS` 由底层水平序列算派生值——官方出版值存在则只记 `derived_checks`、缺口则写 `layer='derived'` 兜底、`source='derived'`（不冒充官方）。`gdp_qoq` 因 SA 口径不可比，**不**入派生规格。
+- `verify_macro_data.py`：`check_clean` 校验派生行 `transform_version`/`derived_from` 非空、值区间合理；`derived_checks` 不一致在 strict 下告警/失败。
+- `macro_mcp_server.py`：`get_series` 返回项加 `layer`/`derived_from`/`transform`；新增 `get_derivation` 工具暴露血缘 + 一致性对账（数据基石透明度）。
+
+### 10.4 红线延伸
+
+1. 派生值 `source` 一律记 `'derived'`，**绝不**写任一官方源名（nbs/bls…），避免冒充。
+2. 官方出版值优先；公式派生仅在缺口时兜底，**永不覆盖**观测值。
+3. `derived_checks` 仅记载对账，不回写 `clean_series` 观测行；变换版本变更须在 `transform_registry` 升版并记录。

@@ -71,6 +71,45 @@ KEEP_VALUE_TYPE: dict[str, str] = {
 SOURCE_PRIORITY = {"nbs": 1, "bls": 1, "eastmoney": 2, "fred_csv": 3}
 
 
+# --------------------------------------------------------------------------
+# 派生层（飞轮③延伸：派生指标治理）
+# --------------------------------------------------------------------------
+# 数据基石原则：派生指标必须记录，但作为独立「派生层」与「观测层」严格分层，
+# 且必须带血缘（derived_from）+ 变换版本（transform_version）+ 计算时点（computed_at）。
+# 派生值绝不与观测值混存，也绝不覆盖官方出版值：当某变换官方已出版（如 m2_yoy、
+# gdp_qoq、nonfarm_payroll_change），出版序列属观测层，公式仅作一致性对账 + 缺口兜底。
+#
+# 变换登记簿（借鉴 dbt：变换版本化定义入 VCS；借鉴 OpenLineage：血缘可追溯）。
+TRANSFORM_REGISTRY = [
+    ("yoy_from_level", "由水平序列计算同比 (YoY)", "value_t / value_{t-12} - 1", "M", "1",
+     "m2/m1/m0 等货币供应余额同比；官方出版时仅作对账（年比消除季节性，可与出版值对账）"),
+    ("diff_level", "由水平序列计算环比变化量 (MoM diff)", "value_t - value_{t-1月}", "M", "1",
+     "nonfarm_payroll_level -> nonfarm_payroll_change；BLS 出版值即水平差分，可精确对账"),
+]
+
+# 派生规格：派生指标 -> 底层源指标 / 频率 / 变换 / 版本 / 缩放(百分点或原单位) / 一致性容差
+# 注：gdp_qoq 不在此列——NBS 出版的是「季节调整后环比」，而 gdp_real 是未季调水平，
+# 二者口径不可比（NSA 水平差额 ≠ SA 出版环比）；故 gdp_qoq 仅作观测层，不做公式对账/兜底。
+# 容差：百分比变换 0.1（吸收出版值保留 1 位小数的舍入）；变化量(千人) 1.0。
+DERIVED_SPECS = {
+    "m2_yoy":               {"from": "m2",                   "freq": "M", "transform": "yoy_from_level", "version": "1", "scale": 100, "tol": 0.1},
+    "m1_yoy":               {"from": "m1",                   "freq": "M", "transform": "yoy_from_level", "version": "1", "scale": 100, "tol": 0.1},
+    "m0_yoy":               {"from": "m0",                   "freq": "M", "transform": "yoy_from_level", "version": "1", "scale": 100, "tol": 0.1},
+    "nonfarm_payroll_change": {"from": "nonfarm_payroll_level", "freq": "M", "transform": "diff_level", "version": "1", "scale": 1, "tol": 1.0},
+}
+
+
+def shift_period(period: str, months: int) -> str | None:
+    """把 'YYYY-MM' 往前推 months 个月，返回归一化 'YYYY-MM'。"""
+    import re
+    m = re.match(r"(20\d{2})-(\d{2})", period)
+    if not m:
+        return None
+    total = int(m.group(1)) * 12 + (int(m.group(2)) - 1) - months
+    y, mo = divmod(total, 12)
+    return f"{y}-{mo + 1:02d}"
+
+
 def try_imports():
     try:
         import pandas as pd  # noqa: F401
@@ -256,6 +295,89 @@ def build_clean(rows: list[dict[str, Any]], pd, STL, sa_enabled: bool):
     return clean_rows, indicators_meta, vintage_traces
 
 
+def build_derived(clean_rows: list[dict[str, Any]], indicators_meta: list[dict[str, Any]],
+                   computed_at: str) -> tuple[list[dict[str, Any]], list[tuple]]:
+    """由观测层水平序列计算派生指标，返回 (派生 clean 行, 一致性对账行)。
+
+    规则：
+    - 若某期该派生指标已有官方观测值 -> 仅记录 derived_checks 对账（observed vs
+      公式派生），不覆盖、不重复入库。
+    - 若某期缺官方观测值（缺口）-> 写入 layer='derived' 行作兜底填充，并标注血缘。
+    - 派生值 source 记为 'derived'，避免冒充任一官方源（红线）。
+    """
+    import json as _json
+    from collections import defaultdict
+
+    obs: dict[tuple, float] = {}
+    for r in clean_rows:
+        obs[(r["indicator"], r["country"], r["period"])] = r["value"]
+
+    derived_rows: list[dict[str, Any]] = []
+    checks: list[tuple] = []
+    meta_keys = {(m["indicator"], m["country"]) for m in indicators_meta}
+    offset_by_transform = {"yoy_from_level": 12, "qoq_from_level": 3, "diff_level": 1}
+
+    for ind, spec in DERIVED_SPECS.items():
+        frm = spec["from"]; freq = spec["freq"]; transform = spec["transform"]
+        version = spec["version"]; scale = spec.get("scale", 1); tol = spec.get("tol", 0.05)
+        months = offset_by_transform[transform]
+        # 按国家收集底层源序列
+        src: dict[str, dict[str, float]] = defaultdict(dict)
+        for (si, cty, per), v in obs.items():
+            if si == frm and v is not None:
+                src[cty][per] = v
+        for cty, permap in src.items():
+            for per, v in permap.items():
+                pp = shift_period(per, months)
+                if pp is None or pp not in permap:
+                    continue
+                prev_v = permap[pp]
+                if prev_v in (None, 0):
+                    continue
+                if transform == "yoy_from_level":
+                    dv = (v / prev_v - 1) * scale
+                elif transform == "qoq_from_level":
+                    dv = (v / prev_v - 1) * scale
+                elif transform == "diff_level":
+                    dv = (v - prev_v) * scale
+                else:
+                    continue
+                dv = round(float(dv), 6)
+                ov = obs.get((ind, cty, per))
+                if ov is not None:
+                    delta = round(float(ov) - dv, 6)
+                    checks.append((ind, cty, per, ov, dv, delta, abs(delta),
+                                  1 if abs(delta) <= tol else 0, transform, version))
+                else:
+                    derived_rows.append({
+                        "indicator": ind, "country": cty, "period": per,
+                        "value": dv, "value_sa": None, "value_imputed": None, "is_imputed": 0,
+                        "source": "derived", "release_date": None, "collected_at": computed_at,
+                        "layer": "derived",
+                        "derived_from": _json.dumps([f"{frm}:{cty}"]),
+                        "transform": transform, "transform_version": version, "computed_at": computed_at,
+                    })
+                    if (ind, cty) not in meta_keys:
+                        meta_keys.add((ind, cty))
+                        indicators_meta.append({
+                            "indicator": ind, "country": cty,
+                            "label": METRICS.get(ind, {}).get("label", ind),
+                            "unit": METRICS.get(ind, {}).get("unit", ""),
+                            "frequency": freq, "sa_method": "derived",
+                            "first_period": per, "last_period": per,
+                            "n_obs": 1, "n_imputed": 0, "last_updated": computed_at,
+                        })
+                    else:
+                        for m in indicators_meta:
+                            if m["indicator"] == ind and m["country"] == cty:
+                                m["first_period"] = min(m["first_period"], per)
+                                m["last_period"] = max(m["last_period"], per)
+                                m["n_obs"] = m.get("n_obs", 0) + 1
+                                m["sa_method"] = "derived"
+                                break
+    return derived_rows, checks
+
+
 # --------------------------------------------------------------------------
 # 轮 B：数据可信度 —— revision_stats（修订幅度统计）+ source_trust（源可信度分级）
 # 借鉴 FAIR / data provenance 分级：官方一手 > 官方二次 > 第三方。绝不把第三方冒充一手。
@@ -303,7 +425,7 @@ def build_revision_stats(clean_rows: list[dict], vintage_traces: list[dict]) -> 
     return out
 
 
-def write_db(db_path: Path, clean_rows, indicators_meta, vintage_traces) -> None:
+def write_db(db_path: Path, clean_rows, indicators_meta, vintage_traces, derived_checks) -> None:
     conn = sqlite3.connect(db_path)
     conn.executescript("""
     DROP TABLE IF EXISTS clean_series;
@@ -311,11 +433,24 @@ def write_db(db_path: Path, clean_rows, indicators_meta, vintage_traces) -> None
     DROP TABLE IF EXISTS vintage_traces;
     DROP TABLE IF EXISTS revision_stats;
     DROP TABLE IF EXISTS source_trust;
+    DROP TABLE IF EXISTS transform_registry;
+    DROP TABLE IF EXISTS derived_checks;
     CREATE TABLE clean_series (
       indicator TEXT NOT NULL, country TEXT NOT NULL, period TEXT NOT NULL,
       value REAL, value_sa REAL, value_imputed REAL, is_imputed INTEGER NOT NULL DEFAULT 0,
       source TEXT, release_date TEXT, collected_at TEXT,
+      layer TEXT NOT NULL DEFAULT 'observed',
+      derived_from TEXT, transform TEXT, transform_version TEXT, computed_at TEXT,
       PRIMARY KEY(indicator, country, period)
+    );
+    CREATE TABLE transform_registry (
+      transform_id TEXT PRIMARY KEY, description TEXT NOT NULL, formula TEXT NOT NULL,
+      frequency TEXT NOT NULL, version TEXT NOT NULL, notes TEXT
+    );
+    CREATE TABLE derived_checks (
+      indicator TEXT NOT NULL, country TEXT NOT NULL, period TEXT NOT NULL,
+      observed_value REAL, derived_value REAL, delta REAL, abs_delta REAL,
+      consistent INTEGER NOT NULL, transform TEXT NOT NULL, transform_version TEXT NOT NULL
     );
     CREATE TABLE indicators (
       indicator TEXT NOT NULL, country TEXT NOT NULL, label TEXT, unit TEXT,
@@ -339,9 +474,13 @@ def write_db(db_path: Path, clean_rows, indicators_meta, vintage_traces) -> None
     );
     """)
     conn.executemany(
-        "INSERT OR REPLACE INTO clean_series VALUES(?,?,?,?,?,?,?,?,?,?)",
+        "INSERT OR REPLACE INTO clean_series "
+        "(indicator,country,period,value,value_sa,value_imputed,is_imputed,source,release_date,collected_at,layer,derived_from,transform,transform_version,computed_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(r["indicator"], r["country"], r["period"], r["value"], r["value_sa"],
-          r["value_imputed"], r["is_imputed"], r["source"], r["release_date"], r["collected_at"])
+          r["value_imputed"], r["is_imputed"], r["source"], r["release_date"], r["collected_at"],
+          r.get("layer", "observed"), r.get("derived_from"), r.get("transform"),
+          r.get("transform_version"), r.get("computed_at"))
          for r in clean_rows])
     conn.executemany(
         "INSERT OR REPLACE INTO indicators VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -356,6 +495,10 @@ def write_db(db_path: Path, clean_rows, indicators_meta, vintage_traces) -> None
     rev_stats = build_revision_stats(clean_rows, vintage_traces)
     conn.executemany("INSERT OR REPLACE INTO revision_stats VALUES(?,?,?,?,?,?)", rev_stats)
     conn.executemany("INSERT OR REPLACE INTO source_trust VALUES(?,?,?,?,?)", SOURCE_TRUST)
+    conn.executemany(
+        "INSERT OR REPLACE INTO transform_registry VALUES(?,?,?,?,?,?)", TRANSFORM_REGISTRY)
+    conn.executemany(
+        "INSERT INTO derived_checks VALUES(?,?,?,?,?,?,?,?,?,?)", derived_checks)
     conn.commit(); conn.close()
 
 
@@ -370,11 +513,17 @@ def main() -> int:
     pd, STL, sa_enabled = try_imports()
     rows = load_raw_rows(root)
     clean_rows, indicators_meta, vintage_traces = build_clean(rows, pd, STL, sa_enabled)
-    write_db(db_path, clean_rows, indicators_meta, vintage_traces)
+    computed_at = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    derived_rows, derived_checks = build_derived(clean_rows, indicators_meta, computed_at)
+    clean_rows.extend(derived_rows)
+    write_db(db_path, clean_rows, indicators_meta, vintage_traces, derived_checks)
+    n_inconsistent = sum(1 for c in derived_checks if c[7] == 0)
     print(json.dumps({
         "clean_db": str(db_path), "raw_rows": len(rows),
-        "clean_rows": len(clean_rows), "indicators": len(indicators_meta),
-        "vintage_traces": len(vintage_traces), "sa_enabled": sa_enabled,
+        "clean_rows": len(clean_rows), "observed_rows": len(clean_rows) - len(derived_rows),
+        "derived_rows": len(derived_rows), "indicators": len(indicators_meta),
+        "vintage_traces": len(vintage_traces), "derived_checks": len(derived_checks),
+        "derived_inconsistent": n_inconsistent, "sa_enabled": sa_enabled,
     }, ensure_ascii=False))
     return 0
 
