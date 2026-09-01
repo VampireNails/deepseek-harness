@@ -477,6 +477,12 @@
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
 
+    # MCP client bridge: lets any preset mount external MCP servers (e.g. the local
+    # macro-clean-db server) as native tools. First-party, opt-in per preset — a
+    # preset adds its own `mcp-client` instance row (with serverName/command) to use it.
+    - id: mcp-client
+      name: '@deepseek-ai/dsh-mcp-client'
+
     # ── rows every mode mounts, whose values each overlay may state ──────────────
 
     # The tool registry. Presentation mode is a deployment choice; omitting it here

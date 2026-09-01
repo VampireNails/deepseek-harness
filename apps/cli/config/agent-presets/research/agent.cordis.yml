@@ -59,3 +59,20 @@
 
 - id: tool-ask-user
   name: '@deepseek-ai/dsh-tool-ask-user'
+
+# ── macro data (read-only MCP bridge) ───────────────────────────────────────
+# Bridge the local `macro-clean-db` MCP server (scripts/macro-analysis/macro_mcp_server.py)
+# so research can cite the cleaned vintage macro dataset directly. Read-only; the
+# server exposes 7 tools (mcp__macro-clean-db__*). Spawned via the project's
+# unified python venv — the only interpreter that has the `mcp` package.
+- id: mcp-macro-clean
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: macro-clean-db
+    transport: stdio
+    command: 'C:/Users/Administrator/.workbuddy/binaries/python/envs/default/Scripts/python.exe'
+    args: ['D:/tmp/deepseek-harness/my-deepseek-harness/deepseek-harness/scripts/macro-analysis/macro_mcp_server.py']
+    env:
+      MACRO_CLEAN_DB: 'D:/tmp/deepseek-harness/outputs/macro_clean.sqlite'
+    cwd: 'D:/tmp/deepseek-harness/my-deepseek-harness/deepseek-harness'
+    failOnStartupError: false
