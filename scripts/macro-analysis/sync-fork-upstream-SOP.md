@@ -85,6 +85,7 @@ git cat-file -e "本地HEAD:$file" && echo PRESENT || echo MISSING
 | 日期 | upstream 基座 | tag | 本地 macro 提交 | 结果 |
 |---|---|---|---|---|
 | 2026-08-21 | `528c682e06` | `dsh-v0.1.1-rc.1` | `73247034d2` add workflow → `535d011d65` drop prediction → `45efa02a9d` add clean+MCP → `f1abd533cd` unify env | ✅ force-with-lease 推送成功；fork 旧 tip `5982084f`（rc.8+旧 macro）被覆盖，`analyze_macro_data.py` 移除 |
+| 2026-08-23 | `b150a551b8` | `dsh-v0.1.1-rc.2` | `f04330234f` add workflow → `5f296dca17` drop prediction → `2779c06edb` add clean+MCP → `2e0aba07f7` unify env → `e11e6268f6` docs SOP → `07e2222987` consolidate scripts | ✅ rc.1→rc.2 rebase（6/6 无冲突）+ force-with-lease 推送成功。推送前丢失核查：upstream 在 rc.2 自删 `.agents/notes/` 10 文件（rc.1 有、rc.2 无），已确认非本 fork 文件，安全覆盖 |
 
 ## 5. 关联坑位速查（详情见项目 `MEMORY.md`）
 
