@@ -1,3 +1,3 @@
 name: 代码评审
 description: 专职只读代码评审 Agent：以独立视角审查 diff/文件，覆盖正确性、idiomatic、边界条件与隐患，按置信度分级。只产出评审报告，不修改任何代码。可由标准模式经 subagent 委派并行评审，节省主上下文。
-order: 10
+order: 11
