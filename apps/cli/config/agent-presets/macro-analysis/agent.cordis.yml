@@ -1,0 +1,79 @@
+# The `macro-analysis` agent preset: the macro-data retrospective & forecast
+# surface.
+#
+# Format mirrors the user's other local presets (see `data-agent`): a cordis
+# AGENT-PLANE composition listing only what this agent HAS. The host
+# composition (base.cordis.yml + web.cordis.yml) keeps the registries, sandbox,
+# approval stack, persistence and model route — a preset must not own those.
+#
+# Tools wired here:
+#   - fs (read / write / edit) + fs-search (glob / grep) for reports & data
+#   - bash / pwsh to run the collector & proof scripts under scripts/
+#   - web to pull macro data when the collector needs a manual fetch
+#   - skill / goal / todo / workflow / ask-user for orchestration
+#   - subagent delegation for heavy analysis slices
+#
+# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+# Install/copy this directory to ~/.dsh/.agent-presets/macro-analysis for Web mode.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    # Web preset and headless overlay both read this single workflow source.
+    text: !!js >-
+      process.getBuiltinModule('node:fs').readFileSync(
+      process.getBuiltinModule('node:path').join(process.cwd(),
+      'apps', 'cli', 'config', 'agent-presets', 'macro-analysis', 'workflow.md'), 'utf8')
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── shells ──────────────────────────────────────────────────────────────────
+
+# Run the collector / proof scripts and any data wrangling under scripts/.
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+
+# ── web ─────────────────────────────────────────────────────────────────────
+
+# Fallback fetch for macro sources (Eastmoney / BLS / FRED) when the collector
+# needs a manual pull or a one-off probe.
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+
+# ── skills & orchestration ─────────────────────────────────────────────────
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: false
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+# Workflow orchestration is kept in workflow.md; this rc.5 host does not expose
+# workflowEngine to custom presets, so no workflow tool is mounted here.
+
+# Delegation is intentionally omitted: this rc.5 installation does not ship
+# @deepseek-ai/dsh-delegation. Heavy analysis remains in the host pipeline.

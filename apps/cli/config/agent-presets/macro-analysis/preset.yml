@@ -1,0 +1,3 @@
+name: 宏观分析
+description: 宏观数据回溯与预判 Agent：采集并归档美非农/就业、中国 PPI/PMI/CPI 等宏观指标的 vintage 数据，完成趋势、拐点、领先滞后分析与下一期预判。
+order: 5

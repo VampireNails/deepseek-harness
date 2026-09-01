@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Independent Proof gate for the macro-analysis Agent."""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sqlite3
+from pathlib import Path
+
+DB_NAME = "macro_indicators.sqlite"
+REQUIRED = {"cpi_yoy", "ppi_yoy", "manufacturing_pmi", "nonfarm_payroll_level", "nonfarm_payroll_change", "unemployment_rate"}
+
+
+def norm_period(value: object) -> str:
+    text = str(value or "").strip()
+    m = re.search(r"(20\d{2})\D{0,5}(0?[1-9]|1[0-2])", text)
+    return f"{m.group(1)}-{int(m.group(2)):02d}" if m else text[:10]
+
+
+def raw_period(raw: dict) -> str | None:
+    if raw.get("observation_date"):
+        return norm_period(raw["observation_date"])
+    if raw.get("TIME"):
+        return norm_period(raw["TIME"])
+    if raw.get("REPORT_DATE"):
+        return norm_period(raw["REPORT_DATE"])
+    if raw.get("year") and raw.get("period"):
+        return norm_period(f"{raw['year']}-{str(raw['period']).replace('M', '')}")
+    if raw.get("period"):
+        return norm_period(raw["period"])
+    return None
+
+
+def check(db_path: Path, date: str, strict: bool) -> dict:
+    uri = f"file:{db_path.as_posix()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    failures: list[str] = []
+    warnings: list[str] = []
+    try:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        for table in {"macro_indicators", "collection_checks", "source_registry"}:
+            if table not in tables:
+                failures.append(f"table missing: {table}")
+        rows = conn.execute("SELECT indicator_name,country,period,value,value_type,collected_at,source,raw_json,is_revision,original_value FROM macro_indicators").fetchall()
+        total = len(rows)
+        indicators = {r[0] for r in rows}
+        missing = sorted(REQUIRED - indicators)
+        bad = sum(1 for r in rows if not r[0] or not str(r[0]).strip() or r[3] is None)
+        if total == 0: failures.append("macro_indicators has no rows")
+        if bad: failures.append(f"rows with empty indicator/value: {bad}")
+        if missing: failures.append("required indicators missing: " + ", ".join(missing))
+
+        latest = conn.execute("SELECT MAX(checked_at) FROM collection_checks WHERE substr(checked_at,1,10)=?", (date,)).fetchone()[0] if "collection_checks" in tables else None
+        checks = conn.execute("SELECT source,status,dataset,rows_seen,detail FROM collection_checks WHERE checked_at=? ORDER BY id", (latest,)).fetchall() if latest else []
+        if not checks: failures.append("no collection_checks for requested date")
+        bls_ok = any(r[0] == "bls" and r[1] == "ok" for r in checks)
+        fred_ok = any(r[0] == "fred_csv" and r[1] == "ok" for r in checks)
+        if not bls_ok and not fred_ok: failures.append("neither BLS nor FRED fallback succeeded in latest batch")
+        if not bls_ok and fred_ok: warnings.append("BLS unavailable; FRED supplied US employment data")
+
+        revision_count = sum(1 for r in rows if r[8] == 1)
+        sources = conn.execute("SELECT source,COUNT(*),MIN(collected_at),MAX(collected_at) FROM macro_indicators GROUP BY source ORDER BY source").fetchall()
+
+        if strict:
+            mismatches = 0
+            for indicator, country, period, value, value_type, collected_at, source, raw_json, is_revision, original in rows:
+                try: raw = json.loads(raw_json or "{}")
+                except json.JSONDecodeError: failures.append(f"invalid raw_json for {indicator}/{period}"); continue
+                rp = raw_period(raw)
+                if rp and norm_period(period) != rp: mismatches += 1
+            if mismatches: failures.append(f"{mismatches} rows with raw/period mismatch")
+            dup = conn.execute("SELECT COUNT(*) FROM (SELECT 1 FROM macro_indicators GROUP BY indicator_name,country,period,value_type,collected_at,source HAVING COUNT(*)>1)").fetchone()[0]
+            if dup: failures.append(f"{dup} duplicate vintage-key groups")
+            bad_rev = conn.execute("SELECT COUNT(*) FROM macro_indicators WHERE is_revision=1 AND original_value IS NULL").fetchone()[0]
+            if bad_rev: failures.append(f"{bad_rev} revision rows without original_value")
+            report = db_path.parent / "macro_collection_report.md"
+            if not report.exists(): failures.append("macro_collection_report.md not found")
+            else:
+                text = report.read_text(encoding="utf-8")
+                m_rows = re.search(r"累计行数[：:]\s*`?(\d+)", text)
+                m_rev = re.search(r"修订行数[：:]\s*`?(\d+)", text)
+                if not m_rows: failures.append("report does not expose cumulative row count")
+                elif int(m_rows.group(1)) != total: failures.append(f"report rows {m_rows.group(1)} != db rows {total}")
+                if not m_rev: failures.append("report does not expose revision count")
+                elif int(m_rev.group(1)) != revision_count: failures.append(f"report revisions {m_rev.group(1)} != db revisions {revision_count}")
+
+        result = {"ok": not failures, "date": date, "db": str(db_path), "report": str(db_path.parent / "macro_collection_report.md"), "rows": total, "bad_rows": bad, "indicators": sorted(indicators), "missing_required": missing, "revision_rows": revision_count, "checks": [list(r) for r in checks], "sources": [list(r) for r in sources], "warnings": warnings, "failures": failures, "strict": strict}
+        return result
+    finally:
+        conn.close()
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(); ap.add_argument("--output-root", default=None); ap.add_argument("--date", required=True); ap.add_argument("--strict", action="store_true")
+    args = ap.parse_args(); root = Path(args.output_root or Path(__file__).resolve().parents[1] / "outputs"); db = root / args.date / DB_NAME
+    if not db.exists(): print(json.dumps({"ok": False, "error": f"db not found: {db}"}, ensure_ascii=False)); return 1
+    result = check(db, args.date, args.strict); print(json.dumps(result, ensure_ascii=False, indent=2)); return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__": raise SystemExit(main())
