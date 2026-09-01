@@ -1,0 +1,26 @@
+# 通用 fetch 能力 overlay（web / headless 均可用 --patch 加载）
+#
+# 背景：`@deepseek-ai/dsh-web-fetch-http` 存在但未进任何默认 bundle（与
+# mcp-client / tool-cordis 同类）。`dsh-tool-web` 插件的 `web_fetch` 默认即
+# 开启（schema `fetch: z.boolean().default(true)`）；standard preset 是显式
+# `fetch: false`，而 dev-qa/research 已显式 `fetch: true`。真正缺的是 host
+# 层的 fetch provider —— 缺它 `web_fetch` 会报 "no fetch provider"。本
+# overlay 的 `- insert:` 正是补这一块。
+#
+# 用法：
+#   node --expose-internals apps/cli/lib/bin.js --profile web \
+#     --patch scripts/workspace/web-fetch-overlay.yml
+#
+# 说明：`- id: tool-web config: fetch: true` 在 web 模式下是冗余的（host 层
+# tool-web 已被 web-app bundle 禁用，真实开关在 preset 层）；仅当本 overlay
+# 用于 headless（tool-web 在 host 层启用）时才有意义，保留以兼容两种模式。
+# 另注：provider 需在运行时可解析 —— 见 scripts/workspace/verify-presets.mjs
+# 与 .workbuddy/memory 的 symlink 说明（dsh-web-fetch-http 未进默认 bundle）。
+
+- id: tool-web
+  config:
+    fetch: true
+
+- insert:
+    - id: web-fetch-http
+      name: '@deepseek-ai/dsh-web-fetch-http'

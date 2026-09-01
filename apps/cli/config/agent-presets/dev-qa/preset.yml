@@ -1,0 +1,3 @@
+name: 开发质检
+description: 软件工程 Agent：仓库理解、代码编辑、Shell 闭环、测试自动化（改→测→修→再验）。适用于补测试、修 bug、重构、代码评审。
+order: 6

@@ -1,0 +1,61 @@
+# The `research` agent preset: research & information synthesis.
+#
+# Same flat, realm-free style as `dev-qa` / `macro-analysis`. The host
+# composition keeps registries, sandbox, approval, persistence and model route.
+# Delegation (parallel subagents) is omitted for now — see
+# `standard/agent.cordis.yml` for the grouped structure it requires.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: !!js >-
+      process.getBuiltinModule('node:fs').readFileSync(
+      process.getBuiltinModule('node:path').join(process.cwd(),
+      'apps', 'cli', 'config', 'agent-presets', 'research', 'workflow.md'), 'utf8')
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── shells ──────────────────────────────────────────────────────────────────
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+
+# ── web ─────────────────────────────────────────────────────────────────────
+
+# `web_search` is always on; `web_fetch` also defaults ON in dsh-tool-web, but
+# it needs the host-plane provider @deepseek-ai/dsh-web-fetch-http (not in any
+# default bundle). Start with `--patch scripts/workspace/web-fetch-overlay.yml`
+# (which inserts that provider) so page capture resolves at runtime.
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+
+# ── skills & orchestration ──────────────────────────────────────────────────
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
