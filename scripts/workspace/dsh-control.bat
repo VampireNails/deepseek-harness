@@ -39,10 +39,10 @@ echo [START] Launching dsh web profile (port %PORT%) - logs at %LOG%
 if not defined DEEPSEEK_API_KEY (
   echo [WARN] DEEPSEEK_API_KEY not found in .env - LLM calls will fail
 )
-rem Fetch provider enabled via the committed overlay (scripts\workspace\web-fetch-overlay.yml).
-rem base bundle intentionally leaves fetch off for SSRF safety; the overlay is the
-rem supported per-deployment enablement, so wire it into the default launch.
-node --expose-internals apps\cli\lib\bin.js --profile web --patch scripts\workspace\web-fetch-overlay.yml >> "%LOG%" 2>&1
+rem Fetch provider is solidified into dsh-base (packages/bundle/base/cordis.patch.yml),
+rem so it needs NO `--patch` overlay. Per-preset `tool-web fetch:` flag gates it
+rem (standard = false, dev-qa/research = true). Launch cleanly, no overlay.
+node --expose-internals apps\cli\lib\bin.js --profile web >> "%LOG%" 2>&1
 echo [STOP] dsh web exited
 exit /b 0
 
