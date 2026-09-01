@@ -33,10 +33,10 @@ from typing import Any
 METRICS: dict[str, dict[str, Any]] = {
     "cpi_yoy":              {"label": "中国 CPI 同比",        "unit": "%",   "sa": False},
     "cpi_mom":              {"label": "中国 CPI 环比",        "unit": "%",   "sa": False},
-    "cpi_base":             {"label": "中国 CPI 基期",        "unit": "2016=100", "sa": False},
+    "cpi_base":             {"label": "中国 CPI 同比指数",    "unit": "上年同月=100", "sa": False},
     "ppi_yoy":              {"label": "中国 PPI 同比",        "unit": "%",   "sa": False},
-    "ppi_base":             {"label": "中国 PPI 基期",        "unit": "2016=100", "sa": False},
-    "ppi_accumulated":      {"label": "中国 PPI 累计",        "unit": "%",   "sa": False},
+    "ppi_base":             {"label": "中国 PPI 同比指数",    "unit": "上年同月=100", "sa": False},
+    "ppi_accumulated":      {"label": "中国 PPI 累计同比指数", "unit": "年初至今累计=100", "sa": False},
     "manufacturing_pmi":    {"label": "中国制造业 PMI",       "unit": "点",  "sa": False},
     "nonmanufacturing_pmi": {"label": "中国非制造业 PMI",     "unit": "点",  "sa": False},
     "nonfarm_payroll_level":   {"label": "美国非农就业人数",  "unit": "千人", "sa": True},
