@@ -1,46 +1,57 @@
 # 宏观数据基石 — 越用越好的三飞轮 SOP
 
 > 本文件是「宏观分析 agent 如何作为数据基石越用越好」的权威方案与落地底稿，随每次落地追加演进记录。
-> 核心定位：**数据层只增不修、只读对外；所有"学习"产物写入独立库，绝不回写数据层。** 预测/学习与数据基石严格解耦。
+> **核心定位（2026-08-24 用户明确纠正）**：这个 agent 的价值 = **提供实时、准确、可靠的数据，不是预测预判**。
+> 「越用越好」= 数据质量的**实时性、准确性、可靠性**持续提升；数据层只增不修、只读对外，学习产物写独立库、绝不回写数据层。
 
-## 1. 开源借鉴（四类，均已调研核验）
+## 1. 数据质量三维度 × 三飞轮
 
-| 飞轮 | 借鉴来源 | 核心思想 | 我们怎么用 |
-|---|---|---|---|
-| ① 数据厚度 | ALFRED（圣路易斯联储 Archival FRED） | vintage = "当时已知信息"的时点快照；引用数据必须带采集日期；旧版本存档、不覆盖 | 已有 append-only vintage + `collected_at`；补 `revision_stats` 量化"初值→终值"偏差，反哺可信度评分 |
-| ② 校验智慧 | Great Expectations / dbt tests / Soda | expectation suite 声明"好数据长什么样"；失败留档(run history)；分层 severity；quarantine 隔离坏行 | 把固定 Proof 升级为"失败案例库 + 模式标签 + 历史命中"，即 GE 的迷你开源版（复用 sqlite，不引重依赖） |
-| ③ 案例沉淀 | Reflexion + Voyager（agent 经验闭环） | 反思写入 episodic memory 下次复用；成功经验固化为可检索技能库；改进是 in-context 而非改权重 | 分析 agent 每次判断→记假设→结果落地后反思→存 case 库→反哺 dsh case reference |
-| ③ 打分标准 | Metaculus / Brier score / superforecasting | proper scoring rule（Brier/CRPS）+ 校准(calibration)+分辨力(resolution)；只报命中率会骗人 | 预测 case 用 Brier/CRPS + 校准报告，禁止只报命中率 |
+| 维度 | 飞轮 | 借鉴来源 | 核心思想 | 落地方式 |
+|---|---|---|---|---|
+| 可靠性 | ① 数据厚度飞轮 | ALFRED（联储 Archival FRED） | vintage = "当时已知信息"的时点快照；引用必带采集日期；旧版本存档不覆盖 | 已有 append-only vintage + `collected_at`；补 `revision_stats` 量化初值→终值偏差 |
+| 准确性 | ② 校验智慧飞轮 | Great Expectations / dbt / Soda | expectation 声明"好数据长什么样" + 失败留档(run history) + 分层 severity | 失败案例库 + 模式标签 + 历史命中（已落地轮 A） |
+| 可信度 | ③ 源可信度治理飞轮 | FAIR / data provenance 分级 | 源分级：官方一手 > 官方二次 > 第三方；一手优先、多源交叉对账 | 源注册表已有 priority；待补：中国官方一手源 + 交叉对账 + 可信度评分 |
 
-## 2. 三飞轮架构
+## 2. 数据源可信度现状（2026-08-24 核验）
+
+| 国家 | 指标 | 当前源 | 是否官方一手 | 可信度 |
+|---|---|---|---|---|
+| 美国 | 非农 / 失业率 | BLS（美国劳工统计局） | ✅ 官方一手 | 高 |
+| 美国 | （BLS 不可达时兜底） | FRED（联储，数据归属 BLS） | ⚠️ 官方二次发布 | 中 |
+| 中国 | CPI / PPI / PMI | 东方财富 | ❌ 第三方结构化源 | 低 |
+
+**关键短板**：中国 8 个指标全部依赖第三方（东财），**无国家统计局（NBS）官方一手源**——这是当前可信度最大缺口，也是「越用越可靠」的第一优先级。
+
+## 3. 三飞轮架构
 
 ```
 ① 数据厚度飞轮（已在跑：Collect→Verify→Store→Clean→MCP 只读）
-        ↓ 反哺
-② 校验智慧飞轮（轮 A：verify 失败案例库 + 模式命中）
-        ↓ 提升基石可信度后
-③ 预测/案例沉淀飞轮（轮 C：分析 agent + case 库 + Brier 打分，独立于数据层）
+        ↓ 反哺可靠性
+② 校验智慧飞轮（轮 A：verify 失败案例库 + 模式命中，已落地）
+        ↓ 反哺准确性
+③ 源可信度治理飞轮（轮 B/C：一手源优先 + 多源交叉对账 + 可信度评分）
 ```
 
-## 3. 数据模型（新增三张独立库表，均不回写数据层）
+## 4. 数据模型（独立库表，均不回写数据层）
 
-- **轮 A**：`outputs/macro_verify.sqlite` → `verify_failures`（`checked_at`/`date`/`fail_tag`/`message`，append-only）
-- **轮 B**：`outputs/macro_clean.sqlite` 增 `revision_stats`（`indicator`/`country`/`first_value`/`last_value`/`mean_abs_rev`/`n_rev`）
-- **轮 C**：`outputs/analysis_cases.sqlite` → `cases`（假设/依据/预测/真实值/结论）+ `forecast_scores`（Brier/CRPS/calibration）
+- 轮 A：`outputs/macro_verify.sqlite` → `verify_failures`（已落地）
+- 轮 B：`outputs/macro_clean.sqlite` 增 `revision_stats`（初值/终值/平均修订幅度）+ `source_trust`（源可信度分级）
+- 轮 C：中国官方一手源接入（NBS 等探测）+ 多源交叉对账表（源间偏差记录）
 
-## 4. 落地清单
+## 5. 落地清单
 
-- [x] 轮 A：verify 失败案例库 + 模式命中（`verify_macro_data.py`）
-- [ ] 轮 B：`revision_stats` 可信度评分（`clean_macro_data.py`）
-- [ ] 轮 C：分析 agent preset + case 库 + Brier/CRPS 打分
+- [x] 轮 A：verify 失败案例库 + 模式命中
+- [ ] 轮 B：`revision_stats` + 源可信度评分
+- [ ] 轮 C：中国官方一手源探测 + 多源交叉对账
 
-## 5. 红线
+## 6. 红线
 
-1. 数据层只增不修；所有学习产物只写独立库，绝不回写 `macro_indicators` / `macro_clean`。
+1. 数据层只增不修；学习产物只写独立库，绝不回写 `macro_indicators` / `macro_clean`。
 2. Verify 失败不得进入 Clean（沿用）。
-3. 预测 case 必须记录假设 + 依据 + 真实值，否则不计入打分。
-4. 命中率必须配 Brier/校准报告，禁止只报命中率。
+3. **严禁把第三方源冒充官方一手**；源归属（authority/attribution）必须如实记录。
+4. 一手源不可达时的兜底源（如 FRED）必须标记真实来源，不得伪称一手。
 
-## 6. 演进记录
+## 7. 演进记录
 
-- 2026-08-24 定稿三飞轮 + 四类开源借鉴映射；落地轮 A（校验智慧飞轮）。
+- 2026-08-24 定稿三飞轮 + 开源借鉴；落地轮 A（校验智慧飞轮）。
+- 2026-08-24 方向纠正：定位从「预测预判越用越聪明」改为「数据实时/准确/可靠越用越好」；飞轮③ 从「案例沉淀」改为「源可信度治理」。
