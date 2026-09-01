@@ -99,6 +99,7 @@ git cat-file -e "本地HEAD:$file" && echo PRESENT || echo MISSING
 | 2026-08-21 | `528c682e06` | `dsh-v0.1.1-rc.1` | `73247034d2` add workflow → `535d011d65` drop prediction → `45efa02a9d` add clean+MCP → `f1abd533cd` unify env | ✅ force-with-lease 推送成功；fork 旧 tip `5982084f`（rc.8+旧 macro）被覆盖，`analyze_macro_data.py` 移除 |
 | 2026-08-23 | `b150a551b8` | `dsh-v0.1.1-rc.2` | `f04330234f` add workflow → `5f296dca17` drop prediction → `2779c06edb` add clean+MCP → `2e0aba07f7` unify env → `e11e6268f6` docs SOP → `07e2222987` consolidate scripts | ✅ rc.1→rc.2 rebase（6/6 无冲突）+ force-with-lease 推送成功。推送前丢失核查：upstream 在 rc.2 自删 `.agents/notes/` 10 文件（rc.1 有、rc.2 无），已确认非本 fork 文件，安全覆盖 |
 | 2026-08-24 | `b150a551b8` | `dsh-v0.1.1-rc.2` | （无 rebase；已是最新）仅 ahead 1 个 SOP 文档提交 `e4225b9867` | ✅ 检查确认 upstream 无推进（no-op）。推送 `e4225b9867` 成功。实测发现 **本地 `origin/master` 引用也 stale**（指向旧 SHA），标准 `--force-with-lease` 报 "stale info" 拒绝 → 改用显式 `--force-with-lease=master:8d73683864...` 推送成功；SOP 推送/复核步骤已同步修正 |
+| 2026-08-27 | `b150a551b8` | `dsh-v0.1.1-rc.2` | （无 rebase；已是最新）本地 master 含 17 个 macro 提交（派生指标治理等），fork 远端 `96b56aa1aa` == 本地 master | ✅ no-op：`git merge-base --is-ancestor b150a551b8 master` 为真，upstream 自 rc.2 无推进；fork 远端 head 已 == 本地 master，无需 rebase / 推送 |
 
 ## 5. 关联坑位速查（详情见项目 `MEMORY.md`）
 
