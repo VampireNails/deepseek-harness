@@ -316,7 +316,7 @@ def main() -> int:
     args = ap.parse_args()
     if args.proxy_url: os.environ["MACRO_PROXY_URL"] = args.proxy_url
     route = configure_network(); date = args.date or now_local().date().isoformat()
-    root = Path(args.output_root or Path(__file__).resolve().parents[1] / "outputs"); output = root / date; output.mkdir(parents=True, exist_ok=True)
+    root = Path(args.output_root or os.environ.get("MACRO_OUTPUT_ROOT") or Path(__file__).resolve().parents[1] / "outputs"); output = root / date; output.mkdir(parents=True, exist_ok=True)
     db_path = output / "macro_indicators.sqlite"; report_path = output / "macro_collection_report.md"; collected_at = now_local().isoformat(timespec="seconds")
     conn = sqlite3.connect(db_path)
     try:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sqlite3
 from pathlib import Path
@@ -93,7 +94,7 @@ def check(db_path: Path, date: str, strict: bool) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(); ap.add_argument("--output-root", default=None); ap.add_argument("--date", required=True); ap.add_argument("--strict", action="store_true")
-    args = ap.parse_args(); root = Path(args.output_root or Path(__file__).resolve().parents[1] / "outputs"); db = root / args.date / DB_NAME
+    args = ap.parse_args(); root = Path(args.output_root or os.environ.get("MACRO_OUTPUT_ROOT") or Path(__file__).resolve().parents[1] / "outputs"); db = root / args.date / DB_NAME
     if not db.exists(): print(json.dumps({"ok": False, "error": f"db not found: {db}"}, ensure_ascii=False)); return 1
     result = check(db, args.date, args.strict); print(json.dumps(result, ensure_ascii=False, indent=2)); return 0 if result["ok"] else 1
 

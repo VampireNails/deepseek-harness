@@ -24,6 +24,7 @@ import argparse
 import datetime as dt
 import glob
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -275,8 +276,8 @@ def main() -> int:
     ap.add_argument("--output-root", default=None)
     ap.add_argument("--clean-db", default=None)
     args = ap.parse_args()
-    root = Path(args.output_root or Path(__file__).resolve().parents[1] / "outputs")
-    db_path = Path(args.clean_db or root / "macro_clean.sqlite")
+    root = Path(args.output_root or os.environ.get("MACRO_OUTPUT_ROOT") or Path(__file__).resolve().parents[1] / "outputs")
+    db_path = Path(args.clean_db or os.environ.get("MACRO_CLEAN_DB") or root / "macro_clean.sqlite")
     db_path.parent.mkdir(parents=True, exist_ok=True)
     pd, STL, sa_enabled = try_imports()
     rows = load_raw_rows(root)

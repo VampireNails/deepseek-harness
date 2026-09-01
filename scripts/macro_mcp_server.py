@@ -36,7 +36,8 @@ from mcp.types import (
     Tool,
 )
 
-DEFAULT_DB = Path(__file__).resolve().parents[1] / "outputs" / "macro_clean.sqlite"
+OUT_ROOT = Path(os.environ.get("MACRO_OUTPUT_ROOT", str(Path(__file__).resolve().parents[1] / "outputs")))
+DEFAULT_DB = OUT_ROOT / "macro_clean.sqlite"
 DB = Path(os.environ.get("MACRO_CLEAN_DB", str(DEFAULT_DB)))
 
 server = Server("macro-clean-db")
