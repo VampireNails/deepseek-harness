@@ -165,7 +165,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_macro_key ON macro_indicators(indicator_name, country, period, value_type, source)")
     conn.executemany(
         "INSERT OR IGNORE INTO source_registry VALUES(?,?,?,?,?,?,?)",
-        [("eastmoney", "东方财富宏观数据中心", EASTMONEY_URL, "GET", "第三方结构化源", 2, 1),
+        [("nbs", "国家统计局 NBS", "https://data.stats.gov.cn", "GET", "中国官方一手源", 0, 1),
+         ("eastmoney", "东方财富宏观数据中心", EASTMONEY_URL, "GET", "第三方结构化源", 2, 1),
          ("bls", "美国劳工统计局 BLS", BLS_URL, "POST", "美国官方一手源", 1, 1),
          ("fred_csv", "圣路易斯联储 FRED（数据归属 BLS）", FRED_CSV_URL, "GET", "官方二次发布", 2, 1)],
     )
@@ -294,6 +295,49 @@ def collect_fred(conn: sqlite3.Connection, collected_at: str, years: int = 2) ->
     return inserted, errors
 
 
+# 中国官方一手源：国家统计局 NBS（经 nbsc 库封装的新 UUID API；easyquery 已于 2026-05 废弃）。
+# 官方一手优先于东财第三方；nbsc 未安装或接口失效时自动降级，东财仍兜底。
+NBS_INDICATORS = {
+    "cpi_yoy": ("get_annual_inflation", lambda v: round(v * 100, 4)),
+    "cpi_mom": ("get_recent_inflation", lambda v: round(v * 100, 4)),
+    "ppi_yoy": ("get_ppi_yoy", lambda v: round(v - 100, 4)),
+    "manufacturing_pmi": ("get_manufacturing_pmi", lambda v: round(v, 4)),
+    "nonmanufacturing_pmi": ("get_non_manufacturing_pmi", lambda v: round(v, 4)),
+}
+
+
+def collect_nbs(conn: sqlite3.Connection, collected_at: str, years: int = 2) -> tuple[int, list[str]]:
+    """采集中国官方一手宏观数据（NBS），口径对齐现有东财指标。"""
+    try:
+        import nbsc  # noqa: F401
+    except ImportError:
+        log_check(conn, collected_at, "nbs", "china_official", "skip", 0, "nbsc not installed; fallback eastmoney")
+        return 0, []
+    start_year = str(now_local().year - years + 1)
+    inserted, errors = 0, []
+    for indicator, (fn_name, transform) in NBS_INDICATORS.items():
+        try:
+            series = getattr(nbsc, fn_name)(start_year)  # pandas Series indexed by monthly Period
+            count = 0
+            for period, raw in series.items():
+                raw_f = float(raw)
+                if raw_f != raw_f:  # NaN guard
+                    continue
+                p = normalize_period(str(period))
+                if insert_vintage(conn, indicator=indicator, country="CN", period=p, value=transform(raw_f),
+                                  value_type="reported", release_date=None, collected_at=collected_at,
+                                  source="nbs", source_series=fn_name,
+                                  raw={"period": p, "raw_value": raw_f, "fn": fn_name}):
+                    inserted += 1; count += 1
+            conn.commit()
+            log_check(conn, collected_at, "nbs", indicator, "ok" if count else "empty", len(series), f"fn={fn_name}; inserted={count}")
+        except Exception as exc:
+            msg = safe_error(exc)
+            errors.append(f"nbs/{indicator}: {msg}")
+            log_check(conn, collected_at, "nbs", indicator, "error", 0, msg)
+    return inserted, errors
+
+
 def build_report(conn: sqlite3.Connection, report_path: Path, collected_at: str, inserted: int, errors: list[str]) -> None:
     total = conn.execute("SELECT COUNT(*) FROM macro_indicators").fetchone()[0]
     revisions = conn.execute("SELECT COUNT(*) FROM macro_indicators WHERE is_revision=1").fetchone()[0]
@@ -320,7 +364,9 @@ def main() -> int:
     db_path = output / "macro_indicators.sqlite"; report_path = output / "macro_collection_report.md"; collected_at = now_local().isoformat(timespec="seconds")
     conn = sqlite3.connect(db_path)
     try:
-        init_db(conn); inserted_cn, errors_cn = collect_eastmoney(conn, collected_at); inserted_us, errors_us = collect_bls(conn, collected_at)
+        init_db(conn); inserted_cn, errors_cn = collect_eastmoney(conn, collected_at)
+        nbs_inserted, nbs_errors = collect_nbs(conn, collected_at); inserted_cn += nbs_inserted; errors_cn += nbs_errors
+        inserted_us, errors_us = collect_bls(conn, collected_at)
         if errors_us:
             fred_inserted, fred_errors = collect_fred(conn, collected_at); inserted_us += fred_inserted; errors_us = [] if not fred_errors else errors_us + fred_errors
         build_report(conn, report_path, collected_at, inserted_cn + inserted_us, errors_cn + errors_us)

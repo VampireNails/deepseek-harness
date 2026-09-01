@@ -51,7 +51,7 @@ KEEP_VALUE_TYPE: dict[str, str] = {
     "nonfarm_payroll_level": "level_thousand_sa", "nonfarm_payroll_change": "thousand_persons_sa_mom",
     "unemployment_rate": "percent_sa",
 }
-SOURCE_PRIORITY = {"bls": 1, "eastmoney": 2, "fred_csv": 3}
+SOURCE_PRIORITY = {"nbs": 1, "bls": 1, "eastmoney": 2, "fred_csv": 3}
 
 
 def try_imports():
@@ -229,12 +229,61 @@ def build_clean(rows: list[dict[str, Any]], pd, STL, sa_enabled: bool):
     return clean_rows, indicators_meta, vintage_traces
 
 
+# --------------------------------------------------------------------------
+# 轮 B：数据可信度 —— revision_stats（修订幅度统计）+ source_trust（源可信度分级）
+# 借鉴 FAIR / data provenance 分级：官方一手 > 官方二次 > 第三方。绝不把第三方冒充一手。
+# --------------------------------------------------------------------------
+
+SOURCE_TRUST = [
+    ("nbs", "国家统计局 NBS", "official_primary", "中国官方一手源", 0),
+    ("bls", "美国劳工统计局 BLS", "official_primary", "官方一手源", 1),
+    ("fred_csv", "圣路易斯联储 FRED", "official_secondary", "官方二次发布（数据归属 BLS）", 2),
+    ("eastmoney", "东方财富宏观数据中心", "third_party", "第三方结构化源", 3),
+]
+
+
+def build_revision_stats(clean_rows: list[dict], vintage_traces: list[dict]) -> list[tuple]:
+    """按 (indicator,country) 汇总：首值/终值/修订次数/平均修订幅度。
+
+    免费源返回稳定修订值，故 n_rev 通常为 0；接入官方一手源（NBS 每日快照对比）后
+    此处才会有真实修订统计。字段不虚构：n_rev=0 时 mean_abs_rev 为 NULL。
+    """
+    from collections import defaultdict
+    rev: dict[tuple, dict] = defaultdict(lambda: {"n": 0, "abs": []})
+    for t in vintage_traces:
+        if t.get("is_revision") == 1:
+            rev[(t["indicator"], t["country"])]["n"] += 1
+            if t.get("original_value") is not None and t.get("value") is not None:
+                rev[(t["indicator"], t["country"])]["abs"].append(abs(t["value"] - t["original_value"]))
+    fl: dict[tuple, dict] = {}
+    for r in clean_rows:
+        key = (r["indicator"], r["country"])
+        if key not in fl:
+            fl[key] = {"first": r["value"], "last": r["value"], "fp": r["period"], "lp": r["period"]}
+        else:
+            if r["period"] < fl[key]["fp"]:
+                fl[key]["first"], fl[key]["fp"] = r["value"], r["period"]
+            if r["period"] > fl[key]["lp"]:
+                fl[key]["last"], fl[key]["lp"] = r["value"], r["period"]
+    out: list[tuple] = []
+    for key in sorted(set(fl) | set(rev)):
+        ind, cty = key
+        f = fl.get(key, {})
+        rv = rev.get(key, {"n": 0, "abs": []})
+        abs_revs = rv.get("abs", [])
+        mean_abs = round(sum(abs_revs) / len(abs_revs), 6) if abs_revs else None
+        out.append((ind, cty, f.get("first"), f.get("last"), rv.get("n", 0), mean_abs))
+    return out
+
+
 def write_db(db_path: Path, clean_rows, indicators_meta, vintage_traces) -> None:
     conn = sqlite3.connect(db_path)
     conn.executescript("""
     DROP TABLE IF EXISTS clean_series;
     DROP TABLE IF EXISTS indicators;
     DROP TABLE IF EXISTS vintage_traces;
+    DROP TABLE IF EXISTS revision_stats;
+    DROP TABLE IF EXISTS source_trust;
     CREATE TABLE clean_series (
       indicator TEXT NOT NULL, country TEXT NOT NULL, period TEXT NOT NULL,
       value REAL, value_sa REAL, value_imputed REAL, is_imputed INTEGER NOT NULL DEFAULT 0,
@@ -252,6 +301,15 @@ def write_db(db_path: Path, clean_rows, indicators_meta, vintage_traces) -> None
       value_type TEXT, source TEXT, collected_at TEXT, value REAL,
       original_value REAL, is_revision INTEGER
     );
+    CREATE TABLE revision_stats (
+      indicator TEXT NOT NULL, country TEXT NOT NULL,
+      first_value REAL, last_value REAL, n_revisions INTEGER, mean_abs_rev REAL,
+      PRIMARY KEY(indicator, country)
+    );
+    CREATE TABLE source_trust (
+      source TEXT PRIMARY KEY, authority TEXT NOT NULL,
+      trust_level TEXT NOT NULL, attribution TEXT NOT NULL, priority INTEGER NOT NULL
+    );
     """)
     conn.executemany(
         "INSERT OR REPLACE INTO clean_series VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -268,6 +326,9 @@ def write_db(db_path: Path, clean_rows, indicators_meta, vintage_traces) -> None
         [(t["indicator"], t["country"], t["period"], t["value_type"], t["source"],
           t["collected_at"], t["value"], t["original_value"], t["is_revision"])
          for t in vintage_traces])
+    rev_stats = build_revision_stats(clean_rows, vintage_traces)
+    conn.executemany("INSERT OR REPLACE INTO revision_stats VALUES(?,?,?,?,?,?)", rev_stats)
+    conn.executemany("INSERT OR REPLACE INTO source_trust VALUES(?,?,?,?,?)", SOURCE_TRUST)
     conn.commit(); conn.close()
 
 

@@ -182,6 +182,17 @@ def _get_metadata(args: dict) -> dict:
         c.close()
 
 
+def _get_source_trust() -> dict:
+    c = _conn()
+    try:
+        rows = c.execute(
+            "SELECT source,authority,trust_level,attribution,priority "
+            "FROM source_trust ORDER BY priority").fetchall()
+        return {"sources": [dict(r) for r in rows]}
+    finally:
+        c.close()
+
+
 # --------------------------------------------------------------------------
 # Tool registry (name -> (handler, description, input_schema))
 # --------------------------------------------------------------------------
@@ -244,6 +255,11 @@ TOOLS: list[Tool] = [
             "required": ["indicator"],
         },
     ),
+    Tool(
+        name="get_source_trust",
+        description="列出数据源可信度分级（官方一手 > 官方二次 > 第三方），含 authority/attribution/priority。用于判断某指标是否来自官方第一手数据。",
+        input_schema={"type": "object", "properties": {}},
+    ),
 ]
 
 _DISPATCH = {
@@ -252,6 +268,7 @@ _DISPATCH = {
     "get_latest": _get_latest,
     "get_vintage": _get_vintage,
     "get_metadata": _get_metadata,
+    "get_source_trust": lambda a: _get_source_trust(),
 }
 
 

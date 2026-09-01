@@ -26,13 +26,17 @@ CALLS = [
     ("get_latest", {"indicator": "unemployment_rate", "country": "US"}),
     ("get_vintage", {"indicator": "cpi_yoy", "country": "CN", "period": "2024-01"}),
     ("get_metadata", {"indicator": "manufacturing_pmi", "country": "CN"}),
+    ("get_source_trust", {}),
     # error path: missing required arg
     ("get_series", {}),
 ]
 
 
 async def main() -> int:
-    params = StdioServerParameters(command=PY, args=[SERVER])
+    params = StdioServerParameters(
+        command=PY, args=[SERVER],
+        env={"MACRO_OUTPUT_ROOT": r"D:\tmp\deepseek-harness\outputs"},
+    )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             init = await session.initialize()

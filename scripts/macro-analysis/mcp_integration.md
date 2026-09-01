@@ -47,7 +47,7 @@ server 只读 `outputs/macro_clean.sqlite`，不存在会报错。生成/更新�
 - 自定义数据库路径：加 `"env": { "MACRO_CLEAN_DB": "D:\\path\\to\\macro_clean.sqlite" }`；不设置则用脚本同级 `outputs/macro_clean.sqlite`。
 - server 仅 stdio、无网络、只读，客户端以子进程方式拉起。
 
-## 4. 工具清单（5 个）
+## 4. 工具清单（6 个）
 
 所有工具返回单个 JSON 对象（包在一条 text 内容块里），便于客户端解析。
 
@@ -58,6 +58,7 @@ server 只读 `outputs/macro_clean.sqlite`，不存在会报错。生成/更新�
 | `get_latest` | `indicator` | 各匹配国家最新一期（含原始/季节调整后/插补值、来源、发布日、采集时点） | `{indicator,country,latest:[{country,period,value,value_sa,value_imputed,is_imputed,source,release_date,collected_at}]}` |
 | `get_vintage` | `indicator`,`period` | 某发布周期的历次采集快照（vintage）。免费源返回稳定修订值，故记录每次采集的「值变化点」 | `{indicator,period,country,revisions:[{country,collected_at,value,original_value,is_revision,source,value_type}]}` |
 | `get_metadata` | `indicator` | 指标元数据 | `{indicator,country,metadata:[{...同 list_indicators 字段}]}` |
+| `get_source_trust` | — | 数据源可信度分级（官方一手 > 官方二次 > 第三方），含 authority/attribution/priority | `{sources:[{source,authority,trust_level,attribution,priority}]}` |
 
 参数缺失时返回 `isError=true` + `{"error":"..."}`（不会让 server 崩溃）。
 
@@ -67,12 +68,13 @@ server 只读 `outputs/macro_clean.sqlite`，不存在会报错。生成/更新�
 %VENV%\Scripts\python.exe scripts\macro-analysis\test_mcp_server.py
 ```
 
-预期：完成 `initialize` 握手、列出 5 个工具、逐个调用返回合法 JSON，最后一行为 `PASS 6/7 calls returned valid non-error JSON`（第 7 个是故意触发的报错用例）。
+预期：完成 `initialize` 握手、列出 6 个工具、逐个调用返回合法 JSON，最后一行为 `PASS 7/8 calls returned valid non-error JSON`（第 8 个是故意触发的报错用例）。
 
 ## 6. 数据事实与边界（已核验）
 
 - 清洗库当前规模：`clean_series` 1336 行、`indicators` 11 个指标/国家组合、`vintage_traces` 1235 行。
 - 指标键：`cpi_base`/`cpi_mom`/`cpi_yoy`/`ppi_base`/`ppi_yoy`/`ppi_accumulated`/`manufacturing_pmi`/`nonmanufacturing_pmi`（CN）、`nonfarm_payroll_change`/`nonfarm_payroll_level`/`unemployment_rate`（US）。
 - 历史长缺口（如 `nonfarm_payroll_change` 回溯至 1939）：因 `MAX_GAP=6` 上限，超过 6 期的空洞**保持 NULL，不虚构历史**；这些点的 `value_sa`/`value` 可能为 `null`，属预期。
-- 免费数据源（东财/BLS/FRED）返回的是稳定修订值，`is_revision` 恒为 0；vintage 语义改为记录「每次采集的值变化点」，而非官方初值 vs 修订值。
+- 数据源可信度分级（`get_source_trust` / 清洗库 `source_trust` 表）：`nbs`=官方一手、`bls`=官方一手、`fred_csv`=官方二次、`eastmoney`=第三方。中国 5 个核心指标（CPI 同比/环比、PPI 同比、制造业/非制造业 PMI）已用 NBS 官方一手源；`cpi_base`/`ppi_base`/`ppi_accumulated` 定基/累计指数仍用东财（NBS 免费接口未封装）。
+- 修订捕获：官方一手源（BLS）有真实修订——`nonfarm_payroll_change` 捕获 79 次修订（平均幅度 145.6 千人）；第三方源（东财）返回稳定修订值、`is_revision` 恒为 0。vintage 语义 = 每次采集的值变化点。
 - `value_sa`：对 level 型指标做 STL 季节调整；对 `not_applicable` 型（如同比、PMI）回退为插补序列，保证该字段对外不为空。
