@@ -1,0 +1,73 @@
+# The `ops` agent preset: ops automation — inspection, background jobs, scheduled tasks.
+#
+# Mirrors the flat, realm-free style of `macro-analysis` / `dev-qa` (verified working on
+# this host): only tools safe to mount flat are listed. The host composition
+# (base + web) keeps the registries, sandbox, approval stack, persistence and
+# model route — a preset must not own those. Delegation (subagent/workflow) is
+# intentionally omitted for now (same risk reasoning as dev-qa); enable later via
+# the grouped + isolated structure in `standard/agent.cordis.yml`.
+#
+# NOTE: community SSH capability (`dsh-ssh-remote`) is NOT bundled — it requires
+# `dsh plugin --profile <name> add` (pnpm install), which the WorkBuddy FS guard
+# blocks in-session. Documented in the P1 audit; install from a plain terminal.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    # Single source of truth: workflow.md drives Web preset and headless alike.
+    text: !!js >-
+      process.getBuiltinModule('node:fs').readFileSync(
+      process.getBuiltinModule('node:path').join(process.cwd(),
+      'apps', 'cli', 'config', 'agent-presets', 'ops', 'workflow.md'), 'utf8')
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── shells ──────────────────────────────────────────────────────────────────
+
+# The host layer already gates bash/pwsh by platform (win32 → pwsh only).
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+
+# ── background jobs / scheduling ────────────────────────────────────────────
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── web (status/health checks; fetch kept OFF by default for SSRF hygiene) ──
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+
+# ── skills & orchestration ──────────────────────────────────────────────────
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
