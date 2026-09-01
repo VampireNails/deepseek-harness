@@ -9,16 +9,13 @@
 # so the agent can run *non-mutating* checks (file perms, env facts, package
 # manifests); the workflow.md mandates confirm-before-any-write.
 #
-# NOTE: the community `security_audit` tool (from `dsh-plugin-audit`) is NOT
-# referenced here yet, because that plugin is not installed in this profile
-# (installing it needs `dsh plugin --profile web add dsh-plugin-audit@0.1.2`
-# in a plain terminal). Once it is installed, add ONE flat row:
-#
-#   - id: security-audit
-#     name: 'dsh-plugin-audit'
-#
-# and restart. Until then, this preset drives the audit workflow with the
-# built-in read-only tools below.
+# NOTE: `dsh-plugin-audit` is a BUNDLE plugin, not a preset mount. Installing it
+# (`dsh plugin --profile web add dsh-plugin-audit@0.1.2`) lists it in the
+# profile's `dsh.profile.bundles`; its `dsh.bundle.patch` (cordis.patch.yml)
+# injects the service automatically (row id `dsh-plugin-audit`, sentinelEnabled
+# true). It registers a `plugin_audit` tool plus a runtime sentinel — nothing to
+# mount here. This preset supplies the read-only audit METHODOLOGY (workflow.md)
+# and the built-in read-only tools below, which work with or without the plugin.
 
 # ── identity ────────────────────────────────────────────────────────────────
 
