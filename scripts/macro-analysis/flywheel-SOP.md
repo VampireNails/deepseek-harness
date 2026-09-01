@@ -62,3 +62,44 @@
 - 2026-08-24 定稿三飞轮 + 开源借鉴；落地轮 A（校验智慧飞轮）。
 - 2026-08-24 方向纠正：定位从「预测预判越用越聪明」改为「数据实时/准确/可靠越用越好」；飞轮③ 从「案例沉淀」改为「源可信度治理」。
 - 2026-08-24 轮 B+轮 C 落地并验证：`revision_stats`+`source_trust`+MCP `get_source_trust`；NBS 官方一手源接入（easyquery 已于 2026-05 废弃，改用 nbsc 库封装的新 UUID API），5 核心中国指标切换官方一手。验证发现：BLS 一手源 `nonfarm_payroll_change` 捕获 79 次修订（平均 145.6 千人），东财第三方 n_rev=0——量化印证「官方一手有修订可捕获、第三方没有」。
+
+## 8. 新增统计维度：持续导入与跟踪 SOP
+
+**核心结论**：新增一个维度只需「注册一次」，之后每日自动化流水线（collect→verify→clean）自动持续导入；跟踪由 5 张表 + 源可信度自动完成，新增维度零额外代码。
+
+### 8.1 注册一处新维度（一次性，3 处配置）
+
+按维度所属采集源，在 `collect_macro_data.py` 加一处：
+- 中国官方一手（优先）：`NBS_INDICATORS` 加 `{指标: (nbsc函数名, 口径转换lambda)}`，并确认 `nbsc` 已装。
+- 中国第三方兜底：`CHINA_SOURCES` 加 `{reportName: [(指标, 东财字段)]}`。
+- 美国官方一手：`BLS_SERIES` 加 `{指标: (series_id, 单位)}`。
+- 新数据源：在 `init_db` 的 `source_registry` 加一行（source/authority/endpoint/access_mode/attribution/priority/active），priority 越小越可信。
+
+在 `clean_macro_data.py` 加两处：
+- `METRICS` 加 `{指标: {label, unit, sa}}`（sa=True 才做 STL 季节调整）。
+- `KEEP_VALUE_TYPE` 加 `{指标: 保留的 value_type}`（如 `"reported"` / `"level_thousand_sa"`）。
+
+（可选）在 `verify_macro_data.py` 的 `REQUIRED_INDICATORS` 加该指标，使其参与强制校验。
+
+### 8.2 持续导入（自动）
+
+注册后无需任何手动操作：本机每日自动化（10:14 已验证）触发 `collect_macro_data.py --date <今日>`，对新维度执行 append-only 插入（`insert_vintage` 幂等、修订自动标记 `is_revision`）；随后 `verify`（strict，失败落 `verify_failures` 库）+ `clean`（重建 `macro_clean.sqlite`，新维度自动进入 `clean_series`/`indicators`/`vintage_traces`）。
+
+### 8.3 跟踪（自动）
+
+| 表 | 自动跟踪什么 | 何时写入 |
+|---|---|---|
+| `vintage_traces` | 每个 (指标,国家,period) 的值变化点 = 修订轨迹 | collect 每次 |
+| `collection_checks` | 每源每批 ok/empty/error + detail | collect 每次 |
+| `verify_failures` | 校验失败模式（fail_tag 标签 + 历史命中） | verify 每次 |
+| `revision_stats` | 修订次数 / 平均修订幅度 | clean 每次 |
+| `indicators` | 覆盖区间 / 观测数 / 插补数 / 更新时间 | clean 每次 |
+| `source_trust` | 源可信度分级（官方一手>二次>第三方） | clean 每次 |
+
+### 8.4 暴露
+
+clean 库经 MCP 6 工具只读暴露（`list_indicators`/`get_series`/`get_latest`/`get_vintage`/`get_metadata`/`get_source_trust`），新增维度自动出现在 `list_indicators` 与 `get_metadata`，无需改 MCP。
+
+### 8.5 已知增强方向（未做，可选）
+
+当前维度是「硬编码注册表」，新增需改 3 处文件。可收敛为**单一声明式 `dimensions.yaml`**（collect/clean/verify 均从它读取），新增维度只改一个文件。评估：当前 11 个维度改动频率低、收益有限；维度数显著增长（>30）时再做。
