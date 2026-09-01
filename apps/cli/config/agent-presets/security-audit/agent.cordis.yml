@@ -1,0 +1,79 @@
+# The `security-audit` agent preset: read-only security inspection + permission profiling.
+#
+# Mirrors the flat, realm-free style of `macro-analysis` / `dev-qa` / `ops`
+# (verified working on this host): only tools safe to mount flat are listed.
+# The host composition (base + web) keeps the registries, sandbox, approval
+# stack, persistence and model route — a preset must not own those.
+#
+# Read-only first: everything here is inspect-only by design. Shell is mounted
+# so the agent can run *non-mutating* checks (file perms, env facts, package
+# manifests); the workflow.md mandates confirm-before-any-write.
+#
+# NOTE: the community `security_audit` tool (from `dsh-plugin-audit`) is NOT
+# referenced here yet, because that plugin is not installed in this profile
+# (installing it needs `dsh plugin --profile web add dsh-plugin-audit@0.1.2`
+# in a plain terminal). Once it is installed, add ONE flat row:
+#
+#   - id: security-audit
+#     name: 'dsh-plugin-audit'
+#
+# and restart. Until then, this preset drives the audit workflow with the
+# built-in read-only tools below.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    # Single source of truth: workflow.md drives Web preset and headless alike.
+    text: !!js >-
+      process.getBuiltinModule('node:fs').readFileSync(
+      process.getBuiltinModule('node:path').join(process.cwd(),
+      'apps', 'cli', 'config', 'agent-presets', 'security-audit', 'workflow.md'), 'utf8')
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── shells ──────────────────────────────────────────────────────────────────
+
+# The host layer already gates bash/pwsh by platform (win32 → pwsh only).
+# Mounted so the agent can run non-mutating checks; workflow.md forbids writes
+# without confirmation.
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+
+# ── web (CVE / dependency lookup; fetch OFF for SSRF hygiene) ───────────────
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+
+# ── skills & orchestration ──────────────────────────────────────────────────
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
