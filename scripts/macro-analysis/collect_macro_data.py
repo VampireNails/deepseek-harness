@@ -337,8 +337,12 @@ def collect_nbs(conn: sqlite3.Connection, collected_at: str, years: int = 2) -> 
     try:
         import nbsc  # noqa: F401
     except ImportError:
-        log_check(conn, collected_at, "nbs", "china_official", "skip", 0, "nbsc not installed; fallback eastmoney")
-        return 0, []
+        # 官方一手源缺失必须显式上报（红线：不得静默降级）。
+        # 裸 python 无 nbsc 时，中国 18 个 NBS 指标会退化为东财第三方；
+        # 采集报告「待核项」必须列出，让使用者明确知晓官方一手源本次未采集。
+        msg = "nbs: nbsc 未安装，中国官方一手源(NBS)本次未采集（CPI/PPI/PMI/M0/M1/M2/GDP/失业率已退化为东财第三方或缺失）"
+        log_check(conn, collected_at, "nbs", "china_official", "skip", 0, "nbsc not installed; NBS official-primary unavailable; fallback eastmoney")
+        return 0, [msg]
     start_year = str(now_local().year - years + 1)
     inserted, errors = 0, []
     for indicator, (fn_name, transform) in NBS_INDICATORS.items():
@@ -371,7 +375,7 @@ def build_report(conn: sqlite3.Connection, report_path: Path, collected_at: str,
     checks = conn.execute("SELECT source,status,dataset,detail FROM collection_checks WHERE checked_at=? ORDER BY id", (collected_at,)).fetchall()
     fallback = any(s == "fred_csv" and st == "ok" for s, st, _, _ in checks)
     visible_errors = [e for e in errors if not (fallback and e.startswith("bls:"))]
-    lines = ["# 宏观数据采集报告", "", f"- 本次采集时点：`{collected_at}`", f"- 本次新增 vintage 行：`{inserted}`", f"- 库内累计行数：`{total}`", f"- 修订行数：`{revisions}`", f"- 覆盖指标：{', '.join(indicators) if indicators else '暂无'}", f"- 网络路由：`{_NETWORK_ROUTE}`（凭据不落库）", "", "## 数据源与口径", "- 中国 CPI/PPI/PMI：东方财富固定报表，来源标记 `eastmoney`。", "- 美国就业：首选 BLS；BLS 不可达时使用 FRED PAYEMS/UNRATE，并在 checks 中标记真实来源。", "- 所有观测保留 period、collected_at、source、source_series、raw_json；修订 append-only，不覆盖历史。", "", "## 本次质量检查", "", "| 来源 | 状态 | 数据集 | 详情 |", "|---|---|---|---|"]
+    lines = ["# 宏观数据采集报告", "", f"- 本次采集时点：`{collected_at}`", f"- 本次新增 vintage 行：`{inserted}`", f"- 库内累计行数：`{total}`", f"- 修订行数：`{revisions}`", f"- 覆盖指标：{', '.join(indicators) if indicators else '暂无'}", f"- 网络路由：`{_NETWORK_ROUTE}`（凭据不落库）", "", "## 数据源与口径", "- 中国 CPI/PPI/PMI/综合PMI/M0/M1/M2(及同比)/城镇调查失业率/GDP：首选国家统计局 NBS（`nbsc` 官方一手，直连免代理）；`cpi_base`/`ppi_base`/`ppi_accumulated` 等冗余派生/累计指数由东财第三方兜底，来源标记 `eastmoney`。", "- 美国就业：首选 BLS；BLS 不可达时使用 FRED PAYEMS/UNRATE，并在 checks 中标记真实来源。", "- 所有观测保留 period、collected_at、source、source_series、raw_json；修订 append-only，不覆盖历史。", "", "## 本次质量检查", "", "| 来源 | 状态 | 数据集 | 详情 |", "|---|---|---|---|"]
     lines.extend(f"| {s} | {st} | {ds} | {detail.replace('|', '/')[:180]} |" for s, st, ds, detail in checks)
     lines += ["", "## 待核项", ""]
     if visible_errors: lines.extend(f"- {e}" for e in visible_errors)

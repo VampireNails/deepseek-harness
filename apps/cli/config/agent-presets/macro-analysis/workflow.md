@@ -10,16 +10,18 @@
 - 原始数据库：`outputs/<YYYY-MM-DD>/macro_indicators.sqlite`。
 - 清洗数据库：`outputs/macro_clean.sqlite`（MCP server 的只读数据源）。
 - 采集报告：`outputs/<YYYY-MM-DD>/macro_collection_report.md`。
-- 必需指标：`cpi_yoy`、`ppi_yoy`、`manufacturing_pmi`、`nonfarm_payroll_level`、`nonfarm_payroll_change`、`unemployment_rate`。
+- 必需指标（verify `REQUIRED`）：`cpi_yoy`、`ppi_yoy`、`manufacturing_pmi`、`nonfarm_payroll_level`、`nonfarm_payroll_change`、`unemployment_rate`。
+- 已跟踪 24 指标（21 中国 + 3 美国），其中中国 18 个为 NBS 官方一手源。
 
 ## 1. 固定数据源与来源分级
 
 ### 中国
 
-- 东方财富宏观数据中心：`https://datacenter-web.eastmoney.com/api/data/v1/get`。
-- 固定报表：`RPT_ECONOMY_CPI`、`RPT_ECONOMY_PPI`、`RPT_ECONOMY_PMI`。
-- 主要字段：CPI `NATIONAL_SAME/NATIONAL_BASE/NATIONAL_SEQUENTIAL`；PPI `BASE_SAME/BASE/BASE_ACCUMULATE`；PMI `MAKE_INDEX/NMAKE_INDEX`。
-- 来源等级：第三方结构化源，报告中不得表述为统计机构原始响应。
+- **首选官方一手源：国家统计局 NBS**（经 `nbsc` 库封装的新 UUID API，`data.stats.gov.cn` 直连、免代理；easyquery 已于 2026-05 废弃）。已接入 18 个：CPI 同比/环比、PPI 同比/环比、制造业/非制造业/综合 PMI、M0/M1/M2（及同比）、城镇调查失业率、GDP（现价/不变价/同比/环比）。
+- 东方财富第三方兜底（仅 `cpi_base`/`ppi_base`/`ppi_accumulated` 等 NBS 免费接口未封装的冗余/累计指数）：`https://datacenter-web.eastmoney.com/api/data/v1/get`，固定报表 `RPT_ECONOMY_CPI`/`RPT_ECONOMY_PPI`/`RPT_ECONOMY_PMI`。
+- 东财主要字段：CPI `NATIONAL_SAME/NATIONAL_BASE/NATIONAL_SEQUENTIAL`；PPI `BASE_SAME/BASE/BASE_ACCUMULATE`；PMI `MAKE_INDEX/NMAKE_INDEX`。
+- 来源等级：NBS=官方一手；东财=第三方结构化源，报告中不得表述为统计机构原始响应。
+- `nbsc` 未安装或失效时自动降级东财，且采集报告「待核项」必须显式标注「官方一手源(NBS)本次未采集」——不得静默降级。
 
 ### 美国
 
@@ -71,8 +73,8 @@
 
 - 固定入口：`python scripts/macro-analysis/clean_macro_data.py --output-root outputs`。
 - 幂等重建 `outputs/macro_clean.sqlite`：源优先级去重 → 单位/口径归一 → 周期对齐(YYYY-MM) → 缺失值插补(线性，MAX_GAP=6 上限，长缺口保持 NULL 不虚构) → STL 季节调整(仅 level 型指标)。
-- 产物三表：`clean_series`(规范时序)、`indicators`(指标元数据)、`vintage_traces`(每次采集的值变化点)。
-- 清洗只做确定性变换，不做预测、不做趋势判断；对外由 `scripts/macro-analysis/macro_mcp_server.py` 以本地 stdio 只读暴露。
+- 产物七表：`clean_series`(规范时序，含 observed/derived 分层)、`indicators`(指标元数据)、`vintage_traces`(修订轨迹)、`revision_stats`(修订统计)、`source_trust`(源可信度分级)、`transform_registry`(变换登记簿)、`derived_checks`(派生一致性对账)。
+- 清洗只做确定性变换，不做预测、不做趋势判断；对外由 `scripts/macro-analysis/macro_mcp_server.py` 以本地 stdio 只读暴露（7 工具）。
 
 ## 红线
 
