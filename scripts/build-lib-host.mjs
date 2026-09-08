@@ -40,11 +40,16 @@ for (const [index, batch] of batches.entries()) {
       process.platform === 'win32' ? 'npx.cmd' : 'npx',
       ['tsdown', '-c', 'tsdown.config.ts', '--env.DSH_BUILD_FACE', 'host'],
       {
-        stdio: 'inherit',
+        // 用 pipe 而非 inherit：子进程拿不到父进程的 stdout fd，
+        // 避免构建进程退出时关闭 fd 导致后续 git push 写输出收到 SIGPIPE(141)。
+        stdio: ['ignore', 'pipe', 'pipe'],
+        maxBuffer: 64 * 1024 * 1024,
         shell: process.platform === 'win32',
         env: { ...process.env, DSH_BUILD_WORKSPACE: batch.join(',') },
       },
     )
+    if (result.stdout) process.stdout.write(result.stdout)
+    if (result.stderr) process.stderr.write(result.stderr)
     const code = result.status ?? 1
     if (code === 0) break
     if (attempt === RETRIES) {

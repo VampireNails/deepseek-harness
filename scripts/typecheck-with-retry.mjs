@@ -20,7 +20,13 @@ const MAX_ATTEMPTS = Number(process.env.DSH_TYPECHECK_RETRIES ?? 4)
 function run(script, label) {
   const isWindows = process.platform === 'win32'
   // npm 在 Windows 上通过 .cmd 分发，需走 shell 才能解析
-  const result = spawnSync('npm', ['run', script], { stdio: 'inherit', shell: isWindows })
+  const result = spawnSync('npm', ['run', script], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
+    shell: isWindows,
+  })
+  if (result.stdout) process.stdout.write(result.stdout)
+  if (result.stderr) process.stderr.write(result.stderr)
   return result.status ?? 1
 }
 
