@@ -13,7 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const home = process.env.USERPROFILE || process.env.HOME || '';
 const candidates = [
   path.join(here, 'workflow.md'),
-  path.join(home, '.dsh', '.agent-presets', 'equity-analysis', 'workflow.md'),
+  path.join(home, '.dsh', '.agent-presets', 'equity-research', 'workflow.md'),
 ];
 
 let workflow = null;
@@ -24,7 +24,7 @@ for (const candidate of candidates) {
   } catch {}
 }
 if (workflow === null) {
-  throw new Error(`preset equity-analysis: workflow.md not found; tried ${candidates.join(' | ')}`);
+  throw new Error(`preset equity-research: workflow.md not found; tried ${candidates.join(' | ')}`);
 }
 
 export const instructions = workflow;

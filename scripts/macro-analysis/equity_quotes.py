@@ -40,6 +40,17 @@ SOURCES_QUOTES = [
     (QUOTE_SRC, "腾讯 ifzq 日K接口", "third_party", "第三方行情日线，仅用于回测/风险指标"),
 ]
 
+# 新建库时 source_trust 尚不存在，直接 INSERT 会崩（2026-09-06 实测）。
+# 建表语句与 equity_fundamental.sqlite 中既有定义保持一致。
+SCHEMA_SRC_TRUST = """
+CREATE TABLE IF NOT EXISTS source_trust (
+    source      TEXT PRIMARY KEY,
+    authority   TEXT NOT NULL,
+    trust_level TEXT NOT NULL,
+    attribution TEXT NOT NULL
+);
+"""
+
 
 def _now() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -82,6 +93,7 @@ def fetch_kline(symbol: str, count: int) -> list[dict]:
 def collect(db: Path, symbols: list[str], count: int) -> None:
     con = sqlite3.connect(db)
     con.executescript(SCHEMA_QUOTES)
+    con.executescript(SCHEMA_SRC_TRUST)
     for row in SOURCES_QUOTES:
         con.execute("INSERT OR REPLACE INTO source_trust VALUES (?,?,?,?)", row)
     # batch 用天级日期（与 ingest/fundamental 一致）：同日重跑幂等，避免重复批次堆积
