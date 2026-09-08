@@ -1,5 +1,10 @@
 import { defineConfig } from 'tsdown'
 import { typertPlugin } from './packages/typert/generator/lib/types/tsdown-plugin.js'
+import { resolveWorkspace } from './scripts/tsdown-workspace.mjs'
+
+// 默认工作区范围（与 scripts/build-lib-host.mjs 的 PATTERNS 保持一致）。
+// 分批构建时由 DSH_BUILD_WORKSPACE 覆盖为本批包列表，未设置时行为不变。
+const WORKSPACE_PATTERNS = ['vendor/*', 'packages/*/*', 'apps/cli']
 
 function isBuildFaceClient(value: unknown): boolean {
   if (value === undefined || value === 'host') return false
@@ -16,7 +21,7 @@ function isBuildFaceClient(value: unknown): boolean {
 export default defineConfig(({ env }) => {
   const client = isBuildFaceClient(env?.DSH_BUILD_FACE)
   return {
-    workspace: ['vendor/*', 'packages/*/*', 'apps/cli'],
+    workspace: resolveWorkspace(WORKSPACE_PATTERNS),
     entry: client ? '' : ['lib/types/{index,invariant,startup}.js'],
     outDir: 'lib',
     format: ['esm'],
