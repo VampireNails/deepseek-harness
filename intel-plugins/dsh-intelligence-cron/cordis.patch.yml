@@ -1,0 +1,12 @@
+# Schedule overlay：显式挂载 dsh 自带的 @deepseek-ai/dsh-schedule cordis 插件
+#（host Schedule 服务：ScheduleRuntime 计时器 + schedule_create/delete 等原生工具
+# + session 投影）。0.1.7-rc.1 默认不加载它（dsh-web-app 注释里提到的
+# "explicit Schedule overlay" 即指此类显式挂载，本插件自带，无需 profile 另配）。
+# 注意：@deepseek-ai/dsh-schedule 不是 profile bundle（无 dsh.bundle 声明），
+# 不能写进 profile 的 bundles，只能以 plugin 行挂载。
+- insert:
+    - id: schedule
+      name: "@deepseek-ai/dsh-schedule"
+- insert:
+    - id: dsh-intelligence-cron
+      name: dsh-intelligence-cron

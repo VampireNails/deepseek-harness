@@ -11,3 +11,4 @@
 | 插件 | 状态 | 说明 |
 |---|---|---|
 | hello-intel | 阶段 0 验证用 | 最小挂载验证，可删除 |
+| dsh-intelligence-cron | P0（REPLICATION #11），已验收 | 用户自建定时间解析 + cron_create/list/delete；调度层走 `@deepseek-ai/dsh-schedule`（cron 插件自带 bundle overlay 挂载，profile 只需挂载 cron 插件）；session-local，错过触发点不补发 |
