@@ -32,7 +32,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 迁移脚本（migrate.sh + rollback.sh） | ✅ 完成（含 spaceCjk 对齐修复） |
 | 文档订正 + README npm ci | ✅ 完成 |
 | run-integration.sh DSH_HOME 隔离 | ✅ 完成 |
-| 24h 稳定性测试 | 🔄 运行中（2026-09-29 14:34 出结果） |
+| 24h 空转存活监控 | 🔄 运行中（2026-09-29 14:34 出结果；仅进程存活+RSS，非负载稳定性） |
 | HMC 端到端 | ✅ API 级通过（脚本入库，见 `intel/hmc-e2e.sh`）；手机上屏待 Tomas 真机 |
 
 **23 项的去向（由 §2 表统计得出，唯一口径）：**
@@ -143,7 +143,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - quiet 真后台（3 秒 vs 90 秒）；超时可配；pending→成功状态机
 - `migrate.sh`（备份→31 条记忆→feed 合并→画像→存档）+ `rollback.sh`；spaceCjk 对齐；created_at 回填
 - 文档订正 + README `npm ci`
-- 24h 稳定性（运行中）+ HMC 端到端 API 级验证（脚本入库）
+- 24h 空转存活监控（运行中；负载版 stability-load.sh 已就绪，待下轮启用）+ HMC 端到端 API 级验证（脚本入库）
 
 ### 3.3 关键决策记录
 
@@ -160,6 +160,6 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 ### 3.4 生产状态（2026-09-28）
 
 - **生产**：Python `deepseek-harness.service`（:8080），Tailscale Serve 指向它
-- **dsh**：`web-intel` 隔离 profile（:3080，24h 稳定性测试中）；`evolve` 跑定时任务（cron 未激活）；`hmc-test` 跑 HMC 服务验证（:43197）
+- **dsh**：`web-intel` 隔离 profile（:3080，24h 空转存活监控中）；`evolve` 跑定时任务（cron 未激活）；`hmc-test` 跑 HMC 服务验证（:43197）
 - **Git**：`intel` 分支已 push，`master` 跟踪上游
 - **待 Tomas**：HMC 手机真机配对；生产切换批准；cron 激活批准
