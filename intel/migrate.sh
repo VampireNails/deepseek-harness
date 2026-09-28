@@ -95,11 +95,15 @@ fi"
 
 # 5. goals/todos/日记 → intel-migration 存档
 log "存档 goals/todos/日记"
-dry "mkdir -p '$DSH_HOME/intel-migration/diary'
-for f in goals.json todos.json goals.md ideas.md; do
-  [ -f '$PY_MEM/\$f' ] && cp '$PY_MEM/\$f' '$DSH_HOME/intel-migration/' 2>/dev/null || true
-done
-cp '$PY_MEM'/2026-*.md '$DSH_HOME/intel-migration/diary/' 2>/dev/null || true
-echo '存档完成'"
+if [ $DRY_RUN -eq 1 ]; then
+  echo "[dry-run] 将存档 goals/todos/日记 → $DSH_HOME/intel-migration/"
+else
+  mkdir -p "$DSH_HOME/intel-migration/diary"
+  for f in goals.json todos.json goals.md ideas.md; do
+    [ -f "$PY_MEM/$f" ] && cp "$PY_MEM/$f" "$DSH_HOME/intel-migration/" || true
+  done
+  cp "$PY_MEM"/2026-*.md "$DSH_HOME/intel-migration/diary/" 2>/dev/null || true
+  echo '存档完成'
+fi
 
 log "迁移完成。回退用 ./rollback.sh"
