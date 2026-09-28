@@ -1,0 +1,17 @@
+{
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.1",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "description": "\u81ea\u6211\u8fdb\u5316\u5faa\u73af\uff1aupkeep / studying / idea_curation / dreaming / skill_review + heartbeat \u5de1\u68c0\u3002",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "Apache-2.0",
+  "main": "index.js",
+  "name": "dsh-intelligence-evolution",
+  "type": "module",
+  "version": "0.1.0"
+}

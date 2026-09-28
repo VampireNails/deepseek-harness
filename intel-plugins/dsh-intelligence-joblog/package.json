@@ -1,0 +1,17 @@
+{
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.1",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "description": "\u540e\u53f0\u4efb\u52a1\u8fd0\u884c\u65e5\u5fd7\u4e0e\u5931\u8d25\u544a\u8b66\uff08jobs.log / job_runs.json / job_alerts.md \u4e09\u4ef6\u5957\uff09\u3002",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "Apache-2.0",
+  "main": "index.js",
+  "name": "dsh-intelligence-joblog",
+  "type": "module",
+  "version": "0.1.0"
+}
