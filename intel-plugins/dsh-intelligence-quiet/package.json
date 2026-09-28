@@ -1,0 +1,1 @@
+{"dependencies":{"@deepseek-ai/schemastery": "~3.18.4"},"description":"Quiet-moment reflection: after each turn, spawn a small background reflection that saves durable memories.","dsh":{"bundle":{"patch":"./cordis.patch.yml"}},"license":"Apache-2.0","main":"index.js","name":"dsh-intelligence-quiet","type":"module","version":"0.1.0"}
