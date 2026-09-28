@@ -1,9 +1,11 @@
-# dsh-muse 复刻总览（2026-09-28）
+# dsh-muse 复刻总览（2026-09-28 修订版）
 
 > 一份文档讲清三件事：
 > ① dsh-muse 是否完成复刻（结论先行），
-> ② 完整复刻清单（23 项 Python 能力 → dsh 的去向），
+> ② 完整复刻清单（23 项 Python 能力 → dsh 的去向，**以 §2 表为唯一权威口径**），
 > ③ DeepSeek Harness 改造汇总（Python 单体 → dsh 插件架构）。
+>
+> 修订：2026-09-28，HEAD `c7a60ce58`。单元测试 21 用例 21 通过。
 
 ---
 
@@ -21,22 +23,28 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 3 | 自我进化 + Heartbeat + joblog | ✅ 完成 |
 | 4 | Feed + 用户画像 + 晨间简报 | ✅ 完成 |
 
-评估修复（第三方 intel.md，7 个问题）：
+评估修复（第三方评估，两轮）：
 
 | 问题 | 状态 |
 |---|---|
-| P0 自动化测试（单元 17 用例 + 集成 3/3） | ✅ 完成 |
-| P1 quiet 真后台（复刻 Python daemon 语义） | ✅ 完成 |
-| P2 迁移脚本（migrate.sh + rollback.sh） | ✅ 完成 |
-| P2 文档订正 3 处 + README npm ci | ✅ 完成 |
-| P0 24h 稳定性测试 | 🔄 运行中（2026-09-29 14:34 出结果） |
-| P0 HMC 端到端 | ✅ API 级通过（TLS→session/prompt→memory_write 落盘）；手机上屏待 Tomas 真机 |
+| 单元测试（21 用例全过）+ 集成测试（3/3） | ✅ 完成 |
+| quiet 真后台（复刻 Python daemon 语义） | ✅ 完成 |
+| 迁移脚本（migrate.sh + rollback.sh） | ✅ 完成（含 spaceCjk 对齐修复） |
+| 文档订正 + README npm ci | ✅ 完成 |
+| run-integration.sh DSH_HOME 隔离 | ✅ 完成 |
+| 24h 稳定性测试 | 🔄 运行中（2026-09-29 14:34 出结果） |
+| HMC 端到端 | ✅ API 级通过（脚本入库，见 `intel/hmc-e2e.sh`）；手机上屏待 Tomas 真机 |
 
-**三类"未复刻"，都不是缺口：**
+**23 项的去向（由 §2 表统计得出，唯一口径）：**
 
-1. **dsh 原生已有**（8 项）：agent loop、shell、文件、子智能体、会话、上传、MCP、网页搜索——dsh 自带，无需重复造轮子。
-2. **Tomas 明确不复刻**（9 项）：Gmail 等外部连接器、人物/群组档案、onboarding、图片生成、TTS、推送真实端点、真实 MCP server、预订/快递追踪、Tailscale Serve 跨重启。
-3. **不在 dsh-muse 范围**（6 项）：浏览器工具、Artifacts v2、审批四级、Hooks inbox、Goals 长期目标、用户自建 cron——这些是 Python 栈的加固，dsh 有语义不同的原生对应物；任务书未要求搬运，Tomas 未批准扩大范围。
+| 去向 | 数量 | 说明 |
+|---|---|---|
+| dsh 原生已有 | 8 | agent loop、shell、文件、子智能体、会话、上传、MCP、网页搜索——直接用 |
+| 新写插件 | 8 | 记忆、quiet、进化、Heartbeat、Feed、joblog、画像、晨报——dsh-muse 补的 |
+| 未排期 | 6 | 浏览器工具、Artifacts v2、审批四级、Hooks、Goals、用户 cron——任务书范围外 |
+| 不复刻 | 1 | 出站推送（#20）——Tomas 决定保留通道不推进 |
+
+**另有 7 项 Python 能力不在 23 项对比范围内**（dsh-muse 任务书从未纳入，Tomas 已决策不复刻）：Gmail 等外部连接器、人物/群组档案、onboarding 教学、图片生成、TTS、预订/快递追踪、Tailscale Serve 跨重启验收。
 
 ---
 
@@ -58,7 +66,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 10 | Hooks | 未排期 | dsh 有入站 webhook，无 inbox 轮询；任务书未要求 | — |
 | 11 | 用户自建 cron | 未排期 | dsh-schedule 是提醒非后台执行；任务书未要求 | — |
 | 12 | Goals 长期目标 | 未排期 | dsh goal 是同会话驱动，语义不同；任务书未要求 | — |
-| 13 | Quiet-moment | 新写插件 | `dsh-intelligence-quiet`（turn-stopping + 真后台） | 阶段 2 + P1 修复 |
+| 13 | Quiet-moment | 新写插件 | `dsh-intelligence-quiet`（turn-stopping + 真后台） | 阶段 2 + 真后台修复 |
 | 14 | 自我进化（5 任务） | 新写插件 | `dsh-intelligence-evolution`（cron + headless profile） | 阶段 3 |
 | 15 | Heartbeat | 新写插件 | 同上（`heartbeat_check` + 3 项分块） | 阶段 3 |
 | 16 | Feed | 新写插件 | `dsh-intelligence-feed`（`feed_post`/`feed_read`） | 阶段 4 |
@@ -69,6 +77,8 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 21 | joblog 三件套 | 新写插件 | `dsh-intelligence-joblog`（jobs.log/job_runs.json/job_alerts.md） | 阶段 3 |
 | 22 | 结构化用户画像 | 新写插件 | `dsh-intelligence-profile`（仅 Tomas 本人，step 1 注入） | 阶段 4 |
 | 23 | 晨间简报 | 新写插件 | cron 08:00（web_search + 画像 + 记忆 → Feed），未激活 | 阶段 4 |
+
+**统计**：8 dsh 原生 + 8 新写插件 + 6 未排期 + 1 不复刻 = 23 ✅
 
 **新写插件汇总**（6 个，全部在 `intel-plugins/`，树外独立 npm 包）：
 
@@ -107,14 +117,15 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - 踩坑：`@deepseek-ai/*` 必须 pin `0.1.7-rc.1`，npm 默认 `0.0.1-rc.1` 导致 `unknown tool`
 
 **阶段 1：记忆**（2026-09-28）
-- SQLite FTS5 + BM25，CJK 空格化（复刻 Python 检索语义）
+- SQLite FTS5 + BM25，CJK 空格化（`spaceCjk`：只在汉字两侧加空格，拉丁词保持完整）
 - 向量方案（ONNX bge-small-zh-v1.5，同进程 374MB）因内存预算否决
 - 检索契约可替换（`add/get/search/close`），以后内存宽裕可换向量
 
 **阶段 2：quiet-moment**（2026-09-28）
 - 初版在 `turn-stopping` 中同步等待，最长阻塞回合 90 秒
 - 评估后改为真后台：handler 不 await，fire-and-forget，复刻 Python daemon 线程语义
-- 5 分钟冷却 + SHA-256 去重 + 子智能体仅 `memory_write` + maxDepth 1
+- 5 分钟冷却 + SHA-256 去重 + `pendingHash` 防并发 + 子智能体仅 `memory_write` + maxDepth 1
+- 超时可配（`reflectTimeoutMs` 默认 90s）；`start()` 失败清 pending，不静默丢数据
 
 **阶段 3：进化 + Heartbeat + joblog**（2026-09-28）
 - 弃用 dsh-schedule（语义是"提醒"非"后台执行"），改用系统 cron + headless profile
@@ -127,27 +138,28 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - 画像：仅 Tomas 本人，step 1 自动注入（复刻 Python dreaming 每晚更新机制）
 - 晨报：08:00 cron，web_search + 画像 + 记忆 → 中文简报 → Feed（未激活）
 
-**评估修复**（2026-09-28，第三方 intel.md）
-- P0：6 插件单元测试（17 用例）+ mock LLM 集成测试（3/3）
-- P1：quiet 真后台（3 秒 vs 90 秒）
-- P2：`migrate.sh`（备份→31 条记忆→feed 合并→画像→存档）+ `rollback.sh`
-- P2：文档 3 处订正 + README `npm ci`
-- P0：24h 稳定性（运行中）+ HMC 端到端 API 级验证通过
+**评估修复**（2026-09-28，第三方两轮评估）
+- 单元测试 21 用例全过；集成测试 3/3（`run-integration.sh`，DSH_HOME 隔离）
+- quiet 真后台（3 秒 vs 90 秒）；超时可配；pending→成功状态机
+- `migrate.sh`（备份→31 条记忆→feed 合并→画像→存档）+ `rollback.sh`；spaceCjk 对齐；created_at 回填
+- 文档订正 + README `npm ci`
+- 24h 稳定性（运行中）+ HMC 端到端 API 级验证（脚本入库）
 
 ### 3.3 关键决策记录
 
 | 决策 | 选项 | 依据 |
 |---|---|---|
 | quiet 后台机制 | 真后台（fire-and-forget），不用 ctx.jobs | 复刻 Python daemon 线程语义；Tomas 拍板 |
+| 真后台适用边界 | **仅常驻 profile（web-intel）**；headless 不得依赖 | headless 退出会取消后台子智能体；evolve 不含 quiet |
 | 定时任务承载 | 系统 cron + headless，不用 dsh-schedule | dsh-schedule 是"提醒"语义，不等价 |
 | 手机端可见性 | A：隐形基础设施，不做 followup 弹窗 | 复刻 Python Muse 方式；Tomas 拍板 |
 | 记忆检索 | FTS5/BM25，不用向量 | 1GB 内存；ONNX 同进程 374MB 太贵 |
 | HMC 客户端 | 不修改，只读 + PR | Tomas 指示 |
 | 生产切换 | 未切；Python 仍是生产，dsh 在 web-intel 隔离验证 | Tomas 未批准切换 |
 
-### 3.4 生产状态（2026-09-28 14:52）
+### 3.4 生产状态（2026-09-28）
 
 - **生产**：Python `deepseek-harness.service`（:8080），Tailscale Serve 指向它
 - **dsh**：`web-intel` 隔离 profile（:3080，24h 稳定性测试中）；`evolve` 跑定时任务（cron 未激活）；`hmc-test` 跑 HMC 服务验证（:43197）
-- **Git**：`intel` 分支已 push（fd316ffd2），`master` 跟踪上游
+- **Git**：`intel` 分支已 push，`master` 跟踪上游
 - **待 Tomas**：HMC 手机真机配对；生产切换批准；cron 激活批准
