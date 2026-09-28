@@ -1,0 +1,1 @@
+{"dependencies":{"@deepseek-ai/dsh-llm":"0.1.7-rc.1","@deepseek-ai/dsh-tools":"0.1.7-rc.1","@deepseek-ai/schemastery":"~3.18.4"},"description":"Muse 行为规则复刻：每回合注入 Soul + soul_read/soul_update 工具。","dsh":{"bundle":{"patch":"./cordis.patch.yml"}},"license":"Apache-2.0","main":"index.js","name":"dsh-intelligence-soul","type":"module","version":"0.1.0"}
