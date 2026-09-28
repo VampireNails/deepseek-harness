@@ -1,11 +1,12 @@
 # dsh-muse 复刻总览（2026-09-28 修订版）
 
-> 一份文档讲清三件事：
+> 一份文档讲清四件事：
 > ① dsh-muse 是否完成复刻（结论先行），
 > ② 完整复刻清单（23 项 Python 能力 → dsh 的去向，**以 §2 表为唯一权威口径**），
-> ③ DeepSeek Harness 改造汇总（Python 单体 → dsh 插件架构）。
+> ③ DeepSeek Harness 改造汇总（Python 单体 → dsh 插件架构），
+> ④ 未排期 6 项的升级提议详细评估（P0/P1/P2，2026-09-28 新增）。
 >
-> 修订：2026-09-28，HEAD `c7a60ce58`。单元测试 21 用例 21 通过。
+> 修订：2026-09-28，HEAD `0844b903b`。单元测试 21 用例 21 通过。
 
 ---
 
@@ -34,7 +35,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | run-integration.sh DSH_HOME 隔离 | ✅ 完成 |
 | bootstrap 可复现脚本 | ✅ 完成（`intel/bootstrap.sh`：从零 clone 重建三 profile 已验证） |
 | 24h 空转存活监控 | 🔄 运行中（2026-09-29 14:34 出结果；仅进程存活+RSS，非负载稳定性） |
-| HMC 端到端 | ✅ API 级通过（TLS→401→session/create→session/prompt 全绿，证据 `intel/hmc-e2e-evidence-2026-09-28.log`）；手机真机已直连 100.73.148.102:43197 配对成功 |
+| HMC 端到端 | ✅ API 级通过（TLS→401→session/create→session/prompt 全绿，证据 `intel/hmc-e2e-evidence-2026-09-28.log`）；手机真机已直连 100.73.148.102:43197，Tomas 确认"已连上" |
 
 **23 项的去向（由 §2 表统计得出，唯一口径）：**
 
@@ -42,16 +43,26 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 |---|---|---|
 | dsh 原生已有 | 8 | agent loop、shell、文件、子智能体、会话、上传、MCP、网页搜索——直接用 |
 | 新写插件 | 8 | 记忆、quiet、进化、Heartbeat、Feed、joblog、画像、晨报——dsh-muse 补的 |
-| 未排期 | 6 | 浏览器工具、Artifacts v2、审批四级、Hooks、Goals、用户 cron——任务书范围外 |
+| 未排期 | 6 | 浏览器工具、Artifacts v2、审批四级、Hooks、Goals、用户 cron——任务书范围外，见 §四 评估 |
 | 不复刻 | 1 | 出站推送（#20）——Tomas 决定保留通道不推进 |
 
-**另有 7 项 Python 能力不在 23 项对比范围内**（dsh-muse 任务书从未纳入，Tomas 已决策不复刻）：Gmail 等外部连接器、人物/群组档案、onboarding 教学、图片生成、TTS、预订/快递追踪、Tailscale Serve 跨重启验收。
+**另有 7 项 Python 能力不在 23 项对比范围内**（dsh-muse 任务书从未纳入，Tomas 已决策不复刻）：
+
+| # | 能力 | 不复刻依据 |
+|---|---|---|
+| A1 | Gmail 等外部服务连接器 | Tomas 2026-09-27 明确决定不在复刻范围 |
+| A2 | 人物/群组档案 | 个人使用，Tomas 明确不要 |
+| A3 | onboarding 教学流程 | 一次性流程，无需复刻 |
+| A4 | 图片生成（ChatGPT 路线） | Cloudflare 硬拦截；Tomas 决定不复刻，media.py 已删 |
+| A5 | TTS | 同上，占位代码已删 |
+| A6 | 预订/快递追踪 | 低频能力，未排期 |
+| A7 | Tailscale Serve 跨重启验收 | 运维事项，非能力复刻 |
 
 ---
 
 ## 二、完整复刻清单（23 项 → dsh 去向）
 
-"去向"列：**dsh 原生** = 直接用；**新写插件** = dsh-muse 补的；**不复刻** = Tomas 决策；**未排期** = 任务书范围外。
+"去向"列：**dsh 原生** = 直接用；**新写插件** = dsh-muse 补的；**不复刻** = Tomas 决策；**未排期** = 任务书范围外（评估见 §四）。
 
 | # | Python 能力 | 去向 | dsh-muse 实现 | 验证 |
 |---|---|---|---|---|
@@ -59,14 +70,14 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 2 | 终端 `shell_exec` | dsh 原生 | `dsh-tool-bash`（多一层沙箱，超集） | 阶段 0 |
 | 3 | 文件读写 | dsh 原生 | `dsh-tool-fs`（多搜索/替换，超集） | 阶段 0 |
 | 4 | 网页抓取 + 搜索 | dsh 原生 | `dsh-tool-web`（单 DeepSeek 后端，基本等价） | 阶段 0 |
-| 5 | 多步浏览器（11 工具） | 未排期 | dsh 安装版无等价物；任务书未要求 | — |
+| 5 | 多步浏览器（11 工具） | 未排期 | dsh 安装版无等价物；任务书未要求 | §四 P1 |
 | 6 | 子智能体 | dsh 原生 | `dsh-tool-subagent`（in-process 驱动） | 阶段 2 真测 |
 | 7 | 语义记忆 | 新写插件 | `dsh-intelligence-memory`（SQLite FTS5；向量方案因 1GB 内存否决） | 阶段 1 |
-| 8 | Artifacts v2 | 未排期 | dsh 只有交付声明，无版本/沙盒；任务书未要求 | — |
-| 9 | 审批卡 + 四级权限 | 未排期 | dsh 有审批瀑布，无四级；任务书未要求 | — |
-| 10 | Hooks | 未排期 | dsh 有入站 webhook，无 inbox 轮询；任务书未要求 | — |
-| 11 | 用户自建 cron | 未排期 | dsh-schedule 是提醒非后台执行；任务书未要求 | — |
-| 12 | Goals 长期目标 | 未排期 | dsh goal 是同会话驱动，语义不同；任务书未要求 | — |
+| 8 | Artifacts v2 | 未排期 | dsh 只有交付声明，无版本/沙盒；任务书未要求 | §四 P2 |
+| 9 | 审批卡 + 四级权限 | 未排期 | dsh 有审批瀑布，无四级；任务书未要求 | §四 P1 |
+| 10 | Hooks | 未排期 | dsh 有入站 webhook，无 inbox 轮询；任务书未要求 | §四 P2 |
+| 11 | 用户自建 cron | 未排期 | dsh-schedule 是提醒非后台执行；任务书未要求 | §四 P0 |
+| 12 | Goals 长期目标 | 未排期 | dsh goal 是同会话驱动，语义不同；任务书未要求 | §四 P2 |
 | 13 | Quiet-moment | 新写插件 | `dsh-intelligence-quiet`（turn-stopping + 真后台） | 阶段 2 + 真后台修复 |
 | 14 | 自我进化（5 任务） | 新写插件 | `dsh-intelligence-evolution`（cron + headless profile） | 阶段 3 |
 | 15 | Heartbeat | 新写插件 | 同上（`heartbeat_check` + 3 项分块） | 阶段 3 |
@@ -162,5 +173,73 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 
 - **生产**：Python `deepseek-harness.service`（:8080），Tailscale Serve 指向它
 - **dsh**：`web-intel` 隔离 profile（:3080，24h 空转存活监控中）；`evolve` 跑定时任务（cron 未激活）；`hmc-test` 跑 HMC 服务验证（:43197）
+- **HMC 手机**：已直连 100.73.148.102:43197 配对成功（Tomas 2026-09-28 确认"已连上"）
 - **Git**：`intel` 分支已 push，`master` 跟踪上游
-- **待 Tomas**：HMC 手机真机配对；生产切换批准；cron 激活批准
+- **每周养成检查**：已改名"dsh-muse 每周养成检查"（每周一 09:15，覆盖 dsh-muse + Python 双系统）
+- **待 Tomas**：生产切换批准；cron 激活批准；§四 P0（用户自建 cron）开工批准
+
+---
+
+## 四、未排期 6 项升级提议评估（2026-09-28）
+
+评估方法：逐项核对 Python 源码实现 → dsh 原生差距 → dsh-muse 实现路线 → 对 Tomas 的价值 → 成本/风险 → 优先级。
+
+### P0：#11 用户自建 cron（最先做）
+
+- **Python 实现**：`agent/custom_cron.py`（229 行）。`cron_create/list/delete` 三个工具；中文时间解析（"每天9点"→cron 表达式）；APScheduler 进程内调度；上限 20 个任务。
+- **dsh 原生差距**：`dsh-schedule` 是"提醒"语义，不是后台执行——完全不等价，无直接替代。
+- **dsh-muse 路线**：复用阶段 3 已验证路径（系统 cron + `dsh --profile evolve` headless）。插件只需做：`cron_create` 中文时间解析（Python 逻辑直译约 200 行 JS）→ 写专用 cron 文件；触发时 headless 执行任务 prompt，结果写 Feed/记忆；`cron_list/delete` 纯 CRUD。
+- **价值**：高。"电脑级智能体"的用户可见核心能力——Tomas 在手机上一句话就能建定时任务。晨间简报（#23）已写好但 cron 未激活，用户自建 cron 是让 Tomas 自己能下指令的那一环。
+- **成本/风险**：中低。系统 cron 可靠；纯插件不动 dsh 核心；无新增常驻内存。
+
+### P1：#9 审批卡 + 四级权限（分两层）
+
+- **Python 实现**：`agent/permissions.py` + `agent/approvals.py`。四级：READ（自动放行）/ WRITE（默认放行+记日志）/ APPROVAL（弹卡等确认，主循环现场存 `pending_runs`，30 分钟过期）/ BLOCKED（高危 shell 正则直接拒：`rm -rf /`、fork 炸弹、写裸设备等）。
+- **dsh 原生差距**：dsh 有审批瀑布，但无分级、无 BLOCKED 硬拦截。
+- **dsh-muse 路线**（拆两层，风险不同）：
+  - **BLOCKED 层（先做）**：纯插件，shell 工具调用前正则检查，命中直接拒。零 UI 依赖，可独立交付。
+  - **APPROVAL 层（后做）**：依赖 dsh 审批瀑布在 **HMC 手机端** 的呈现方式——未知数，需先验证，不可假设。
+- **价值**：高。cron 和浏览器跑起来后自动操作破坏力上升，审批是安全带。Tomas 单用户自用，WRITE 默认放行已够宽松，短期不阻塞。
+- **成本/风险**：中。BLOCKED 正则可直接移植；APPROVAL 需先验证 HMC 行为。
+
+### P1：#5 多步浏览器（先过内存压测）
+
+- **Python 实现**：11 个工具（`browser_open/snapshot/screenshot/close/select/wait/downloads/click/fill`…）；persistent context（`workspace/browser_profile`）；下载自动落盘。
+- **dsh 原生差距**：`dsh-tool-web` 只有单次抓取/搜索，无多步交互、无状态保持。6 项中差距最大。
+- **dsh-muse 路线**：Playwright 插件，工具集对等移植。**硬约束**：Chromium 常驻约 200–300MB，1GB 机器上不可行——只能按需启动、用完即关。Cloudflare 指纹拦截是已知风险（2026-09-27 ChatGPT 路线已验证）。
+- **价值**：高，电脑级智能体的标志能力。但 Tomas 主用手机遥控，浏览器更多是 agent 自主 research 用，非每天高频。
+- **成本/风险**：高。Playwright 安装包大；内存峰值需压测；OOM 则停下报告（硬约束）。
+- **前置条件**：内存压测通过才能开工。
+
+### P2：#12 Goals 长期目标（简单，不紧急）
+
+- **Python 实现**：`agent/goals.py`。`goals.json` + 自动渲染 `goals.md`；`goal_list/create/log/close` 四个工具；studying 任务读 goals.md。
+- **dsh 原生差距**：dsh 的 goal 是同会话驱动，语义完全不同；无跨会话长期目标概念。
+- **dsh-muse 路线**：插件实现（约 150 行），step 1 注入 active goals（复刻 profile 画像注入模式）。
+- **价值**：中。Muse 侧 tracking 系统已在管目标，dsh-muse 内部 goals 是 agent 自视角，短期不缺也能跑。
+- **成本**：低。随时可做，不紧急。
+
+### P2：#10 Hooks（无触发源，暂缓）
+
+- **Python 实现**：`agent/hooks.py`。webhook（`POST /api/hooks/<name>`）+ 文件轮询（`workspace/inbox/` 每 20 秒）；动作：跑一轮 agent 或 shell。
+- **dsh 原生差距**：入站 webhook dsh 原生有；缺 inbox 文件轮询。
+- **关键问题**：**触发源在哪里？** Tomas 已决定不复刻 Gmail 等外部连接器——inbox 里谁放文件？webhook 给谁调？无外部系统接入就是空转轮询。
+- **结论**：实现成本低（几十行），但无触发场景即死代码。等 Tomas 明确"我要 X 事件触发 Y"再做。
+
+### P2：#8 Artifacts v2（无消费场景，暂缓）
+
+- **Python 实现**：`agent/artifacts.py`（207 行）。版本历史；HTML sandbox iframe 渲染；`/raw` `/download` `/versions` 路由。
+- **dsh 原生差距**：dsh 只有交付声明，无版本、无沙盒渲染。
+- **关键问题**：**谁消费？** Tomas 主用手机 HMC；Python 版依赖 Web UI，而 dsh-muse 连 Feed Web UI 都未复刻（阶段 4 已知缺口）。存储层简单，贵的是渲染 UI。
+- **结论**：等 Feed Web UI 排期时一起考虑，或 Tomas 明确要手机看文档再做。
+
+### 实施路线图
+
+| 批次 | 内容 | 前置条件 |
+|---|---|---|
+| 切生产前 | #11 用户自建 cron + #9 BLOCKED 层 | 均为纯插件，隔离 profile 可验证；需 Tomas 批准开工 |
+| 切生产后① | #9 APPROVAL 层 | 先验证 dsh 审批瀑布在 HMC 手机端的呈现 |
+| 切生产后② | #5 多步浏览器 | 先通过内存压测（OOM 则停） |
+| 按需 | #12 Goals / #10 Hooks / #8 Artifacts v2 | Tomas 一句话启动，不提前写死代码 |
+
+**与生产切换的关系**：2026-09-29 14:34 收 24h 空转监控结果 → Tomas 决策是否切生产 → 切生产后再按上表推进。切生产前不做 P1/P2，避免在隔离环境验证无意义的功能。
