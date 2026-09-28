@@ -39,7 +39,7 @@ dsh_db_path = os.path.expandvars('$DSH_HOME/intel-memory/memory.db')
 os.makedirs(os.path.dirname(dsh_db_path), exist_ok=True)
 # 用 dsh 的 schema 建表（若不存在）
 import subprocess
-# 直接 SQL 插入，复用 dsh 的 FTS5 触发器逻辑
+# 直接 SQL 插入，手工双写 memories + memories_fts（store.js 无触发器，与线上写入路径一致）
 dsh = sqlite3.connect(dsh_db_path)
 dsh.execute('''CREATE TABLE IF NOT EXISTS memories(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,16 +48,17 @@ dsh.execute('''CREATE TABLE IF NOT EXISTS memories(
 dsh.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
   USING fts5(text, tokenize=\"unicode61\")''')
 count = 0
-for src, text in py_db.execute('SELECT source, text FROM chunks'):
+for src, text, created_at in py_db.execute('SELECT source, text, created_at FROM chunks'):
     kind = 'note'
     if 'MEMORY.md' in src: kind = 'fact'
     # 去重：相同文本跳过
     if dsh.execute('SELECT 1 FROM memories WHERE text=?', (text,)).fetchone():
         continue
     r = dsh.execute('INSERT INTO memories(text,kind,created_at,session_id) VALUES(?,?,?,?)',
-                    (text, kind, 0, None))
-    # CJK 空格化（与 dsh retriever 一致）
-    spaced = ' '.join(text)
+                    (text, kind, int(created_at or 0), None))
+    # CJK 空格化（与 retriever.js spaceCjk 等价：只在汉字两侧加空格，拉丁词保持完整）
+    import re as _re
+    spaced = _re.sub(r'\s+', ' ', _re.sub(r'([一-鿿])', r' \1 ', text)).strip()
     dsh.execute('INSERT INTO memories_fts(rowid,text) VALUES(?,?)', (r.lastrowid, spaced))
     count += 1
 dsh.commit()

@@ -1,9 +1,20 @@
 #!/bin/bash
 # 集成测试：mock LLM + dsh headless 真跑，断言智能层副作用。
 # 用法：./run-integration.sh
-# 要求：dsh 已安装，mock server 在 packages/test-support/llm-mock-server
+# 要求：dsh 已安装，mock server 在 packages/test-support/llm-mock-server，
+#       python3（sqlite/json 断言），zstd（解会话快照）
+# 数据安全：全程使用隔离的 DSH_HOME（mktemp），不碰真实 ~/.dsh。
 set -e
 cd "$(dirname "$0")/.."
+
+export DSH_HOME="$(mktemp -d)"
+trap 'rm -rf "$DSH_HOME"' EXIT
+echo "隔离 DSH_HOME=$DSH_HOME"
+# 重建 evolve profile：只拷定义文件，用 dsh 自带 install 重建 link（离线可跑）
+# 数据目录（intel-memory 等）保持全新隔离，不从真实 ~/.dsh 拷
+mkdir -p "$DSH_HOME/profiles/evolve"
+cp "$HOME/.dsh/profiles/evolve/package.json" "$HOME/.dsh/profiles/evolve/cordis.yml" "$DSH_HOME/profiles/evolve/"
+(cd "$DSH_HOME/profiles/evolve" && dsh plugin --profile evolve install >/dev/null 2>&1)
 
 MOCK_PORT=18090
 MOCK_DIR="packages/test-support/llm-mock-server"
@@ -28,41 +39,44 @@ stop_mock() { kill $MOCK_PID 2>/dev/null || true; }
 
 run_dsh() {
   echo "$1" | DEEPSEEK_BASE_URL=http://127.0.0.1:$MOCK_PORT/v1 \
-    DEEPSEEK_API_KEY=mock-key timeout 120 dsh --profile "$2" > /tmp/itest-dsh.log 2>&1 || true
+    DEEPSEEK_API_KEY=mock-key timeout 90 dsh --profile "$2" 2>&1 | tail -3
 }
 
 latest_session() {
-  find ~/.dsh/sessions/ -name "session.v4.jsonl.zstd" -newermt "5 minutes ago" 2>/dev/null | head -1
+  find "$DSH_HOME/sessions/" -name "session.v4.jsonl.zstd" -newermt "5 minutes ago" -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -1 | cut -d" " -f2-
 }
 
 echo "=== 集成测试：memory_write → DB 落盘 ==="
-rm -rf ~/.dsh/intel-memory
+rm -rf "$DSH_HOME/intel-memory"
 echo '{"text":"集成测试记忆：用户喜欢喝茶","kind":"preference"}' > /tmp/itest-args.json
 start_mock "tool_call_success,success" "memory_write" /tmp/itest-args.json
 run_dsh "请记住：用户喜欢喝茶" "evolve"
 stop_mock
 if python3 -c "
 import sqlite3, os
-db = sqlite3.connect(os.path.expandvars('\$HOME/.dsh/intel-memory/memory.db'))
+db = sqlite3.connect(os.path.join(os.environ['DSH_HOME'], 'intel-memory/memory.db'))
 rows = db.execute(\"SELECT text FROM memories WHERE text LIKE '%喝茶%'\").fetchall()
 assert rows, 'DB 中没有喝茶记忆'
 print('DB 命中:', rows[0][0][:30])
 "; then pass "memory_write 落盘"; else fail "memory_write 落盘"; fi
 
 echo "=== 集成测试：feed_post → feed.json ==="
-rm -rf ~/.dsh/intel-feed
+rm -rf "$DSH_HOME/intel-feed"
 echo '{"title":"集成测试简报","body":"正文","source":"测试"}' > /tmp/itest-args.json
 start_mock "tool_call_success,success" "feed_post" /tmp/itest-args.json
 run_dsh "发一条 Feed 简报" "evolve"
 stop_mock
 if python3 -c "
 import json, os
-d = json.load(open(os.path.expandvars('\$HOME/.dsh/intel-feed/feed.json')))
+d = json.load(open(os.path.join(os.environ['DSH_HOME'], 'intel-feed/feed.json')))
 assert d[0]['title'] == '集成测试简报', d
 print('feed:', d[0]['id'], d[0]['title'])
 "; then pass "feed_post 落盘"; else fail "feed_post 落盘"; fi
 
 echo "=== 集成测试：画像在 step 1 注入 ==="
+# seed 最小画像（否则插件无数据时跳过注入）
+mkdir -p "$DSH_HOME/intel-profile"
+printf '# 用户画像（测试）\n\n## 基本信息\n测试用户\n' > "$DSH_HOME/intel-profile/user_profile.md"
 start_mock "success"
 run_dsh "你好" "evolve"
 stop_mock
