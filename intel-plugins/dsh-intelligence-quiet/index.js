@@ -42,11 +42,16 @@ export function apply(ctx, config) {
 
   // 复刻 Python 版 daemon 线程语义：handler 不 await，复盘在后台跑，
   // 回合结束不被阻塞（评估问题 3 的修复）。
-  ctx.on("agent/turn-stopping", ({ agent, turn }) => {
-    maybeReflect(ctx, config, state, agent, turn).catch((e) => {
-      console.error("[dsh-intelligence-quiet]", e?.message || e);
-    });
-  });
+  // 包 ctx.effect：插件卸载时 listener 自动回收。
+  ctx.effect(
+    () =>
+      ctx.on("agent/turn-stopping", ({ agent, turn }) => {
+        maybeReflect(ctx, config, state, agent, turn).catch((e) => {
+          console.error("[dsh-intelligence-quiet]", e?.message || e);
+        });
+      }),
+    "intelQuiet.turnStopping"
+  );
 }
 
 async function maybeReflect(ctx, config, state, agent, turn) {

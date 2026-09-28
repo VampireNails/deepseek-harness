@@ -17,7 +17,7 @@
 | C. 复用 Python embedding sidecar | — | ❌ 任务书明令禁止（最终 Python 必须可停） |
 
 否决 A 的算术：dsh web 本体 144MB + 向量增量约 230MB ≈ 374MB > 迁移期可用内存约 355MB，
-Python 栈并存时必爆。检索做成**可替换契约**（`lib/retriever.js`：`add/get/search/close`），
+Python 栈并存时必爆。检索做成**可替换契约**（`src/retriever.js`：`add/get/search/close`），
 Python 退役、内存宽裕后可实现同接口的向量检索器直接替换，不动插件主体。
 
 FTS5 中文细节：默认 unicode61 分词器把连续汉字当一个 token，
@@ -32,9 +32,9 @@ FTS5 中文细节：默认 unicode61 分词器把连续汉字当一个 token，
 | 文件 | 内容 |
 |---|---|
 | `index.js` | `name` / `inject=["agents","sessionProjections","tools"]` / `Config`（schemastery）/ `apply` |
-| `lib/store.js` | `openStore(dataDir)`：建表 + FTS5 虚表 |
-| `lib/retriever.js` | `FtsRetriever`：检索契约的 FTS5 实现 |
-| `lib/tools.js` | 三个 `defineTool` 定义 |
+| `src/store.js` | `openStore(dataDir)`：建表 + FTS5 虚表 |
+| `src/retriever.js` | `FtsRetriever`：检索契约的 FTS5 实现 |
+| `src/tools.js` | 三个 `defineTool` 定义 |
 | `package.json` | 依赖包内自带（阶段 0 教训）；`dsh.bundle.patch` 声明 |
 | `cordis.patch.yml` | `insert: [{id, name}]` |
 
