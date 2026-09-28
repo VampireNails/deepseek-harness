@@ -46,7 +46,7 @@ import socket, ssl
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
-s = socket.create_connection(("127.0.0.1", 43197), timeout=10)
+s = socket.create_connection(("100.73.148.102", 43197), timeout=10)
 ss = ctx.wrap_socket(s, server_hostname="127.0.0.1")
 ss.sendall(b"POST /v1/rpc HTTP/1.0\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}")
 resp = ss.recv(4096).decode()
@@ -67,7 +67,7 @@ def rpc(endpoint, sessionId=None, args=None):
     body = {"endpoint": endpoint, "args": args or {}}
     if sessionId: body["sessionId"] = sessionId
     req = urllib.request.Request(
-        "https://127.0.0.1:43197/v1/rpc",
+        "https://100.73.148.102:43197/v1/rpc",
         data=json.dumps(body).encode(),
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         method="POST")
