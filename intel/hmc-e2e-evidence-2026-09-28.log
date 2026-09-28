@@ -1,17 +1,11 @@
-=== HMC API 端到端验证 ===
-时间: 2026-09-28T17:39:10.723358
-目标: https://100.73.148.102:43197/v1/rpc
+隔离 DSH_HOME=/tmp/tmp.9EcqtYdT1D
+=== 1. 未带 token 应返回 401 ===
+未带 token → 401 OK
+=== 2. session/create → session/prompt ===
+session/create → session-
+session/prompt → {"ok": true, "value": {"accepted": true}}
+=== 3. 断言 SQLite 落盘 ===
+DB 命中: HMC端到端测试：用户通过手机发送消息
+测试数据已清理
 
-【测试1】TLS 连接
-  ✓ TLS 握手成功
-
-【测试2】无 token 应返回 401
-  ✓ 返回 401
-
-【测试3】session/create
-  ✓ 会话创建成功: session-e5a3056e...
-
-【测试4】session/prompt → dsh agent
-  ✓ 消息被接受
-
-=== 验证完成 ===
+=== HMC 端到端 API 级验证通过 ===

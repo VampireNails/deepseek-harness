@@ -1,5 +1,5 @@
 #!/bin/bash
-# 24h 稳定性测试：web-intel 常驻 + 内存监控
+# 24h 空转存活监控：web-intel 常驻 + 内存监控（非负载稳定性测试，仅进程存活+RSS）
 # 用法：./stability-24h.sh start|status|stop
 # 日志：/root/intel/stability/monitor.log
 set -e

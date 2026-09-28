@@ -6,7 +6,7 @@
 > ③ DeepSeek Harness 改造汇总（Python 单体 → dsh 插件架构），
 > ④ 未排期 6 项的升级提议详细评估（P0/P1/P2，2026-09-28 新增）。
 >
-> 修订：2026-09-28，HEAD `b8a97c0ca`。单元测试 21 用例 21 通过。第三方审计（有条件通过）后修正 P1 项。
+> 修订：2026-09-28 晚间，HEAD `f2a6b7542`。第二轮审计（HMC 交叉核验）后修正：bootstrap 两处硬伤已修复并通过干净验收；HMC 端到端证据已对齐为脚本真实输出；#9 APPROVAL 层改为跨仓库决策项（V3 关闭）；#11 新增"手机可见性"选型判据；#8 改为"消费通道部分存在"。
 
 ---
 
@@ -33,9 +33,9 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 迁移脚本（migrate.sh + rollback.sh） | ✅ 完成（含 spaceCjk 对齐修复） |
 | 文档订正 + README npm ci | ✅ 完成 |
 | run-integration.sh DSH_HOME 隔离 | ✅ 完成 |
-| bootstrap 可复现脚本 | ✅ 完成（`intel/bootstrap.sh`：从零 clone 重建三 profile 已验证） |
+| bootstrap 可复现脚本 | ✅ 完成（第二轮审计发现两处硬伤已修：`intel/hmc-service-wrapper` 入库（此前引用路径不存在）+ `npm ci`→`npm install`（无锁文件必然失败）；`DSH_HOME=$(mktemp -d)` 干净验收三 profile 全过） |
 | 24h 空转存活监控 | 🔄 运行中（2026-09-29 14:34 出结果；仅进程存活+RSS，非负载稳定性） |
-| HMC 端到端 | ✅ API 级通过（TLS→401→session/create→session/prompt 全绿，证据 `intel/hmc-e2e-evidence-2026-09-28.log`）；手机真机已直连 100.73.148.102:43197，Tomas 确认"已连上" |
+| HMC 端到端 | ✅ API 级通过（TLS→401→session/create→session/prompt→memory_write SQLite 落盘，全绿；证据 `intel/hmc-e2e-evidence-2026-09-28.log` 为 `hmc-e2e.sh` 真实 stdout，第二轮审计对齐）；手机真机已直连 100.73.148.102:43197，Tomas 确认"已连上" |
 
 **23 项的去向（由 §2 表统计得出，唯一口径）：**
 
@@ -168,6 +168,8 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 记忆检索 | FTS5/BM25，不用向量 | 1GB 内存；ONNX 同进程 374MB 太贵 |
 | HMC 客户端 | 不修改，只读 + PR | Tomas 指示 |
 | 生产切换 | 未切；Python 仍是生产，dsh 在 web-intel 隔离验证 | Tomas 未批准切换 |
+| #9 APPROVAL 层 | 跨仓库决策项，非 dsh-muse 开发任务 | HMC 启动器写死 danger-full-access 且手机无改权限接口，默认部署下审批卡永不弹（第二轮审计，HMC 源码取证） |
+| #11 选型第一判据 | 手机可见性 | dsh-schedule 提醒落同一会话时间线，是手机上唯一看得见的路径（第二轮审计；HMC ADR 002：后台提醒仅单会话/上限 2 小时） |
 
 ### 3.4 生产状态（2026-09-28）
 
@@ -188,9 +190,11 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 
 - **Python 实现**：`agent/custom_cron.py`（229 行）。`cron_create/list/delete` 三个工具；中文时间解析（"每天9点"→cron 表达式）；APScheduler 进程内调度；上限 20 个任务。
 - **dsh 原生差距**：dsh-schedule 支持 cron/daily/weekly、任务管理工具、cold session 恢复，但为**会话绑定的 reminder 交付**，非脱离会话的 headless 后台执行（第三方审计已核验上游 `packages/schedule/` 代码）。
-- **dsh-muse 路线**（第三方审计建议拆两层）：
+- **dsh-muse 路线**（第三方审计建议拆两层，第二轮审计加选型判据）：
+  - **选型第一判据：手机可见性**。dsh-schedule 的提醒作为同一会话的后续消息出现，走 HMC 时间线——是**手机上唯一看得见的路径**（上游 schedule README：delivery never uses email/SMS/push；HMC ADR 002：后台提醒仅监控单条会话、上限 2 小时）。这比"省代码"更重要。
   - (a) 用户 cron 的**触发与交付**：优先评估复用 dsh-schedule 原生（省掉调度器代码，只需中文时间解析约 200 行 JS）
-  - (b) 需脱离会话的后台任务（如进化、joblog）：保留系统 cron + `dsh --profile evolve` headless
+  - (b) 需脱离会话的后台任务（如进化、joblog）：保留系统 cron + `dsh --profile evolve` headless（注意：headless 产出如 Feed/joblog 在 HMC **没有任何入口**，手机看不到）
+- **验收判据**：从"任务能建"改为"**到点能在手机上看见**"。诚实边界：仅会话活着且处于 2 小时监控窗口内才可能推到手机；出窗口退化为"回 App 才看到"。
 - **价值**：高。"电脑级智能体"的用户可见核心能力——Tomas 在手机上一句话就能建定时任务。晨间简报（#23）已写好但 cron 未激活，用户自建 cron 是让 Tomas 自己能下指令的那一环。
 - **成本/风险**：中低。中文时间解析两种路线都需要；dsh-schedule 复用进一步降低实现成本。
 
@@ -199,10 +203,11 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **Python 实现**：`agent/permissions.py` + `agent/approvals.py`。四级：READ（自动放行）/ WRITE（默认放行+记日志）/ APPROVAL（弹卡等确认，主循环现场存 `pending_runs`，30 分钟过期）/ BLOCKED（高危 shell 正则直接拒：`rm -rf /`、fork 炸弹、写裸设备等）。
 - **dsh 原生差距**：dsh 有审批瀑布，但无分级、无 BLOCKED 硬拦截。
 - **dsh-muse 路线**（拆两层，风险不同）：
-  - **BLOCKED 层（先做）**：纯插件，shell 工具调用前正则检查，命中直接拒。零 UI 依赖，可独立交付。
-  - **APPROVAL 层（后做）**：依赖 dsh 审批瀑布在 **HMC 手机端** 的呈现方式——未知数，需先验证，不可假设。
+  - **BLOCKED 层（先做）**：纯插件，shell 工具调用前正则检查，命中直接拒。零 UI 依赖，可独立交付。**理由比原先更硬**：走 `tools/pre-execute` 缝（`packages/core/agent-loop/src/tool-calls.ts:211,216`，上游测试 `tests/interception.spec.ts:705` 称其为"原生插件权限模式"），不依赖 dsh 权限预设与审批瀑布→**不受 HMC 默认 Full access 影响**（第二轮审计确认）。
+  - **APPROVAL 层（后做→改为跨仓库决策项）**：**V3（验证 HMC 手机端呈现）已关闭**——HMC 呈现层早就实现且有真机用例：`MainActivity.java:707-736` 收到 `approval/request` 弹「工具请求权限」卡（allowed-once/rejected），`Timeline.java:163-164` 渲染，`MonitorEvents.java:78-81` 后台提醒「有待处理审批」，服务端 `service/security.mjs:37-72`（ApprovalFence）校验；真机测试 `ClientDeviceTest.java:63-69`、`MonitorNotificationDeviceTest.java:23`、`PhoneMonitorDeviceTest.java:129`。
+  - **但新增卡死条件**：HMC 启动器 `scripts/host-env.mjs:9` 把新会话权限写死 `DSH_PERMISSION_MODE='danger-full-access'`（单测 `tests/host-env.test.mjs:7` 锁定该行为），手机 RPC 白名单（`service/security.mjs:6-7`）**无改权限模式接口**→**默认部署下审批卡永远不弹**。因此 APPROVAL 层不是 dsh-muse 单方面能做完的开发任务，而是**跨仓库决策项**：是否放开 HMC 默认 Full access（需 Tomas 确认是否在"不修改 HMC"边界内）。
 - **价值**：高。cron 和浏览器跑起来后自动操作破坏力上升，审批是安全带。Tomas 单用户自用，WRITE 默认放行已够宽松，短期不阻塞。
-- **成本/风险**：中。BLOCKED 正则可直接移植；APPROVAL 需先验证 HMC 行为。
+- **成本/风险**：中。BLOCKED 正则可直接移植；APPROVAL 先等跨仓库决策（放开 Full access 与否），决策前不排期开发。
 
 ### P1：#5 多步浏览器（先过内存压测）
 
@@ -212,6 +217,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **价值**：高，电脑级智能体的标志能力。但 Tomas 主用手机遥控，浏览器更多是 agent 自主 research 用，非每天高频。
 - **成本/风险**：中（原估"高"下调）。实验性包无稳定性承诺仍是真风险；仍需内存压测，OOM 则停下报告（硬约束）。
 - **前置条件**：内存压测通过才能开工。
+- **手机侧实情**（第二轮审计）：手机无浏览器/截图原生预览——`artifact/read` 是文本（二进制走 base64，单文件上限 4MB），只能经 SAF 存盘再看。浏览器产物上手机的唯一路径是"落进 workspace → 工作区文件 → 下载"，**与 #8 共用"手机端产物通道"议题**，路线图里合并考虑，不各自为战。
 
 ### P2：#12 Goals 长期目标（简单，不紧急）
 
@@ -228,22 +234,24 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **关键问题**：**触发源在哪里？** Tomas 已决定不复刻 Gmail 等外部连接器——inbox 里谁放文件？webhook 给谁调？无外部系统接入就是空转轮询。
 - **结论**：实现成本低（几十行），但无触发场景即死代码。等 Tomas 明确"我要 X 事件触发 Y"再做。
 
-### P2：#8 Artifacts v2（无消费场景，暂缓）
+### P2：#8 Artifacts v2（消费通道部分存在，先做零成本试验）
 
 - **Python 实现**：`agent/artifacts.py`（207 行）。版本历史；HTML sandbox iframe 渲染；`/raw` `/download` `/versions` 路由。
 - **dsh 原生差距**：dsh 只有交付声明，无版本、无沙盒渲染。
-- **关键问题**：**谁消费？** Tomas 主用手机 HMC；Python 版依赖 Web UI，而 dsh-muse 连 Feed Web UI 都未复刻（阶段 4 已知缺口）。存储层简单，贵的是渲染 UI。
-- **结论**：等 Feed Web UI 排期时一起考虑，或 Tomas 明确要手机看文档再做。
+- **关键修正**（第二轮审计，HMC 源码取证）："无消费场景"的论断被部分推翻——HMC **已有工作区文件消费通道**：服务端 `service/artifacts.mjs` 提供 `artifact/list`（分页+revision 防错序）与 `artifact/read`（校验 inode、拒符号链接、限 4MB），手机菜单有「工作区文件」入口（`MainActivity.java:154`），可逐层浏览、经 SAF 下载落盘。
+- **结论**：手机不是"零消费"，而是"只消费文件、不消费版本与沙盒渲染"。**先做零成本试验**：让 `present` 声明的文件落在 HMC workspace 根内，验证手机「工作区文件」能否直接看到；能则重估 #8 价值，不能再维持暂缓。与 #5 合并为"手机端产物通道"议题。
 
 ### 实施路线图
 
 | 批次 | 内容 | 前置条件 |
 |---|---|---|
-| 切生产前 | #11 用户自建 cron（优先评估复用 dsh-schedule 触发层）+ #9 BLOCKED 层 | 均为纯插件，隔离 profile 可验证；需 Tomas 批准开工 |
-| 切生产后① | #9 APPROVAL 层 | 先验证 dsh 审批瀑布在 HMC 手机端的呈现（V3） |
-| 切生产后② | #5 多步浏览器（挂载上游 browser-use-playwright-mcp） | 先通过内存压测（V4，OOM 则停） |
-| 按需 | #12 Goals / #10 Hooks / #8 Artifacts v2 | Tomas 一句话启动；#12 先回答真相源冲突问题 |
+| 切生产前 | #11 用户自建 cron（手机可见性为第一判据，验收=到点手机能看见）+ #9 BLOCKED 层 + **第二轮审计修复项（bootstrap 可复现 + HMC 证据对齐，本次已完成）** | 均为纯插件，隔离 profile 可验证；需 Tomas 批准开工 |
+| 切生产后① | #9 APPROVAL 层 | **先跨仓库决策**：是否放开 HMC 默认 Full access（V3 已关闭，呈现层不是问题） |
+| 切生产后② | #5 多步浏览器（挂载上游 browser-use-playwright-mcp）+ **手机端产物通道（#5/#8 合并议题）** | 先通过内存压测（V4，OOM 则停） |
+| 按需 | #12 Goals / #10 Hooks / #8 Artifacts v2（等零成本试验结果） | Tomas 一句话启动；#12 先回答真相源冲突问题 |
 
-**与生产切换的关系**：2026-09-29 14:34 收 24h 空转监控结果 → Tomas 决策是否切生产 → 切生产后再按上表推进。切生产前不做 P1/P2，避免在隔离环境验证无意义的功能。
+**与生产切换的关系**：2026-09-29 14:34 收 24h 空转监控结果 → Tomas 决策是否切生产 → 切生产后再按上表推进。切生产前不做 P1/P2，避免在隔离环境验证无意义的功能。（第二轮审计确认：bootstrap 可复现修复 + HMC 端到端证据对齐已纳入切生产前批次——它们是"复刻是否真完成"的验收前提，不是功能开发。）
 
-**第三方审计**（2026-09-28）：独立审计员对照上游公开仓库逐项核验，结论**有条件通过**——23 项分类自洽；8 项"dsh 原生"中 6 项确认，#4（web 三后端）纠正事实错误，#2（沙箱）加限定；#11 dsh-schedule"完全不等价"为夸大，已改述为架构选型；#5 浏览器路线改为评估挂载上游实验性 provider。P0/P1/P2 排序获审计认可，仅调整实现路线。待验证项（V1–V6）：V1 确认 profile 挂载的执行器；V2 披露记忆分词器+中文召回抽查；V3 验证 HMC 手机端 approval 呈现；V4 上游 Playwright MCP 冒烟+内存压测；V5 实测 dsh-schedule 等价性；V6 持有 dsh-muse 仓库访问权者做第二轮代码审计。
+**第三方审计**（2026-09-28）：独立审计员对照上游公开仓库逐项核验，结论**有条件通过**——23 项分类自洽；8 项"dsh 原生"中 6 项确认，#4（web 三后端）纠正事实错误，#2（沙箱）加限定；#11 dsh-schedule"完全不等价"为夸大，已改述为架构选型；#5 浏览器路线改为评估挂载上游实验性 provider。P0/P1/P2 排序获审计认可，仅调整实现路线。待验证项（V1–V6）：V1 确认 profile 挂载的执行器；V2 披露记忆分词器+中文召回抽查；**V3 已关闭**（HMC 审批呈现层已实现+真机用例）；V4 上游 Playwright MCP 冒烟+内存压测；V5 实测 dsh-schedule 等价性；V6 持有 dsh-muse 仓库访问权者做第二轮代码审计。
+
+**第二轮审计**（2026-09-28 晚间，HMC 交叉核验）：上一轮 9 条问题中 8 条逐条验证通过；新发现 bootstrap 两处硬伤（`intel/hmc-service-wrapper` 缺失、`npm ci` 无锁文件必然失败）与 HMC 端到端证据错位（日志非脚本输出、缺 memory_write 证据）——**均已修复**：wrapper 已入库、改用 `npm install`、`DSH_HOME=$(mktemp -d)` 干净验收通过；`hmc-e2e.sh` 重跑，证据日志为真实 stdout（含 SQLite 落盘断言）。HMC 侧决定性事实：审批卡链路已实现（V3 关闭），但启动器写死 Full access 致默认永不弹（#9 APPROVAL 改跨仓库决策项）；#11 新增"手机可见性"选型第一判据与验收判据；#8 改为"消费通道部分存在"先做零成本试验。审计报告入库 `intel/audits/`（第一轮 + 第二轮）。

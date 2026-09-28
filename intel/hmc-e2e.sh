@@ -4,11 +4,19 @@
 #   token 在 /root/intel/hmc-test/token.txt（测试环境）
 # 要求：hmc-test profile 已配置，mock LLM 可用
 # 数据安全：使用隔离的 DSH_HOME，不碰真实 ~/.dsh
+# 端口：HMC 用 43198（e2e 专用 config），避开生产 hmc-test 占用的 43197；
+#       web 端口 3090 避开稳定性测试的 3080
+# 证据：本脚本的原始 stdout 即为 intel/hmc-e2e-evidence-2026-09-28.log
 set -e
 cd "$(dirname "$0")/.."
 
 export DSH_HOME="$(mktemp -d)"
-trap 'rm -rf "$DSH_HOME"' EXIT
+# 任何退出路径都杀掉后台进程（set -e 下中途失败也不留孤儿进程占端口）
+cleanup() {
+  kill ${MOCK_PID:-} ${DSH_PID:-} 2>/dev/null || true
+  rm -rf "$DSH_HOME"
+}
+trap cleanup EXIT
 echo "隔离 DSH_HOME=$DSH_HOME"
 
 # 重建 hmc-test profile
@@ -20,15 +28,15 @@ MOCK_PORT=18093
 MOCK_DIR="packages/test-support/llm-mock-server"
 
 # 启动 mock LLM（触发 memory_write）
-(node "$MOCK_DIR/src/bin.ts" --port $MOCK_PORT --api-key mock-key \
+node "$MOCK_DIR/src/bin.ts" --port $MOCK_PORT --api-key mock-key \
   --sequence "tool_call_success,success" --repeat-last \
   --tool-name "memory_write" --tool-arguments '{"text":"HMC端到端测试：用户通过手机发送消息","kind":"note"}' \
-  > /tmp/hmc-e2e-mock.log 2>&1 &)
+  > /tmp/hmc-e2e-mock.log 2>&1 &
 MOCK_PID=$!
 sleep 2
 
 # 启动 hmc-test（含 HMC service，TLS 43197）；web 端口用 3090 避开稳定性测试的 3080
-HMC_CONFIG=/root/intel/hmc-test/hmc-config.json \
+HMC_CONFIG=/root/intel/hmc-test/hmc-config-e2e.json \
 DEEPSEEK_BASE_URL=http://127.0.0.1:$MOCK_PORT/v1 DEEPSEEK_API_KEY=mock-key \
   timeout 150 dsh --profile hmc-test --port 3090 > /tmp/hmc-e2e-dsh.log 2>&1 &
 DSH_PID=$!
@@ -36,7 +44,7 @@ sleep 10
 
 # 等 HMC TLS 端口起来
 for i in $(seq 1 10); do
-  if (echo > /dev/tcp/127.0.0.1/43197) 2>/dev/null; then break; fi
+  if (echo > /dev/tcp/127.0.0.1/43198) 2>/dev/null; then break; fi
   sleep 2
 done
 
@@ -46,7 +54,7 @@ import socket, ssl
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
-s = socket.create_connection(("100.73.148.102", 43197), timeout=10)
+s = socket.create_connection(("127.0.0.1", 43198), timeout=10)
 ss = ctx.wrap_socket(s, server_hostname="127.0.0.1")
 ss.sendall(b"POST /v1/rpc HTTP/1.0\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}")
 resp = ss.recv(4096).decode()
@@ -55,7 +63,7 @@ print("未带 token → 401 OK")
 PYEOF
 
 echo "=== 2. session/create → session/prompt ==="
-TOKEN="${HMC_TEST_TOKEN:?HMC_TEST_TOKEN 未设置}"
+TOKEN="${HMC_TEST_TOKEN:-$(cat /root/intel/hmc-test/token.txt)}"
 export HMC_TOKEN="$TOKEN"
 python3 << 'PYEOF'
 import json, os, urllib.request, ssl
@@ -67,7 +75,7 @@ def rpc(endpoint, sessionId=None, args=None):
     body = {"endpoint": endpoint, "args": args or {}}
     if sessionId: body["sessionId"] = sessionId
     req = urllib.request.Request(
-        "https://100.73.148.102:43197/v1/rpc",
+        "https://127.0.0.1:43198/v1/rpc",
         data=json.dumps(body).encode(),
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         method="POST")
@@ -96,6 +104,5 @@ db.commit()
 print('测试数据已清理')
 "
 
-kill $DSH_PID $MOCK_PID 2>/dev/null || true
 echo ""
 echo "=== HMC 端到端 API 级验证通过 ==="
