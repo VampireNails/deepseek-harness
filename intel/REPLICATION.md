@@ -32,8 +32,9 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 迁移脚本（migrate.sh + rollback.sh） | ✅ 完成（含 spaceCjk 对齐修复） |
 | 文档订正 + README npm ci | ✅ 完成 |
 | run-integration.sh DSH_HOME 隔离 | ✅ 完成 |
+| bootstrap 可复现脚本 | ✅ 完成（`intel/bootstrap.sh`：从零 clone 重建三 profile 已验证） |
 | 24h 空转存活监控 | 🔄 运行中（2026-09-29 14:34 出结果；仅进程存活+RSS，非负载稳定性） |
-| HMC 端到端 | ✅ API 级通过（脚本入库，见 `intel/hmc-e2e.sh`）；手机上屏待 Tomas 真机 |
+| HMC 端到端 | ✅ API 级通过（TLS→401→session/create→session/prompt 全绿，证据 `intel/hmc-e2e-evidence-2026-09-28.log`）；手机真机已直连 100.73.148.102:43197 配对成功 |
 
 **23 项的去向（由 §2 表统计得出，唯一口径）：**
 
