@@ -1,0 +1,1 @@
+{"dependencies":{"@deepseek-ai/dsh-llm":"0.1.7-rc.1","@deepseek-ai/dsh-tools":"0.1.7-rc.1","@deepseek-ai/schemastery":"~3.18.4"},"description":"Tomas 本人的结构化用户画像：每回合注入 + 读写工具。不建人物/群组档案。","dsh":{"bundle":{"patch":"./cordis.patch.yml"}},"license":"Apache-2.0","main":"index.js","name":"dsh-intelligence-profile","type":"module","version":"0.1.0"}
