@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-// 简单 JSON 状态：{ lastAt, lastHash }，5 分钟冷却 + 内容去重
+// 简单 JSON 状态：{ lastAt, lastHash, pendingHash }，5 分钟冷却 + 内容去重 + 并发防重
 export class QuietState {
   constructor(dir) {
     this.file = join(dir, "state.json");
@@ -18,6 +18,13 @@ export class QuietState {
   }
   set(key, value) {
     this.data[key] = value;
+    this._save();
+  }
+  delete(key) {
+    delete this.data[key];
+    this._save();
+  }
+  _save() {
     try {
       mkdirSync(join(this.file, ".."), { recursive: true });
       writeFileSync(this.file, JSON.stringify(this.data));

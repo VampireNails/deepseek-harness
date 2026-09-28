@@ -13,6 +13,7 @@ export const Config = z
     cooldownSec: z.number().default(300),
     minUserChars: z.number().default(8),
     provider: z.string().default("spawn"),
+    reflectTimeoutMs: z.number().default(90000),
   })
   .default({});
 
@@ -67,9 +68,10 @@ async function maybeReflect(ctx, config, state, agent, turn) {
   if (!transcript) return;
   if (transcript.includes(REFLECT_MARKER)) return; // 反射子智能体自己的 turn
 
-  // 3. 去重：内容与上次复盘相同则跳过
+  // 3. 去重：内容与上次复盘相同则跳过；已有 pending 的也不重复触发
   const hash = createHash("sha256").update(transcript).digest("hex");
   if (state.get("lastHash") === hash) return;
+  if (state.get("pendingHash") === hash) return;
 
   // 4. 起复盘子智能体：只允许 memory_write，不继承父上下文，不再派生
   const provider =
@@ -79,13 +81,15 @@ async function maybeReflect(ctx, config, state, agent, turn) {
     return;
   }
 
-  // 先记状态（冷却/去重），再后台跑——即使复盘失败也不重复触发
-  state.set("lastAt", now);
-  state.set("lastHash", hash);
+  // 先记 pending（防并发重复触发），start 成功后才落 lastAt/lastHash；
+  // start 抛错时清 pending，冷却期过后可重试，不静默丢数据（评估 2.7）
+  state.set("pendingHash", hash);
 
   const controller = new AbortController();
-  // 复盘限时 30 秒（Python 版 quiet pass 设计为 ≤4 个工具调用的短任务）
-  const timer = setTimeout(() => controller.abort("quiet reflection timeout"), 30000);
+  const timer = setTimeout(
+    () => controller.abort("quiet reflection timeout"),
+    config.reflectTimeoutMs
+  );
   let run;
   try {
     run = await ctx.subagents.start(provider.name, {
@@ -98,9 +102,14 @@ async function maybeReflect(ctx, config, state, agent, turn) {
     });
   } catch (e) {
     clearTimeout(timer);
+    state.delete("pendingHash");
     console.error("[dsh-intelligence-quiet] start failed:", e?.message || e);
     return;
   }
+  // start 成功：落冷却/去重状态
+  state.set("lastAt", now);
+  state.set("lastHash", hash);
+  state.delete("pendingHash");
   // 注意：只等 start() 发布成功，不 await run.result。
   // 复盘在后台跑完，结果 via .then 清理——复刻 Python daemon 线程的 fire-and-forget。
   run.result.then(
