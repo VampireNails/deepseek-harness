@@ -40,12 +40,12 @@ ${transcript}
 export function apply(ctx, config) {
   const state = new QuietState(dataDir());
 
-  ctx.on("agent/turn-stopping", async ({ agent, turn }) => {
-    try {
-      await maybeReflect(ctx, config, state, agent, turn);
-    } catch (e) {
+  // 复刻 Python 版 daemon 线程语义：handler 不 await，复盘在后台跑，
+  // 回合结束不被阻塞（评估问题 3 的修复）。
+  ctx.on("agent/turn-stopping", ({ agent, turn }) => {
+    maybeReflect(ctx, config, state, agent, turn).catch((e) => {
       console.error("[dsh-intelligence-quiet]", e?.message || e);
-    }
+    });
   });
 }
 
@@ -73,9 +73,14 @@ async function maybeReflect(ctx, config, state, agent, turn) {
     console.error("[dsh-intelligence-quiet] no subagent provider available");
     return;
   }
+
+  // 先记状态（冷却/去重），再后台跑——即使复盘失败也不重复触发
+  state.set("lastAt", now);
+  state.set("lastHash", hash);
+
   const controller = new AbortController();
-  // 复盘限时 90 秒，超时放弃（不阻塞主流程收尾）
-  const timer = setTimeout(() => controller.abort("quiet reflection timeout"), 90000);
+  // 复盘限时 30 秒（Python 版 quiet pass 设计为 ≤4 个工具调用的短任务）
+  const timer = setTimeout(() => controller.abort("quiet reflection timeout"), 30000);
   let run;
   try {
     run = await ctx.subagents.start(provider.name, {
@@ -86,13 +91,24 @@ async function maybeReflect(ctx, config, state, agent, turn) {
       maxDepth: 1,
       signal: controller.signal,
     });
-    // 注意：start() 只表示发布成功；run.result 才是子智能体真正跑完
-    await run.result;
-  } finally {
+  } catch (e) {
     clearTimeout(timer);
-    if (run) await run.dispose().catch(() => {});
+    console.error("[dsh-intelligence-quiet] start failed:", e?.message || e);
+    return;
   }
-
-  state.set("lastAt", now);
-  state.set("lastHash", hash);
+  // 注意：只等 start() 发布成功，不 await run.result。
+  // 复盘在后台跑完，结果 via .then 清理——复刻 Python daemon 线程的 fire-and-forget。
+  run.result.then(
+    () => {
+      clearTimeout(timer);
+      run.dispose().catch(() => {});
+    },
+    (e) => {
+      clearTimeout(timer);
+      if (e?.name !== "AbortError") {
+        console.error("[dsh-intelligence-quiet] reflection failed:", e?.message || e);
+      }
+      run.dispose().catch(() => {});
+    }
+  );
 }
