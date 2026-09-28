@@ -88,6 +88,8 @@ YEOF
   
   echo "  安装插件..."
   (cd "$PDIR" && npm ci --silent 2>&1 | tail -2)
+  echo "  链接到 dsh..."
+  (cd "$PDIR" && DSH_HOME="$DSH_HOME" dsh plugin --profile $profile install 2>&1 | tail -2)
   echo "  ✓ $profile 就绪"
 done
 
