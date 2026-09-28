@@ -6,7 +6,7 @@
 > ③ DeepSeek Harness 改造汇总（Python 单体 → dsh 插件架构），
 > ④ 未排期 6 项的升级提议详细评估（P0/P1/P2，2026-09-28 新增）。
 >
-> 修订：2026-09-28，HEAD `0844b903b`。单元测试 21 用例 21 通过。
+> 修订：2026-09-28，HEAD `b8a97c0ca`。单元测试 21 用例 21 通过。第三方审计（有条件通过）后修正 P1 项。
 
 ---
 
@@ -66,24 +66,24 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 
 | # | Python 能力 | 去向 | dsh-muse 实现 | 验证 |
 |---|---|---|---|---|
-| 1 | agent loop + 工具调用 | dsh 原生 | `dsh-agent-loop`（DeepSeek Harness 专用） | 阶段 0 |
-| 2 | 终端 `shell_exec` | dsh 原生 | `dsh-tool-bash`（多一层沙箱，超集） | 阶段 0 |
+| 1 | agent loop + 工具调用 | dsh 原生 | `dsh-agent-loop`（dsh 原生默认 agent loop） | 阶段 0 |
+| 2 | 终端 `shell_exec` | dsh 原生 | `dsh-tool-bash`（profile 挂载 `bash-sandbox` 变体时多一层沙箱；待 V1 确认实际挂载） | 阶段 0 |
 | 3 | 文件读写 | dsh 原生 | `dsh-tool-fs`（多搜索/替换，超集） | 阶段 0 |
-| 4 | 网页抓取 + 搜索 | dsh 原生 | `dsh-tool-web`（单 DeepSeek 后端，基本等价） | 阶段 0 |
+| 4 | 网页抓取 + 搜索 | dsh 原生 | `dsh-tool-web`（Exa/Perplexity/DeepSeek 三后端可选；dsh-muse 部署选用 DeepSeek） | 阶段 0 |
 | 5 | 多步浏览器（11 工具） | 未排期 | dsh 安装版无等价物；任务书未要求 | §四 P1 |
 | 6 | 子智能体 | dsh 原生 | `dsh-tool-subagent`（in-process 驱动） | 阶段 2 真测 |
-| 7 | 语义记忆 | 新写插件 | `dsh-intelligence-memory`（SQLite FTS5；向量方案因 1GB 内存否决） | 阶段 1 |
+| 7 | 语义记忆 | 新写插件 | `dsh-intelligence-memory`（SQLite FTS5 + BM25；分词器待 V2 披露；向量方案因 1GB 内存否决） | 阶段 1 |
 | 8 | Artifacts v2 | 未排期 | dsh 只有交付声明，无版本/沙盒；任务书未要求 | §四 P2 |
 | 9 | 审批卡 + 四级权限 | 未排期 | dsh 有审批瀑布，无四级；任务书未要求 | §四 P1 |
 | 10 | Hooks | 未排期 | dsh 有入站 webhook，无 inbox 轮询；任务书未要求 | §四 P2 |
-| 11 | 用户自建 cron | 未排期 | dsh-schedule 是提醒非后台执行；任务书未要求 | §四 P0 |
+| 11 | 用户自建 cron | 未排期 | dsh-schedule 是会话绑定的 reminder 交付，非脱离会话的 headless 执行；任务书未要求 | §四 P0 |
 | 12 | Goals 长期目标 | 未排期 | dsh goal 是同会话驱动，语义不同；任务书未要求 | §四 P2 |
 | 13 | Quiet-moment | 新写插件 | `dsh-intelligence-quiet`（turn-stopping + 真后台） | 阶段 2 + 真后台修复 |
 | 14 | 自我进化（5 任务） | 新写插件 | `dsh-intelligence-evolution`（cron + headless profile） | 阶段 3 |
 | 15 | Heartbeat | 新写插件 | 同上（`heartbeat_check` + 3 项分块） | 阶段 3 |
 | 16 | Feed | 新写插件 | `dsh-intelligence-feed`（`feed_post`/`feed_read`） | 阶段 4 |
 | 17 | 多会话 | dsh 原生 | `dsh-session`（多历史检索，超集） | 阶段 0 |
-| 18 | 文件上传 | dsh 原生 | `dsh-attachment` | 阶段 0 |
+| 18 | 文件上传 | dsh 原生 | `dsh-attachment`（仅支持图片格式；Python 通用文件上传口径有收窄，待披露） | 阶段 0 |
 | 19 | MCP client | dsh 原生 | `dsh-mcp-client`（多 resources，超集） | 阶段 0 |
 | 20 | 推送 webhook | 不复刻 | 出站推送；Tomas 决定保留通道不推进 | 2026-09-27 |
 | 21 | joblog 三件套 | 新写插件 | `dsh-intelligence-joblog`（jobs.log/job_runs.json/job_alerts.md） | 阶段 3 |
@@ -114,7 +114,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | Agent 骨架 | 自研 `agent/loop.py`（约千行） | dsh 原生 `dsh-agent-loop`（零代码） |
 | 工具系统 | `agent/tools.py` 手工注册 | dsh 原生工具包（bash/fs/web/subagent…） |
 | 插件机制 | 无（改代码即改核心） | Cordis 插件，`ctx.effect` 注册，卸载可回卷 |
-| 定时任务 | APScheduler 进程内线程 | 系统 cron + `dsh --profile evolve` headless（dsh-schedule 语义不等价，弃用） |
+| 定时任务 | APScheduler 进程内线程 | 系统 cron + `dsh --profile evolve` headless（架构选型：脱离 Host 进程独立执行、故障隔离；dsh-schedule 为会话绑定的 reminder 交付，见第三方审计） |
 | 会话存储 | 自研 `sessions.py` | dsh 原生 event-sourced session |
 | 智能层 | 与骨架耦合在同一进程 | 6 个树外独立插件，可单独装卸 |
 | 语言栈 | Python 3.10 | Node.js（dsh 原生）；最终零 Python 依赖 |
@@ -163,7 +163,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 |---|---|---|
 | quiet 后台机制 | 真后台（fire-and-forget），不用 ctx.jobs | 复刻 Python daemon 线程语义；Tomas 拍板 |
 | 真后台适用边界 | **仅常驻 profile（web-intel）**；headless 不得依赖 | headless 退出会取消后台子智能体；evolve 不含 quiet |
-| 定时任务承载 | 系统 cron + headless，不用 dsh-schedule | dsh-schedule 是"提醒"语义，不等价 |
+| 定时任务承载 | 系统 cron + headless 为主 | 需脱离会话独立执行、故障隔离；dsh-schedule 为会话绑定的 reminder 交付，不适用后台任务（第三方审计已核验） |
 | 手机端可见性 | A：隐形基础设施，不做 followup 弹窗 | 复刻 Python Muse 方式；Tomas 拍板 |
 | 记忆检索 | FTS5/BM25，不用向量 | 1GB 内存；ONNX 同进程 374MB 太贵 |
 | HMC 客户端 | 不修改，只读 + PR | Tomas 指示 |
@@ -187,10 +187,12 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 ### P0：#11 用户自建 cron（最先做）
 
 - **Python 实现**：`agent/custom_cron.py`（229 行）。`cron_create/list/delete` 三个工具；中文时间解析（"每天9点"→cron 表达式）；APScheduler 进程内调度；上限 20 个任务。
-- **dsh 原生差距**：`dsh-schedule` 是"提醒"语义，不是后台执行——完全不等价，无直接替代。
-- **dsh-muse 路线**：复用阶段 3 已验证路径（系统 cron + `dsh --profile evolve` headless）。插件只需做：`cron_create` 中文时间解析（Python 逻辑直译约 200 行 JS）→ 写专用 cron 文件；触发时 headless 执行任务 prompt，结果写 Feed/记忆；`cron_list/delete` 纯 CRUD。
+- **dsh 原生差距**：dsh-schedule 支持 cron/daily/weekly、任务管理工具、cold session 恢复，但为**会话绑定的 reminder 交付**，非脱离会话的 headless 后台执行（第三方审计已核验上游 `packages/schedule/` 代码）。
+- **dsh-muse 路线**（第三方审计建议拆两层）：
+  - (a) 用户 cron 的**触发与交付**：优先评估复用 dsh-schedule 原生（省掉调度器代码，只需中文时间解析约 200 行 JS）
+  - (b) 需脱离会话的后台任务（如进化、joblog）：保留系统 cron + `dsh --profile evolve` headless
 - **价值**：高。"电脑级智能体"的用户可见核心能力——Tomas 在手机上一句话就能建定时任务。晨间简报（#23）已写好但 cron 未激活，用户自建 cron 是让 Tomas 自己能下指令的那一环。
-- **成本/风险**：中低。系统 cron 可靠；纯插件不动 dsh 核心；无新增常驻内存。
+- **成本/风险**：中低。中文时间解析两种路线都需要；dsh-schedule 复用进一步降低实现成本。
 
 ### P1：#9 审批卡 + 四级权限（分两层）
 
@@ -205,10 +207,10 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 ### P1：#5 多步浏览器（先过内存压测）
 
 - **Python 实现**：11 个工具（`browser_open/snapshot/screenshot/close/select/wait/downloads/click/fill`…）；persistent context（`workspace/browser_profile`）；下载自动落盘。
-- **dsh 原生差距**：`dsh-tool-web` 只有单次抓取/搜索，无多步交互、无状态保持。6 项中差距最大。
-- **dsh-muse 路线**：Playwright 插件，工具集对等移植。**硬约束**：Chromium 常驻约 200–300MB，1GB 机器上不可行——只能按需启动、用完即关。Cloudflare 指纹拦截是已知风险（2026-09-27 ChatGPT 路线已验证）。
+- **dsh 原生差距**：`dsh-tool-web` 只有单次抓取/搜索。但上游 `packages/experimental/` 已有 `browser-use-playwright-mcp`、`browser-use-chrome-devtools-mcp`、`browser-use-stagehand-native` + `browser-use-runtime`（会话级浏览器资源），默认安装未挂载——**路线应为评估挂载上游实验性 provider，而非新写 Playwright 插件**（第三方审计发现）。
+- **dsh-muse 路线**：在隔离 profile 挂载上游 `browser-use-playwright-mcp` 做冒烟 + 内存压测。**硬约束**：Chromium 常驻约 150–300MB，1GB 机器上只能按需启动、用完即关；上游 `browser-use-runtime` 的 Session-owned 资源模型正好支撑此策略。Cloudflare 指纹拦截是已知风险（2026-09-27 ChatGPT 路线已验证）。
 - **价值**：高，电脑级智能体的标志能力。但 Tomas 主用手机遥控，浏览器更多是 agent 自主 research 用，非每天高频。
-- **成本/风险**：高。Playwright 安装包大；内存峰值需压测；OOM 则停下报告（硬约束）。
+- **成本/风险**：中（原估"高"下调）。实验性包无稳定性承诺仍是真风险；仍需内存压测，OOM 则停下报告（硬约束）。
 - **前置条件**：内存压测通过才能开工。
 
 ### P2：#12 Goals 长期目标（简单，不紧急）
@@ -237,9 +239,11 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 
 | 批次 | 内容 | 前置条件 |
 |---|---|---|
-| 切生产前 | #11 用户自建 cron + #9 BLOCKED 层 | 均为纯插件，隔离 profile 可验证；需 Tomas 批准开工 |
-| 切生产后① | #9 APPROVAL 层 | 先验证 dsh 审批瀑布在 HMC 手机端的呈现 |
-| 切生产后② | #5 多步浏览器 | 先通过内存压测（OOM 则停） |
-| 按需 | #12 Goals / #10 Hooks / #8 Artifacts v2 | Tomas 一句话启动，不提前写死代码 |
+| 切生产前 | #11 用户自建 cron（优先评估复用 dsh-schedule 触发层）+ #9 BLOCKED 层 | 均为纯插件，隔离 profile 可验证；需 Tomas 批准开工 |
+| 切生产后① | #9 APPROVAL 层 | 先验证 dsh 审批瀑布在 HMC 手机端的呈现（V3） |
+| 切生产后② | #5 多步浏览器（挂载上游 browser-use-playwright-mcp） | 先通过内存压测（V4，OOM 则停） |
+| 按需 | #12 Goals / #10 Hooks / #8 Artifacts v2 | Tomas 一句话启动；#12 先回答真相源冲突问题 |
 
 **与生产切换的关系**：2026-09-29 14:34 收 24h 空转监控结果 → Tomas 决策是否切生产 → 切生产后再按上表推进。切生产前不做 P1/P2，避免在隔离环境验证无意义的功能。
+
+**第三方审计**（2026-09-28）：独立审计员对照上游公开仓库逐项核验，结论**有条件通过**——23 项分类自洽；8 项"dsh 原生"中 6 项确认，#4（web 三后端）纠正事实错误，#2（沙箱）加限定；#11 dsh-schedule"完全不等价"为夸大，已改述为架构选型；#5 浏览器路线改为评估挂载上游实验性 provider。P0/P1/P2 排序获审计认可，仅调整实现路线。待验证项（V1–V6）：V1 确认 profile 挂载的执行器；V2 披露记忆分词器+中文召回抽查；V3 验证 HMC 手机端 approval 呈现；V4 上游 Playwright MCP 冒烟+内存压测；V5 实测 dsh-schedule 等价性；V6 持有 dsh-muse 仓库访问权者做第二轮代码审计。
