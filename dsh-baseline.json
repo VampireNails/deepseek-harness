@@ -1,0 +1,8 @@
+{
+  "dsh_version": "0.1.7-rc.1",
+  "dsh_commit": "46a7f68b0",
+  "npm_package": "@deepseek-ai/dsh",
+  "installed_at": "2026-09-28",
+  "installed_on": "hmc-mirror",
+  "node": "v22.22.2"
+}
