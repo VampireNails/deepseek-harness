@@ -8,8 +8,9 @@
 > ⑤ 23 项之外的复刻：Muse 行为规则（Soul）。
 >
 > 修订：2026-09-29，内容对应提交 `96ac06d66`。（本行之外的全部内容与该提交一致；若 HEAD 更新而本行未动，以 git log 为准）。
-> 本次修订内容：P0 用户自建 cron 插件完成并真机验收（#11 从"未排期"转为"新写插件"，23 项口径变为 8+9+5+1）；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
-> 上次修订（2026-09-28 晚间）：第二轮审计（HMC 交叉核验）后修正：bootstrap 两处硬伤已修复并通过干净验收；HMC 端到端证据已对齐为脚本真实输出；#9 APPROVAL 层改为跨仓库决策项（V3 关闭）；#11 新增"手机可见性"选型判据；#8 改为"消费通道部分存在"。
+> 本次修订（2026-09-29 上午，第三轮审计 12 项确认优化全部落实）：#11 cron 提醒 prompt 自带复述指令（手机可见性硬伤修复，方案 1）；新增"生产默认 workspace-write+ask 运维告知"，#9 归因修正（① HMC 启动器路径 vs ② 生产路径分开）；bootstrap 等价性口径修正（hmc-test 仅冒烟）；数字校正（cron 42 用例、内存双点位说明、cron 激活改 🔄）；Soul 补"手机侧不可见 + step-1 三注入 token 成本"；HMC 连接地址口径澄清（走 IP，域名仅 PC Web）；#9 APPROVAL 分级优先级下调；§3.4 夹具已由 Tomas 在 HMC 2b4f7f6 补回（无需另开 PR）。
+> 上次修订（2026-09-29 凌晨）：P0 用户自建 cron 插件完成并真机验收（#11 从"未排期"转为"新写插件"，23 项口径变为 8+9+5+1）；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
+> 上上次修订（2026-09-28 晚间）：第二轮审计（HMC 交叉核验）后修正：bootstrap 两处硬伤已修复并通过干净验收；HMC 端到端证据已对齐为脚本真实输出；#9 APPROVAL 层改为跨仓库决策项（V3 关闭）；#11 新增"手机可见性"选型判据；#8 改为"消费通道部分存在"。
 
 ---
 
@@ -40,10 +41,10 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 迁移脚本（migrate.sh + rollback.sh） | ✅ 完成（含 spaceCjk 对齐修复） |
 | 文档订正 + README npm ci | ✅ 完成 |
 | run-integration.sh DSH_HOME 隔离 | ✅ 完成 |
-| bootstrap 可复现脚本 | ✅ 完成（第二轮审计发现两处硬伤已修：`intel/hmc-service-wrapper` 入库（此前引用路径不存在）+ `npm ci`→`npm install`（无锁文件必然失败）；`DSH_HOME=$(mktemp -d)` 干净验收三 profile 全过） |
+| bootstrap 可复现脚本 | ✅ 完成（第二轮审计发现两处硬伤已修：`intel/hmc-service-wrapper` 入库（此前引用路径不存在）+ `npm ci`→`npm install`（无锁文件必然失败）；`DSH_HOME=$(mktemp -d)` 干净验收三 profile 全过。第三轮审计 §3.3 口径修正：hmc-test 是 API 级冒烟 profile（能装、能起、API 通），未并入 HMC `service/cordis.patch.yml` 的 4 项（其中 `pwsh-sandbox` 为 Windows 专用，故意不并），**不等价于真机验收环境**；依赖 `/root/intel/hmc-client` 外部路径，wrapper README 已披露） |
 | 24h 空转存活监控 | 🔄 运行中（2026-09-29 14:34 出结果；仅进程存活+RSS，非负载稳定性） |
 | HMC 端到端 | ✅ API 级通过（TLS→401→session/create→session/prompt→memory_write SQLite 落盘，全绿；证据 `intel/hmc-e2e-evidence-2026-09-28.log` 为 `hmc-e2e.sh` 真实 stdout，第二轮审计对齐）；手机真机已直连 100.73.148.102:43197，Tomas 确认"已连上" |
-| 系统 cron 分档激活 | ✅ 已批准；stage-1（5 个低频任务）2026-09-29 14:40 执行（24h 监控结束后）；stage-2（每小时 upkeep/heartbeat）观察后决定 |
+| 系统 cron 分档激活 | 🔄 已批准、待执行；stage-1（5 个低频任务）2026-09-29 14:40 执行（24h 监控结束后）；stage-2（每小时 upkeep/heartbeat）观察后决定 |
 
 **23 项的去向（由 §2 表统计得出，唯一口径）：**
 
@@ -82,7 +83,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 6 | 子智能体 | dsh 原生 | `dsh-tool-subagent`（in-process 驱动） | 阶段 2 真测 |
 | 7 | 语义记忆 | 新写插件 | `dsh-intelligence-memory`（SQLite FTS5 + BM25；分词器待 V2 披露；向量方案因 1GB 内存否决） | 阶段 1 |
 | 8 | Artifacts v2 | 未排期 | dsh 只有交付声明，无版本/沙盒；任务书未要求 | §四 P2 |
-| 9 | 审批卡 + 四级权限 | 未排期 | dsh 有审批瀑布，无四级；任务书未要求。**跨仓库决策已解决**：HMC PR（4b4da70）已合并，新会话默认 workspace-write（approval=ask），默认部署下审批卡可弹；dsh 侧 BLOCKED/APPROVAL 实现未排期 | §四 P1 |
+| 9 | 审批卡 + 四级权限 | 未排期 | dsh 有审批瀑布，无四级；任务书未要求。**分两条路径**（第三轮审计 §3.2）：② 生产路径（`dsh-prod.service --profile web`，env 未设 `DSH_PERMISSION_MODE`）走上游 base profile 默认即 workspace-write + ask（`apps/cli/reference/README.zh.md:123`），新会话审批卡会弹——切生产那一刻即生效，**与 HMC PR 无关**；① HMC 启动器路径：PR（4b4da70）已合并，把写死的 danger-full-access 改为默认 workspace-write，新会话同样可弹卡。dsh 侧 BLOCKED 硬拦截维持 P1，APPROVAL 分级优先级下调（默认 ask 已能弹卡） | §四 P1 |
 | 10 | Hooks | 未排期 | dsh 有入站 webhook，无 inbox 轮询；任务书未要求 | §四 P2 |
 | 11 | 用户自建 cron | 新写插件 | `dsh-intelligence-cron`（`cron_create`/`cron_list`/`cron_delete`，中文时间解析；dsh-schedule 触发层 + 系统 cron 后台层，手机可见性为第一判据） | P0 真机验收 |
 | 12 | Goals 长期目标 | 未排期 | dsh goal 是同会话驱动，语义不同；任务书未要求 | §四 P2 |
@@ -135,7 +136,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 ### 3.2 分阶段改造记录
 
 **阶段 0：环境验证**（2026-09-28）
-- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 空载 144MB，单回合峰值 139MB
+- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29）复核：启动峰值 145936KB 后缓降，24h 后约 11MB——两者是同一进程生命周期的不同点位（启动峰值 vs 长期空转稳态），非矛盾（第三轮审计 §3.5 口径说明）
 - 踩坑：`pnpm link` 不装树外插件传递依赖——插件包须自带 `node_modules`
 - 踩坑：`@deepseek-ai/*` 必须 pin `0.1.7-rc.1`，npm 默认 `0.0.1-rc.1` 导致 `unknown tool`
 
@@ -163,9 +164,9 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 
 **P0：用户自建 cron 插件**（2026-09-28，Tomas 批准开工）
 - `dsh-intelligence-cron`：`cron_create(name, prompt, schedule)` / `cron_list` / `cron_delete(ref)`；中文时间解析
-- 单测 41/41、隔离集成测试 6/6、旧插件回归 21/21
+- 单测 42/42（含提醒复述指令回归测试；其中 2 个真解码器用例需 dsh 运行时，服务器上全过、无运行时的环境自动跳过）、隔离集成测试 6/6、旧插件回归 21/21
 - 真机验收：经 HMC API 创建 5 分钟一次性任务，到点生成 follow-up turn（"⏰ p0test 提醒到点"），`cron.json` 状态流转正确，测试任务已删除
-- 手机可见性判据：沿用第二轮审计结论——dsh-schedule 触发层是手机上看得见的路径；隐形基础设施，不做 followup 弹窗（复刻 Python Muse 方式，Tomas 拍板）
+- 手机可见性判据（2026-09-29 第三轮审计 §3.1 修正）：dsh-schedule 到点投递的是 `source.kind='schedule'` 消息，HMC 客户端只渲染 `kind=="user"`（`Timeline.java:150-151`）——**提醒正文在手机时间线上不可见，看得见的是智能体对提醒的回复**（`assistant/message` 无条件渲染）。补法（已实施，方案 1）：cron 插件的提醒 prompt 自带"先把提醒原文完整复述给用户，再执行任务"指令，让回答自带原文，规避渲染过滤。隐形基础设施，不做 followup 弹窗（复刻 Python Muse 方式，Tomas 拍板）
 
 **Soul：Muse 行为规则复刻**（2026-09-28，Tomas 要求"复刻你 muse 的规则"）
 - `dsh-intelligence-soul`：每回合 step 1 自动注入；`soul_read` / `soul_update(section, content)` 运行时更新；持久化 `~/.dsh/intel-soul/soul.md`（直接改文件下回合生效，无需重启）
@@ -184,6 +185,12 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - commit `4b4da70`，已确认为 `origin/main` 祖先；服务器 `/root/intel/hmc-client` 已切回 main 并 pull
 - PR 改的是 HMC 启动器；生产由 `dsh-prod.service` 直接启动 dsh，无需为此重启生产，手机链路未中断
 - 意义：#9 APPROVAL 层的跨仓库卡死条件解除（默认部署下审批卡可弹）
+- 附带发现（第三轮审计 §3.4）：该 PR 改 `tests/host-env.test.mjs` 时删掉了 `UNRELATED_SECRET=do-not-load` 夹具（原用例守的是"只从项目 .env 读 DEEPSEEK_API_KEY，不加载其它密钥"）。**Tomas 已在 HMC `2b4f7f6`（2026-09-28 21:19）亲手补回**，单测 2/2 通过；剩余两处缩进为纯风格问题，未单独立 PR（避免噪音），在此记录
+
+**生产默认 workspace-write + ask 的运维含义**（2026-09-29 第三轮审计 §3.2，新增告知）
+- 生产（`--profile web`，env 未设 `DSH_PERMISSION_MODE`）的新会话默认就是 workspace-write + ask：手机顶栏显示「权限：工作区可写，敏感操作需审批」（A 级真机可见），敏感操作会弹审批卡等人点。
+- **这是切生产那一刻即发生的线上行为变化，与 HMC 的 PR 无关**（生产由 `dsh-prod.service` 直接启动 dsh，不经过 HMC 启动器）——此前文档把功劳记在 PR 名下，现修正归因：① HMC 启动器路径靠 PR 解除写死，② 生产路径靠上游 base profile 默认。
+- `ask` 是 fail-closed：无人值守时（没开后台提醒，或超过 HMC 2 小时监控窗口），触发审批的回合会**卡住等人**。要无人值守：显式 opt-in `DSH_PERMISSION_MODE=danger-full-access`，或把后台提醒开着。
 
 **事故：mock 泄漏**（2026-09-28 晚）
 - 生产 HMC 的 dsh 后端被发现连着 mock LLM（`DEEPSEEK_BASE_URL=http://127.0.0.1:18099/v1`）约 2.5 小时，手机收到的全是 mock "ok" 回复
@@ -212,7 +219,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | Soul 规则地位 | dsh 智能层每回合注入，运行时可更新 | Tomas 要求复刻 Muse 规则；持续烧 token 的事须先审批 |
 | 系统 cron 激活 | 分档：stage-1 低频 5 任务先行，stage-2 观察后定 | 按 Soul 规则判定：等 24h 空转监控结束 + Tomas 批准（2026-09-29 已批准 stage-1） |
 | 测试与生产隔离 | 硬隔离：独立 shell/env/profile/systemd | mock 泄漏事故教训；已入 Soul |
-| #9 APPROVAL 层 | 跨仓库决策项，非 dsh-muse 开发任务 | HMC 启动器写死 danger-full-access 且手机无改权限接口，默认部署下审批卡永不弹（第二轮审计，HMC 源码取证）。**2026-09-28 PR 合并后该卡死条件解除**，dsh 侧实现仍未排期 |
+| #9 APPROVAL 层 | 跨仓库决策已解决（分路径），dsh 侧分级未排期 | ① HMC 启动器曾写死 danger-full-access 致默认永不弹（第二轮审计）；2026-09-28 PR（4b4da70）合并后该路径解除。② 生产路径走上游 base profile 默认 workspace-write+ask，与 PR 无关（第三轮审计 §3.2）。dsh 侧：BLOCKED 硬拦截维持 P1（走 `tools/pre-execute` 缝，不受权限预设影响）；APPROVAL 分级优先级下调——默认 ask 已能弹卡，分级（READ/WRITE 免税）是优化非必需 |
 | #11 选型第一判据 | 手机可见性 | dsh-schedule 提醒落同一会话时间线，是手机上唯一看得见的路径（第二轮审计；HMC ADR 002：后台提醒仅单会话/上限 2 小时） |
 
 ### 3.4 生产状态（2026-09-29）
@@ -220,7 +227,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **生产**：`dsh-prod.service`（active）——单个 dsh 进程同时监听 Web `127.0.0.1:8080` + HMC TLS `100.73.148.102:43197`；profile=web；干净 env（无 `DEEPSEEK_BASE_URL`）；Tailscale Serve 指向 `:8080`；8 个智能插件全挂载
 - **退役**：Python `deepseek-harness.service` 已 disable+inactive；`/opt/deepseek-harness` 已归档删除；`mobile-mirror.service` 已 disable+inactive；旧手动 hmc-test 生产进程已停（`:3095` 释放）；孤儿 mock 端口已清
 - **备份与回滚**：全量备份 `/root/intel/cutover-backup-20260928/`（约 137MB）；一键完整回滚 `/root/intel/dsh-fork/intel/rollback-full.sh --yes`
-- **HMC 手机**：已直连 `100.73.148.102:43197` 配对成功，真 DeepSeek 回复（provider=deepseek-official）
+- **HMC 手机**：已直连 `100.73.148.102:43197` 配对成功，真 DeepSeek 回复（provider=deepseek-official）。**连接地址口径**（第三轮审计 §3.7）：HMC 服务走 IP（`100.73.148.102:43197`）；`hmc-mirror.tail52c730.ts.net` 域名仅用于 PC Web（Tailscale Serve → 127.0.0.1:8080）。HMC TLS 证书 SAN（`CN=hmc-test`，含 IP 100.75.211.11/100.73.148.102/127.0.0.1）不含该域名——改域名访问 HMC 会因主机名校验失败。保持走 IP，或重签证书补 SAN。
 - **24h 空转存活监控**：web-intel `:3080` + mock LLM `:18099`，2026-09-29 14:34 出结果（结束后停 mock、归档日志、释放 `:18099`）
 - **系统 cron**：stage-1 分档激活已批准，2026-09-29 14:40 执行（5 个低频任务）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定
 - **Git**：`intel` 分支已 push（HEAD `96ac06d66`），`master` 跟踪上游
@@ -236,9 +243,9 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 ### ✅ P0：#11 用户自建 cron——已完成（2026-09-28）
 
 - **交付**：`dsh-intelligence-cron` 插件，`cron_create`/`cron_list`/`cron_delete` 三个工具，中文时间解析
-- **验证**：单测 41/41、隔离集成测试 6/6、旧插件回归 21/21；HMC 真机验收（5 分钟一次性任务到点生成 follow-up turn，`cron.json` 状态流转正确，测试任务已删）
-- **设计**（第三方审计建议拆两层，第二轮审计加选型判据）：**选型第一判据是手机可见性**——dsh-schedule 的提醒作为同一会话的后续消息出现，走 HMC 时间线，是手机上唯一看得见的路径（上游 schedule README：delivery never uses email/SMS/push；HMC ADR 002：后台提醒仅监控单条会话、上限 2 小时）；需脱离会话的后台任务保留系统 cron + `dsh --profile evolve` headless
-- **验收判据**："到点能在手机上看见"。诚实边界：仅会话活着且处于 2 小时监控窗口内才可能推到手机；出窗口退化为"回 App 才看到"
+- **验证**：单测 42/42（含提醒复述指令回归测试；其中 2 个真解码器用例需 dsh 运行时，服务器上全过、无运行时的环境自动跳过）、隔离集成测试 6/6、旧插件回归 21/21；HMC 真机验收（5 分钟一次性任务到点生成 follow-up turn，`cron.json` 状态流转正确，测试任务已删）
+- **设计**（第三方审计建议拆两层，第二轮审计加选型判据，第三轮审计 §3.1 修正口径）：**选型第一判据是手机可见性**——但机制上**看得见的是回答，不是提醒正文**：dsh-schedule 到点投递 `source.kind='schedule'`，HMC 客户端只渲染 `kind=="user"`，提醒正文在手机时间线上不可见；手机上能看到的是智能体对提醒的回复。补法（已实施，方案 1）：提醒 prompt 自带"先把提醒原文完整复述给用户"指令，让回答自带原文，规避渲染过滤（上游 schedule README：delivery never uses email/SMS/push；HMC ADR 002：后台提醒仅监控单条会话、上限 2 小时）；需脱离会话的后台任务保留系统 cron + `dsh --profile evolve` headless
+- **验收判据**："到点能在手机上看见智能体产生了回答（含复述的提醒原文）"。诚实边界：仅会话活着且处于 2 小时监控窗口内才可能推到手机；出窗口退化为"回 App 才看到"。真机投递 schedule 消息的 A 级验证待补（第三轮审计 §六：建一条 cron 等触发后手机截图）
 - **原评估中的路线已兑现**：中文时间解析 + dsh-schedule 触发层复用，手机可见性判据指导了实现
 
 ### P1：#9 审批卡 + 四级权限（跨仓库决策已解决，dsh 侧未排期）
@@ -248,7 +255,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **跨仓库决策（已解决，2026-09-28）**：HMC 启动器曾把新会话权限写死 `DSH_PERMISSION_MODE='danger-full-access'`（单测锁定该行为），手机 RPC 白名单无改权限模式接口 → 默认部署下审批卡永远不弹。Tomas 批准 PR：`scripts/host-env.mjs` 改为 `??= 'workspace-write'`，新会话默认触发审批卡，`danger-full-access` 仅显式 opt-in；PR（`4b4da70`）已合并进 `origin/main`。旧会话持久化权限不受影响。
 - **dsh-muse 路线（未排期）**：
   - **BLOCKED 层（先做）**：纯插件，shell 工具调用前正则检查，命中直接拒。零 UI 依赖，可独立交付。**理由比原先更硬**：走 `tools/pre-execute` 缝（`packages/core/agent-loop/src/tool-calls.ts:211,216`，上游测试 `tests/interception.spec.ts:705` 称其为"原生插件权限模式"），不依赖 dsh 权限预设与审批瀑布→**不受 HMC 权限模式影响**（第二轮审计确认）。
-  - **APPROVAL 层（后做）**：HMC 呈现层早就实现且有真机用例（V3 已关闭）：`MainActivity.java:707-736` 收到 `approval/request` 弹「工具请求权限」卡（allowed-once/rejected），`Timeline.java:163-164` 渲染，`MonitorEvents.java:78-81` 后台提醒「有待处理审批」，服务端 `service/security.mjs:37-72`（ApprovalFence）校验；真机测试 `ClientDeviceTest.java:63-69`、`MonitorNotificationDeviceTest.java:23`、`PhoneMonitorDeviceTest.java:129`。PR 合并后默认部署下审批卡可弹，dsh 侧只需实现分级逻辑。
+  - **APPROVAL 层（优先级下调，第三轮审计）**：HMC 呈现层早就实现且有真机用例（V3 已关闭）：`MainActivity.java:707-736` 收到 `approval/request` 弹「工具请求权限」卡（allowed-once/rejected），`Timeline.java:163-164` 渲染，`MonitorEvents.java:78-81` 后台提醒「有待处理审批」，服务端 `service/security.mjs:37-72`（ApprovalFence）校验；真机测试 `ClientDeviceTest.java:63-69`、`MonitorNotificationDeviceTest.java:23`、`PhoneMonitorDeviceTest.java:129`。PR 合并后默认部署下审批卡可弹，**且生产路径默认预设已是 ask——不实现 dsh 侧分级也能弹卡**。分级价值仍在（READ/WRITE 免税、BLOCKED 硬拒），但属优化非必需，故下调。
 - **价值**：高。cron 和浏览器跑起来后自动操作破坏力上升，审批是安全带。Tomas 单用户自用，WRITE 默认放行已够宽松，短期不阻塞。
 - **成本/风险**：中。BLOCKED 正则可直接移植；APPROVAL 等 Tomas 一句话开工。
 
@@ -289,7 +296,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 批次 | 内容 | 前置条件 |
 |---|---|---|
 | 近期 | stage-2 cron（每小时 upkeep/heartbeat）是否激活 | 观察 stage-1 几天：token 消耗 + 稳定性；Tomas 批准 |
-| P1 | #9 BLOCKED 层（纯插件硬拦截）→ #9 APPROVAL 层（dsh 侧分级） | BLOCKED 零 UI 依赖可先行；APPROVAL 跨仓库决策已解决，等 Tomas 一句话开工 |
+| P1 | #9 BLOCKED 层（纯插件硬拦截）；#9 APPROVAL 分级（已下调） | BLOCKED 零 UI 依赖可先行；APPROVAL 跨仓库决策已解决且默认 ask 已能弹卡，分级下调为优化项，等 Tomas 一句话开工 |
 | P1 | #5 多步浏览器（挂载上游 browser-use-playwright-mcp）+ **手机端产物通道（#5/#8 合并议题）** | 先通过内存压测（V4，OOM 则停） |
 | 按需 | #12 Goals / #10 Hooks / #8 Artifacts v2（等零成本试验结果） | Tomas 一句话启动；#12 先回答真相源冲突问题 |
 
@@ -322,3 +329,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - 作为服务器"园丁"长期维护；文档与进化留痕（ARCHITECTURE / REPLICATION / LESSONS 随改随更）
 
 **定位**：Soul 是 dsh-muse 的"宪法层"——23 项清单回答"能做什么"，Soul 回答"怎么做事"。后续所有拍板事项（cron 激活、生产操作、事故复盘）都先过 Soul 规则。
+
+**手机侧可见性与 token 成本**（2026-09-29 第三轮审计 §3.6 补充）：
+- Soul 注入用 `createUserMessage({ source: { kind: "dsh-intelligence-soul" } })`（`index.js:71-74`），HMC 客户端只渲染 `kind=="user"`——**Soul 不会在手机时间线上刷屏**（好消息）；但用户也无法在手机上感知 Soul 是否生效，只能靠提问验证（已用"做事方式第一条"验过一次，快照命中"先自己动手"）。
+- 成本：step 1 现在有三条独立注入（记忆召回、画像、Soul；`soul.md` 2275 字节，`index.js:63` 有 `step !== 1` 守卫），是每回合的固定 token 开销。在 1GB 机器上这不是内存问题，是钱的问题。建议：三条合并为一条消息，或给 Soul 加长度上限（待实施）。

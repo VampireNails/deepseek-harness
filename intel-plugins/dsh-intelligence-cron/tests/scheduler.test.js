@@ -315,3 +315,26 @@ test("对账：crash 在落盘更新前 → 领养已 append 的新轮次（不�
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("提醒 prompt 自带复述指令：HMC 手机只渲染 kind=user，schedule 提醒正文不可见", async () => {
+  // 背景（2026-09-29 第三轮审计 §3.1）：dsh-schedule 到点投递 source.kind='schedule'，
+  // HMC 客户端 Timeline.java:150-151 只渲染 kind=="user"，提醒正文在手机时间线上不可见，
+  // 手机只能看到智能体对提醒的回复。因此 prompt 必须要求智能体先把提醒原文完整复述给用户。
+  const dir = mkdtempSync(join(tmpdir(), "cron-test-"));
+  try {
+    const session = fakeSession("sess-1");
+    const agent = { session };
+    const { sch } = makeScheduler(dir, agent);
+    const p = sch._reminderPrompt({ name: "喝水提醒", prompt: "提醒我喝水" });
+    assert.ok(p.includes("提醒我喝水"), "应包含提醒原文");
+    assert.ok(p.includes("复述"), "应包含复述指令");
+    // create() 走同一包装：落盘的 schedule record prompt 也应带复述指令
+    await sch.create(agent, "喝水提醒", "提醒我喝水", "1分钟后");
+    const created = session.events.find((e) => e.data.operation === "create");
+    assert.ok(created, "应 append create 事件");
+    assert.ok(created.data.schedule.prompt.includes("复述"), "record prompt 应带复述指令");
+    assert.ok(created.data.schedule.prompt.includes("提醒我喝水"), "record prompt 应含提醒原文");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

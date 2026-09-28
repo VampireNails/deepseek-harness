@@ -111,7 +111,12 @@ export class CronScheduler {
   }
 
   _reminderPrompt(job) {
-    return `【${job.name}】${job.prompt}`;
+    // HMC 手机客户端只渲染 source.kind == "user" 的消息（Timeline.java:150-151）；
+    // dsh-schedule 到点投递的是 source.kind='schedule'，其正文在手机时间线上不可见——
+    // 手机上只能看到智能体对提醒的回复（assistant/message 无条件渲染）。
+    // 因此 prompt 自带处理要求：先把提醒原文完整复述给用户，再执行任务，
+    // 让回答自带原文，规避客户端渲染过滤（2026-09-29 第三轮审计 §3.1）。
+    return `【定时提醒 ${job.name}】${job.prompt}\n（处理要求：先把本条提醒的原文完整复述给用户，然后再执行提醒中的任务。）`;
   }
 
   // ---- 工具入口 ----
@@ -134,17 +139,17 @@ export class CronScheduler {
 
       if (parsed.kind === "interval") {
         slotId = `${ID_PREFIX}${id}`;
-        record = buildRecord("every", slotId, `【${name}】${prompt}`, { seconds: parsed.seconds }, now);
+        record = buildRecord("every", slotId, this._reminderPrompt({ name, prompt }), { seconds: parsed.seconds }, now);
       } else if (parsed.kind === "after") {
         slotId = `${ID_PREFIX}${id}`;
-        record = buildRecord("after", slotId, `【${name}】${prompt}`, { seconds: parsed.seconds }, now);
+        record = buildRecord("after", slotId, this._reminderPrompt({ name, prompt }), { seconds: parsed.seconds }, now);
       } else {
         // daily / weekly / once → one-shot at + 重武装（once 不重武装）
         const target = parsed.kind === "once"
           ? this._onceTarget(parsed, now)
           : nextOccurrence({ hour: parsed.hour, minute: parsed.minute, dayOfWeek: parsed.dayOfWeek }, this.timeZone, now);
         slotId = `${ID_PREFIX}${id}-${slotDate(this.timeZone, target)}`;
-        record = buildRecord("at", slotId, `【${name}】${prompt}`, { targetMs: target }, now);
+        record = buildRecord("at", slotId, this._reminderPrompt({ name, prompt }), { targetMs: target }, now);
       }
 
       // 先落盘再 append：crash 在中间 → 对账补建（只防丢，不丢任务）
