@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ArtifactStore } from "../src/artifacts.js";
@@ -121,6 +121,38 @@ test("HTML 产物：元数据标注 kind=html，文件扩展名 .html", () => {
     const got = store.get(m.id);
     assert.equal(got.kind, "html");
     assert.equal(got.content, "<h1>hi</h1>");
+  } finally {
+    cleanup();
+  }
+});
+
+
+test("HTML 产物：同标题追加 v2.html，版本回读正确", () => {
+  const { store, dir, cleanup } = freshStore();
+  try {
+    const m1 = store.save("HTML 看板", "<p>v1</p>", "html");
+    const m2 = store.save("HTML 看板", "<p>v2</p>", "html");
+    assert.equal(m2.id, m1.id);
+    assert.equal(m2.version, 2);
+    assert.ok(existsSync(join(dir, m1.id, "v1.html")));
+    assert.ok(existsSync(join(dir, m1.id, "v2.html")));
+    assert.ok(!existsSync(join(dir, m1.id, "v2.md")));
+    assert.equal(store.get(m1.id, 1).content, "<p>v1</p>");
+    assert.equal(store.get(m1.id, 2).content, "<p>v2</p>");
+    assert.equal(store.read(m1.id).content, "<p>v2</p>");
+    assert.match(store.versionsText(m1.id), /v2\.html/);
+    const meta = JSON.parse(readFileSync(join(dir, m1.id, "meta.json"), "utf8"));
+    assert.equal(meta.kind, "html");
+  } finally {
+    cleanup();
+  }
+});
+
+test("kind 大小写不敏感：HTML 归一化为 html", () => {
+  const { store, cleanup } = freshStore();
+  try {
+    const m = store.save("大小写", "<p>x</p>", "HTML");
+    assert.equal(m.kind, "html");
   } finally {
     cleanup();
   }

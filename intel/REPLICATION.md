@@ -58,14 +58,20 @@
 > 修订 1 · 2026-09-29 07:23（第三轮审计 12 项确认优化落实）：cron 提醒手机可见性修复（方案 1）；生产默认 workspace-write+ask 运维告知；#9 归因修正。
 > 修订 0 · 2026-09-28 晚间（第二轮审计 HMC 交叉核验修复）：bootstrap 两处硬伤；HMC 端到端证据对齐；#9 APPROVAL 改跨仓库决策；#11 手机可见性判据。
 
-> **修订 14 · 2026-09-29 21:30（HMC 首屏空列表根治，走 PR）：**
+> **修订 14 · 2026-09-29 21:30（HMC 首屏空列表根治）——已于 21:43 被 Tomas 改写合入 main：**
 > 背景：N6 修法（c584bca，Tomas 13:56 亲手合入 main）后第八轮审计确认首屏仍偶发卡在「正在同步会话列表…」，需手动点刷新；远端 stale 分支 fix/session-list-cache-n6 已删。
-> 根因：`list()` 的 RPC 回调里 `if(g!=generation||connection!=host) return` **静默丢弃**更新——RPC 超时/失败会走 catch 显示错误文案，只有守卫丢弃会导致 UI 永久卡在「正在同步…」无任何恢复。冷启/后台返回时的竞态（onStart→list→disconnect 世代跳变）可稳定触发。
-> 修法（分支 `fix/session-list-stuck-retry`，commit d5a0a8a，已 push，待 Tomas 在 GitHub 建 PR；deploy key 无 API 权限）：
-> 1. 守卫丢弃时记 `Log.w("HMC",...)`，若仍在列表屏（sessionId==null）且状态仍是「正在同步/正在连接」，自动重试 `list()`（等价于替用户点刷新）：2s 后第 1 次、5s 后第 2 次，最多 2 次后转人工提示；
-> 2. `cachedSessions` 持久化到 SharedPreferences（`cachedSessionsJson`），`onCreate` 恢复并过滤子会话——冷启也能秒显上次列表，不再是纯内存缓存；
-> 3. 成功加载后重置重试计数并持久化。
-> 验证：真机冷启/切后台返回多次抽查列表均正常加载（50 个会话）；竞态为偶发，未能在真机稳定复现，修法为防御性根治——卡死路径已无静默分支。
+> 根因（方向确认正确）：`list()` 的 RPC 回调里 `if(g!=generation||connection!=host) return` **静默丢弃**更新——RPC 超时/失败会走 catch 显示错误文案，只有守卫丢弃会导致 UI 永久卡在「正在同步…」无任何恢复。冷启/后台返回时的竞态（onStart→list→disconnect 世代跳变）可触发。
+> 修法演进：
+> - 作者版（分支 `fix/session-list-stuck-retry`，commit d5a0a8a，21:27 push）：守卫丢弃时记 Log.w，仍在列表屏且卡在「同步中」则自动重试 list()（2s/5s，最多 2 次）+ cachedSessions 持久化到 SharedPreferences；
+> - **Tomas 版（commit `4360914`「Fix session list retries for stalled current requests」，21:43 直接合入 main，已装机 21:59:07）**：推倒重来——删掉缓存持久化，改为**每个 list 请求自带 12 秒超时定时器**（`LIST_REQUEST_TIMEOUT_MS=12000`，超时未回则 `retrySessionList` 自动重试，状态文案「正在重试会话列表…」）+ **NETWORK 错误重试**（`HostClient.failureKind` 判 NETWORK，非 RemoteCallFailure 才重试，2s/5s 退避）；`disconnect()` 取消挂起重试；过期请求不能重启列表（g/connection/sessionId/foreground 四重检查）；补仪器化测试 `ListRetryPhoneDeviceTest.java`（56 行）。
+> 为何 Tomas 版更优：超时模型覆盖「RPC 挂起不回」全场景，不依赖「检测 UI 是否卡在同步中」的脆弱启发式；重试归属到请求而非守卫丢弃点，语义更干净。
+> 生产 hmc-client 已切回 main @ 4360914（此前误停在已合分支 fix/session-list-stuck-retry，该分支本地+远端均已删）。
+
+> **修订 15 · 2026-09-29 22:30（第十轮 HMC 交叉核验收口）：**
+> - **服务端 origin 过滤正式闭环**：`session/list` 返回 56 条，`origin="subagent"` 为 0；手机状态行「已连接 · 50 个会话（已隐藏 6 个空会话）」不再出现「个子会话」字样——服务端滤光后客户端兜底「无对象可滤」。50 显示 + 6 空 = 56，数字对账闭环。
+> - **子会话数是动态值，非静态 14**：磁盘 header 统计 `origin="subagent"` 已从 14 → **16**（新增 `1292be71`、`c3026228`，系修订 13 审批测试会话跑 quiet-moment 复盘时派生）；服务端日志 `filtered 14`（20:13:52）→ `filtered 16`（21:20 起）。文档中「14 个子会话」一律理解为「当时 14 个」，随智能体活动浮动。
+> - **修订 13 写路径三连独立印证**：`session-3f557cc6` 的 turns=3/steps=8、pendingCalls=None、running=false——审批卡若无人点会话会永久卡 pending，三回合跑完证明三张卡都被点过；turnOutline 与 artifact_save/feed_render/goal_create 逐字对应；`intel-artifacts/` 空、`feed.json` 只剩旧 f1、`workspace/` 无 HTML。两处瑕疵：①修订 13 引用的截图 `~/workspace/audit-evidence/2026-09-29-html-preview-phone-render.png` 在**本地 VM**真实存在（评估方查的是服务器 `/root/workspace/` 路径，位置查错）；②`goals.md` 残留「### 真机审批验证目标 [g1]」（goals.json 已空，待清理）。
+> - **修订 12 kind=html 缺自动化回归**：`dsh-intelligence-artifacts` 现有单测只覆盖 `kind="markdown"`，HTML 分支（v1/v2 版本追加）无覆盖——已补单测。
 
 
 ---
