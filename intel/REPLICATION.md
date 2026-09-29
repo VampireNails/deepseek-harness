@@ -10,7 +10,7 @@
 > 修订：2026-09-29，内容对应提交 `96ac06d66`。（本行之外的全部内容与该提交一致；若 HEAD 更新而本行未动，以 git log 为准）。
 > 本次修订（2026-09-29 上午，第二份审计报告 5 条新发现落实）：#11 方案 1 修订——去掉"处理要求"元指令（落在上游标注为"非指令"的字段里，可能被原样念出；改用面向用户的自然标签，上游 framing 已要求呈现 reminder 内容）；`dsh-prod` 已重启使 cron 修法生效；生产默认 ask 补前提（PC Web General settings 未保存默认权限，2026-09-29 核实为空）；内存改"17 小时实测 10.4MB / 历史峰值 156MB / 24h 待出"口径；bootstrap 等价性修正（生产同样只用 wrapper、无 HMC 原版 4 项 patch）。
 > 上次修订（2026-09-29 上午，第三轮审计 12 项确认优化全部落实）：#11 cron 提醒 prompt 自带复述指令（手机可见性硬伤修复，方案 1）；新增"生产默认 workspace-write+ask 运维告知"，#9 归因修正（① HMC 启动器路径 vs ② 生产路径分开）；bootstrap 等价性口径修正（hmc-test 仅冒烟）；数字校正（cron 42 用例、内存双点位说明、cron 激活改 🔄）；Soul 补"手机侧不可见 + step-1 三注入 token 成本"；HMC 连接地址口径澄清（走 IP，域名仅 PC Web）；#9 APPROVAL 分级优先级下调；§3.4 夹具已由 Tomas 在 HMC 2b4f7f6 补回（无需另开 PR）。
-> 上次修订（2026-09-29 上午）：6 项 web 能力全部复刻完成并生产真机验收（多步浏览器、Artifacts v2、审批四级、Hooks、Goals、Feed Web UI 呈现层；23 项口径变为 8+14+0+1）；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；HMC 新增 HTML 预览 PR 分支 intel-html-preview（feed_render/HTML 产物手机渲染）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
+> 上次修订（2026-09-29 上午）：6 项 web 能力全部复刻完成并生产真机验收（多步浏览器、Artifacts v2、审批四级、Hooks、Goals、Feed Web UI 呈现层；23 项口径变为 8+15+0+1（新增 dsh-intelligence-guard 生产环境守卫，见 §九））；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；HMC 新增 HTML 预览 PR 分支 intel-html-preview（feed_render/HTML 产物手机渲染）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
 > 上上次修订（2026-09-28 晚间）：第二轮审计（HMC 交叉核验）后修正：bootstrap 两处硬伤已修复并通过干净验收；HMC 端到端证据已对齐为脚本真实输出；#9 APPROVAL 层改为跨仓库决策项（V3 关闭）；#11 新增"手机可见性"选型判据；#8 改为"消费通道部分存在"。
 
 ---
@@ -226,7 +226,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 
 ### 3.4 生产状态（2026-09-29）
 
-- **生产**：`dsh-prod.service`（active）——单个 dsh 进程同时监听 Web `127.0.0.1:8080` + HMC TLS `100.73.148.102:43197`；profile=web；干净 env（无 `DEEPSEEK_BASE_URL`）；Tailscale Serve 指向 `:8080`；8 个智能插件全挂载
+- **生产**：`dsh-prod.service`（active）——单个 dsh 进程同时监听 Web `127.0.0.1:8080` + HMC TLS `100.73.148.102:43197`；profile=web；规范入口 `/usr/local/bin/dsh-prod-start`（`env -i` 构造性隔离调用方环境）；15 个智能插件全挂载（含 `dsh-intelligence-guard` 生产守卫，挂 bundles 首位）
 - **退役**：Python `deepseek-harness.service` 已 disable+inactive；`/opt/deepseek-harness` 已归档删除；`mobile-mirror.service` 已 disable+inactive；旧手动 hmc-test 生产进程已停（`:3095` 释放）；孤儿 mock 端口已清
 - **备份与回滚**：全量备份 `/root/intel/cutover-backup-20260928/`（约 137MB）；一键完整回滚 `/root/intel/dsh-fork/intel/rollback-full.sh --yes`
 - **HMC 手机**：已直连 `100.73.148.102:43197` 配对成功，真 DeepSeek 回复（provider=deepseek-official）。**连接地址口径**（第三轮审计 §3.7）：HMC 服务走 IP（`100.73.148.102:43197`）；`hmc-mirror.tail52c730.ts.net` 域名仅用于 PC Web（Tailscale Serve → 127.0.0.1:8080）。HMC TLS 证书 SAN（`CN=hmc-test`，含 IP 100.75.211.11/100.73.148.102/127.0.0.1）不含该域名——改域名访问 HMC 会因主机名校验失败。保持走 IP，或重签证书补 SAN。
@@ -235,6 +235,12 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **Git**：`intel` 分支已 push（HEAD `96ac06d66`），`master` 跟踪上游
 - **每周养成检查**：已改名"dsh-muse 每周养成检查"（每周一 09:15，覆盖 dsh-muse 生产健康 + 进化产出 + 升级提议）
 - **待 Tomas**：stage-2 cron 激活；§四 P1/P2 开工（#9 dsh 侧 BLOCKED/APPROVAL、#5 浏览器内存压测）
+- **环境污染系统性修复**（2026-09-29，Tomas 要求"基于整个智能体评估迭代、而非打补丁"）：
+  - 根因：dsh 上游把 `DEEPSEEK_BASE_URL` 列为 BOOTSTRAP_NAMES——只能来自进程 ambient env（`.env` 文件反而设不了）。测试 shell 的 `BASE_URL` 泄漏进手动启动的生产进程是设计允许的行为，不是偶然 bug。
+  - Layer 1（插件层）：`dsh-intelligence-guard` 只挂 web profile 首位，`apply()` 断言生产不变式（`BASE_URL` 未设置、`API_KEY` 存在、`HMC_CONFIG` 存在、无 `MOCK*` 残留），违反则抛错使 dsh 拒绝启动（fail-closed）。覆盖 systemd/手动/cron 所有进入路径。单测 7/7；隔离真测：污染 env 拒绝启动、干净 env 放行。
+  - Layer 2（入口层）：`/usr/local/bin/dsh-prod-start`，`env -i` 后只注入白名单变量（`DEEPSEEK_API_KEY/MODEL`、`HMC_CONFIG`、基础 `PATH/HOME`），`dsh-prod.service` 已改用它。
+  - Layer 3（命名层）：`/root/intel/hmc-test/` → `/root/intel/hmc-prod/`（生产 token/config/log 一直放在"test"名下是误操作隐患；保留 `hmc-test` symlink 兼容）。
+  - 不做：测试/生产数据目录物理隔离（`DSH_HOME` 分流改动面大，列为后续迭代）；不改 dsh core env 语义（上游设计，`packages/` 禁止修改）。
 
 ---
 
