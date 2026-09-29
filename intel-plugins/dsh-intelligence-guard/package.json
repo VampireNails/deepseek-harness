@@ -1,0 +1,1 @@
+{"dependencies":{"@deepseek-ai/dsh-tools":"0.1.7-rc.1","@deepseek-ai/schemastery":"~3.18.4"},"description":"生产环境不变式守卫：只挂 web profile，启动时断言生产环境契约，违反则 fail-closed 拒绝启动。","dsh":{"bundle":{"patch":"./cordis.patch.yml"}},"license":"Apache-2.0","main":"index.js","name":"dsh-intelligence-guard","type":"module","version":"0.1.0"}
