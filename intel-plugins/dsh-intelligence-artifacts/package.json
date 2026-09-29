@@ -1,0 +1,17 @@
+{
+  "name": "dsh-intelligence-artifacts",
+  "version": "0.1.0",
+  "description": "Artifacts v2：产物存/取/版本管理（复刻 Python 版 artifacts.py）。工具层 + 元数据；HTML 渲染层留待 HMC 实现。",
+  "type": "module",
+  "main": "index.js",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.1",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "dsh-intelligence-approvals",
+  "version": "0.1.0",
+  "description": "审批四级分级：READ 免审批放行 / WRITE 与 EXEC 走审批卡 / BLOCKED 高危硬拦截（tools/pre-execute 门）+ approval_classify 查询工具",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.1",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

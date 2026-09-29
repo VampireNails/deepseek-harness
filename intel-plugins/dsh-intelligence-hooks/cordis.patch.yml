@@ -1,0 +1,4 @@
+# dsh-intelligence-hooks 自挂载（树外插件，无上游依赖要 overlay）
+- insert:
+    - id: dsh-intelligence-hooks
+      name: dsh-intelligence-hooks

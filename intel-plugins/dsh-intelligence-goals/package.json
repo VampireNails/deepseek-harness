@@ -1,0 +1,1 @@
+{"dependencies":{"@deepseek-ai/dsh-tools":"0.1.7-rc.1","@deepseek-ai/schemastery":"~3.18.4"},"description":"长期目标追踪：goal_create / goal_progress / goal_close / goal_list，goals.json 为真相源并自动生成 goals.md。","dsh":{"bundle":{"patch":"./cordis.patch.yml"}},"license":"Apache-2.0","main":"index.js","name":"dsh-intelligence-goals","type":"module","version":"0.1.0"}
