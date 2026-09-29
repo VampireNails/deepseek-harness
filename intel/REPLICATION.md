@@ -7,6 +7,14 @@
 > ④ 原未排期 5 项的复刻完成状态（已全部上线），
 > ⑤ 23 项之外的复刻：Muse 行为规则（Soul）。
 >
+> 修订 8 · 2026-09-29 16:30（第六轮审计 M1–M6 落实）：
+> M1 根因定位——"重启验证OK"会话打开失败是 subagent 子会话（origin:subagent），session/follow 直接打开被网关以 session/agent-busy 拒绝；HMC 服务 catch 分支此前不写日志、客户端丢弃 error.code，导致手机上只有一句通用文案。已修：server.mjs catch 补 console.error（endpoint/session/code/stack）；HostFailure 携带 remoteCode；MainActivity 文案透出 code，agent-busy 给专属提示"这是子任务会话，请从父会话中查看"（分支 fix/hmc-stream-error-visibility 已推，待 PR）。
+> M2 流错误码透出（同上，一并落实）。
+> M3 evolve cron 不卡 ask——evolve profile 只挂 base+headless+memory+joblog+evolution+feed，不挂 approvals/guard，不经 dsh-prod-start；隔离 mock 实测 memory_write 直接成功（EXIT=0），exit 后测试记忆已清。文档补 cron 防线边界说明。
+> M4 空测试会话真正移出活动区——此前归档的只是 projcache 投影（/root/.dsh/storages/session_projcache/sessions/*.json），真身在 /root/.dsh/sessions/--root-intel-hmc-prod-workspace--/ 下，dsh 会从真身重建投影。已把真身目录移到 /root/.dsh/archived-sessions/2026-09-29-empty-test/ 并删投影，重启后 session/list 确认消失。客户端另加 blank=true 过滤（同分支，已推）。
+> M5 RSS 口径修正：稳态 10~97MB（启动 15 分钟后）；启动 5 分钟瞬时峰值约 142MB；收尾 16MB。
+> M6 旧 HEAD（2765849e1）更新；"新写插件 14 行"与"磁盘 14 个插件目录"为恰好同数但集合不同，guard 不计入 23 项。
+> N6 口径更正：已由 Tomas 直接合入 HMC origin/main（2421c0b），无需再建 PR。
 > 修订 7 · 2026-09-29 15:10（24h 空转监控收尾完成 + stage-1 cron 激活落地，文档状态同步）。
 > 修订 6 · 2026-09-29 14:10（第五轮审计落实）：guard 插件 fail-closed 声明撤回（实测 apply() 抛错只产生 did not activate warning，拦不住启动；上游 requiredStartupEntryIds 硬编码）→ 真正的启动拦截前置到 dsh-prod-start（复用 guard checkInvariants，违反 exit 1，污染 env 实测拒绝启动）；guard 改为 warn-only 可观测定位；补启动级回归测试（failclosed.test.js 2/2）；修订行重写为纯列表；插件计数统一为 14；空测试会话归档。
 > 修订 5 · 2026-09-29 12:54（第四轮审计 16 项确认全部落实）：3 僵尸会话归档；approvals 只读免审已验证/写路径未走完；改插件固定验收 journalctl|grep did not activate；默认 ask 写操作需有人值守；feed_render 带 output_path→WRITE；browser_close→READ；Hooks 标注未闭环；浏览器内存口径修正；文档四处同步（8+14+0+1）。
