@@ -46,7 +46,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 文档订正 + README npm ci | ✅ 完成 |
 | run-integration.sh DSH_HOME 隔离 | ✅ 完成 |
 | bootstrap 可复现脚本 | ✅ 完成（第二轮审计发现两处硬伤已修：`intel/hmc-service-wrapper` 入库（此前引用路径不存在）+ `npm ci`→`npm install`（无锁文件必然失败）；`DSH_HOME=$(mktemp -d)` 干净验收三 profile 全过。第三轮审计 §3.3 口径修正：hmc-test 是 API 级冒烟 profile（能装、能起、API 通），未并入 HMC `service/cordis.patch.yml` 的 4 项（其中 `pwsh-sandbox` 为 Windows 专用，故意不并）；第二份审计报告 §2.5 修正对比基准：**生产（`--profile web`）同样只用 hmc-service-wrapper、无 HMC 原版 4 项 patch**（`cordis.patch.yml` 为空数组），两者在 patch 面上一致——生产缺 `hmc-directory-picker-host/-ui` 是否影响手机端"选工作区目录"待 HMC 侧评估（PC Web 已实测可达 401，缺 `web-runtime` 重配未阻断）；依赖 `/root/intel/hmc-client` 外部路径，wrapper README 已披露） |
-| 24h 空转存活监控 | ✅ 已完成（2026-09-28 14:34 → 09-29 14:40，满 24h 存活；无 OOM、无异常死亡；RSS 全程 10~97MB、收尾 16MB，回落稳定无泄漏；仅进程存活+RSS，非负载稳定性） |
+| 24h 空转存活监控 | ✅ 已完成（2026-09-28 14:34 → 09-29 14:40，满 24h 存活；无 OOM、无异常死亡；RSS 稳态 10~97MB（启动后 15 分钟起；启动 5 分钟瞬时峰值约 142MB）、收尾 16MB，回落稳定无泄漏；仅进程存活+RSS，非负载稳定性） |
 | HMC 端到端 | ✅ API 级通过（TLS→401→session/create→session/prompt→memory_write SQLite 落盘，全绿；证据 `intel/hmc-e2e-evidence-2026-09-28.log` 为 `hmc-e2e.sh` 真实 stdout，第二轮审计对齐）；手机真机已直连 100.73.148.102:43197，Tomas 确认"已连上" |
 | 系统 cron 分档激活 | ✅ stage-1 已激活（2026-09-29 14:40；5 个低频任务：07:30 学习、08:00 晨报、09:30 想法整理、23:30 深夜复盘、周日 03:00 技能审查）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定 |
 
@@ -146,7 +146,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 ### 3.2 分阶段改造记录
 
 **阶段 0：环境验证**（2026-09-28）
-- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29，已完成）：满 24h 存活，无 OOM、无异常死亡；RSS 全程 10~97MB、收尾 16MB，回落稳定无泄漏；进程历史峰值 156MB（`VmHWM`）。启动峰值 vs 长期空转稳态是同一进程生命周期的不同点位，非矛盾（第三轮审计 §3.5 口径说明；第二份审计报告 §2.4 实测印证）
+- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29，已完成）：满 24h 存活，无 OOM、无异常死亡；RSS 稳态 10~97MB（启动后 15 分钟起；启动 5 分钟瞬时峰值约 142MB）、收尾 16MB，回落稳定无泄漏；进程历史峰值 156MB（`VmHWM`）。启动峰值 vs 长期空转稳态是同一进程生命周期的不同点位，非矛盾（第三轮审计 §3.5 口径说明；第二份审计报告 §2.4 实测印证）
 - 踩坑：`pnpm link` 不装树外插件传递依赖——插件包须自带 `node_modules`
 - 踩坑：`@deepseek-ai/*` 必须 pin `0.1.7-rc.1`，npm 默认 `0.0.1-rc.1` 导致 `unknown tool`
 
@@ -241,9 +241,10 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **HMC 手机**：已直连 `100.73.148.102:43197` 配对成功，真 DeepSeek 回复（provider=deepseek-official）。**连接地址口径**（第三轮审计 §3.7）：HMC 服务走 IP（`100.73.148.102:43197`）；`hmc-mirror.tail52c730.ts.net` 域名仅用于 PC Web（Tailscale Serve → 127.0.0.1:8080）。HMC TLS 证书 SAN（`CN=hmc-test`，含 IP 100.75.211.11/100.73.148.102/127.0.0.1）不含该域名——改域名访问 HMC 会因主机名校验失败。保持走 IP，或重签证书补 SAN。
 - **24h 空转存活监控**：✅ 已完成。监控对象 = `dsh --profile web-intel --port 3080` 空转进程（**不是**生产 `dsh-prod`）+ mock LLM `:18099`；满 24h 存活、无 OOM；日志已归档 `/root/intel/stability-archive-20260929.tar.gz`，`:18099`/`:3080` 已释放
 - **系统 cron**：✅ stage-1 已激活（2026-09-29 14:40，`crontab -l` 确认 5 行在位）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定
-- **Git**：`intel` 分支已 push（HEAD `2765849e1`，2026-09-29 13:20 第四轮审计落实），`master` 跟踪上游
+- **cron 防线边界**：5 个定时任务走 `dsh --profile evolve`，该 profile **不挂 guard 插件、也不经 `dsh-prod-start`**——Layer 1+2 防线在 cron 路径上不生效（cron 环境为系统最小环境集，现实风险低，但纵深防御口径需点名）。另经 mock 实测：evolve 未挂 `dsh-intelligence-approvals`，`memory_write` 等写工具直接放行、不会卡在 `ask` 等待确认（2026-09-29 实测 EXIT=0）
+- **Git**：`intel` 分支已 push（HEAD `6e482b318`，2026-09-29 第六轮审计落实），`master` 跟踪上游
 - **每周养成检查**：已改名"dsh-muse 每周养成检查"（每周一 09:15，覆盖 dsh-muse 生产健康 + 进化产出 + 升级提议）
-- **待 Tomas**：stage-2 cron 激活；HTML 预览重装 APK 后真机验收；Hooks 闭环消费方设计评审；向上游 dsh 提需求：profile 条目支持 `required` 标记（或开放 `requiredStartupEntryIds` 扩展点），让第三方守卫插件也能 fail-closed；HMC 侧 N6 已提分支 `fix/session-list-cache-n6`（会话列表缓存先行渲染，不再空屏；N7 后台监控服务确认为 opt-in 设计未改代码）——待 Tomas 在 GitHub 手动创建 PR（deploy key 无 API 权限）
+- **待 Tomas**：stage-2 cron 激活；HTML 预览重装 APK 后真机验收；Hooks 闭环消费方设计评审；向上游 dsh 提需求：profile 条目支持 `required` 标记（或开放 `requiredStartupEntryIds` 扩展点），让第三方守卫插件也能 fail-closed；HMC 侧 N6（会话列表缓存先行渲染，不再空屏）已由 Tomas 直接合入 `main`（`2421c0b`，含其追加的 2 个提交），无需再建 PR；N7 后台监控服务确认为 opt-in 设计未改代码
 - **运维规则**（2026-09-29 第四轮审计 §2.1 立）：默认 ask 下写操作必须有人值守；无人值守跑写操作只能显式 opt-in（danger-full-access）或接受卡住。
   2026-09-29 上午 3 个卡在审批 pending 的僵尸会话已归档清理（`~/.dsh/archived-sessions/2026-09-29-approval-zombies/`）
 - **改插件固定验收**（2026-09-29 第四轮审计 §2.2 立，第五轮 N1 升级）：每次改插件重启后必跑 `journalctl -u dsh-prod --since <重启时刻> | grep "did not activate"`；0 命中才算上线；**若有命中，必须确认告警名单里没有 `dsh-intelligence-guard`**——守卫失败会混在"插件没装好"里，不单独检查会被当成噪音忽略
