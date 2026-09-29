@@ -9,8 +9,8 @@
 >
 > 修订：2026-09-29，内容对应提交 `96ac06d66`。（本行之外的全部内容与该提交一致；若 HEAD 更新而本行未动，以 git log 为准）。
 > 本次修订（2026-09-29 上午，第二份审计报告 5 条新发现落实）：#11 方案 1 修订——去掉"处理要求"元指令（落在上游标注为"非指令"的字段里，可能被原样念出；改用面向用户的自然标签，上游 framing 已要求呈现 reminder 内容）；`dsh-prod` 已重启使 cron 修法生效；生产默认 ask 补前提（PC Web General settings 未保存默认权限，2026-09-29 核实为空）；内存改"17 小时实测 10.4MB / 历史峰值 156MB / 24h 待出"口径；bootstrap 等价性修正（生产同样只用 wrapper、无 HMC 原版 4 项 patch）。
-> 上次修订（2026-09-29 上午，第三轮审计 12 项确认优化全部落实）：#11 cron 提醒 prompt 自带复述指令（手机可见性硬伤修复，方案 1）；新增"生产默认 workspace-write+ask 运维告知"，#9 归因修正（① HMC 启动器路径 vs ② 生产路径分开）；bootstrap 等价性口径修正（hmc-test 仅冒烟）；数字校正（cron 42 用例、内存双点位说明、cron 激活改 🔄）；Soul 补"手机侧不可见 + step-1 三注入 token 成本"；HMC 连接地址口径澄清（走 IP，域名仅 PC Web）；#9 APPROVAL 分级优先级下调；§3.4 夹具已由 Tomas 在 HMC 2b4f7f6 补回（无需另开 PR）。
-> 上次修订（2026-09-29 上午）：6 项 web 能力全部复刻完成并生产真机验收（多步浏览器、Artifacts v2、审批四级、Hooks、Goals、Feed Web UI 呈现层；23 项口径变为 8+15+0+1（新增 dsh-intelligence-guard 生产环境守卫，见 §九））；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；HMC 新增 HTML 预览 PR 分支 intel-html-preview（feed_render/HTML 产物手机渲染）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
+> 修订 5 · 2026-09-29 13:00（第四轮审计 16 项确认全部落实；git log 为准）：#11 cron 提醒 prompt 自带复述指令（手机可见性硬伤修复，方案 1）；新增"生产默认 workspace-write+ask 运维告知"，#9 归因修正（① HMC 启动器路径 vs ② 生产路径分开）；bootstrap 等价性口径修正（hmc-test 仅冒烟）；数字校正（cron 42 用例、内存双点位说明、cron 激活改 🔄）；Soul 补"手机侧不可见 + step-1 三注入 token 成本"；HMC 连接地址口径澄清（走 IP，域名仅 PC Web）；#9 APPROVAL 分级优先级下调；§3.4 夹具已由 Tomas 在 HMC 2b4f7f6 补回（无需另开 PR）。
+> 上次修订（2026-09-29 上午）：6 项 web 能力服务端全部复刻完成（多步浏览器、Artifacts v2、审批四级、Hooks、Goals、Feed Web UI 呈现层；23 项口径变为 8+14+0+1，另有 dsh-intelligence-guard 生产守卫不在 23 项内；dsh 侧工具真机验证覆盖只读路径，写路径未走完（见 #9）；手机呈现层（HTML 预览）待重装 APK 后验收）；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；HMC 新增 HTML 预览已合入 origin/main（commit 641c943 + 2d6a07f，非独立 PR 分支；feed_render/HTML 产物手机渲染，待重装 APK 后真机验收）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
 > 上上次修订（2026-09-28 晚间）：第二轮审计（HMC 交叉核验）后修正：bootstrap 两处硬伤已修复并通过干净验收；HMC 端到端证据已对齐为脚本真实输出；#9 APPROVAL 层改为跨仓库决策项（V3 关闭）；#11 新增"手机可见性"选型判据；#8 改为"消费通道部分存在"。
 
 ---
@@ -80,12 +80,12 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 2 | 终端 `shell_exec` | dsh 原生 | `dsh-tool-bash`（profile 挂载 `bash-sandbox` 变体时多一层沙箱；待 V1 确认实际挂载） | 阶段 0 |
 | 3 | 文件读写 | dsh 原生 | `dsh-tool-fs`（多搜索/替换，超集） | 阶段 0 |
 | 4 | 网页抓取 + 搜索 | dsh 原生 | `dsh-tool-web`（Exa/Perplexity/DeepSeek 三后端可选；dsh-muse 部署选用 DeepSeek） | 阶段 0 |
-| 5 | 多步浏览器（9 工具） | 新写插件 | dsh-intelligence-browser：Playwright 1.63.0 + Chromium 懒加载，open/snapshot/click/fill/select/wait/screenshot/downloads/close；2026-09-29 上线生产 web profile，1GB 机真测 example.com 打开→快照→关闭干净（0 残留进程）；browser_open 等写操作走审批 WRITE 级 | §四 P1 ✅ |
+| 5 | 多步浏览器（9 工具） | 新写插件 | dsh-intelligence-browser：Playwright 1.63.0 + Chromium 懒加载，open/snapshot/click/fill/select/wait/screenshot/downloads/close；2026-09-29 上线生产 web profile，1GB 机真测 example.com 打开→快照→关闭：Chromium 0 残留进程；整机可用内存净增约 130MB（489→356MB，Chromium 进程 RSS 合计 400MB+ 含共享页重复计算）；browser_close 后 node 侧 playwright 常驻约 +65MB 不回落（需重启进程回收）。测试在隔离 DSH_HOME 下完成，故生产 ~/.dsh/intel-browser/ 无残留；browser_open 等写操作走审批 WRITE 级 | §四 P1 ✅ |
 | 6 | 子智能体 | dsh 原生 | `dsh-tool-subagent`（in-process 驱动） | 阶段 2 真测 |
 | 7 | 语义记忆 | 新写插件 | `dsh-intelligence-memory`（SQLite FTS5 + BM25；分词器待 V2 披露；向量方案因 1GB 内存否决） | 阶段 1 |
-| 8 | Artifacts v2 | 新写插件 | dsh-intelligence-artifacts：save/get/read/versions 四工具，版本历史 + kind=html 元数据；2026-09-29 上线生产；手机呈现走 HMC PR（intel-html-preview 分支，WebView 沙盒预览，JS 禁用） | §四 P2 ✅ |
-| 9 | 审批卡 + 四级权限 | 未排期 | dsh 有审批瀑布，无四级；任务书未要求。**分两条路径**（第三轮审计 §3.2）：② 生产路径（`dsh-prod.service --profile web`，env 未设 `DSH_PERMISSION_MODE`）走上游 base profile 默认即 workspace-write + ask（`apps/cli/reference/README.zh.md:123`），新会话审批卡会弹——切生产那一刻即生效，**与 HMC PR 无关**；① HMC 启动器路径：PR（4b4da70）已合并，把写死的 danger-full-access 改为默认 workspace-write，新会话同样可弹卡。dsh 侧 BLOCKED 硬拦截维持 P1，APPROVAL 分级优先级下调（默认 ask 已能弹卡）。2026-09-29：dsh-intelligence-approvals 上线生产，READ/WRITE/EXEC/BLOCKED 四级 + tools/pre-execute 接入真机验证（goal_create→WRITE 弹卡、feed_render 等只读免审）；新 6 插件工具分类补全（commit 924ae6e29） | §四 P1 ✅ |
-| 10 | Hooks | 新写插件 | dsh-intelligence-hooks：register/list/remove/fire，内置 file:inbox 轮询；2026-09-29 上线生产，hook_list 真机验证通过 | §四 P2 ✅ |
+| 8 | Artifacts v2 | 新写插件 | dsh-intelligence-artifacts：save/get/read/versions 四工具，版本历史 + kind=html 元数据；2026-09-29 上线生产；手机呈现走 HMC（commit 641c943 + 2d6a07f 已合入 origin/main，非独立 PR 分支；WebView 沙盒预览，JS/文件/网络/跳转四禁）。⚠️ 手机现装 APK 为 2026-09-28 22:54 构建，不含此功能，需重装后真机验收 | §四 P2 ✅ |
+| 9 | 审批卡 + 四级权限 | 新写插件 | dsh 有审批瀑布，无四级；任务书未要求。**分两条路径**（第三轮审计 §3.2）：② 生产路径（`dsh-prod.service --profile web`，env 未设 `DSH_PERMISSION_MODE`）走上游 base profile 默认即 workspace-write + ask（`apps/cli/reference/README.zh.md:123`），新会话审批卡会弹——切生产那一刻即生效，**与 HMC PR 无关**；① HMC 启动器路径：PR（4b4da70）已合并，把写死的 danger-full-access 改为默认 workspace-write，新会话同样可弹卡。dsh 侧 BLOCKED 硬拦截维持 P1，APPROVAL 分级优先级下调（默认 ask 已能弹卡）。2026-09-29：dsh-intelligence-approvals 上线生产，READ/WRITE/EXEC/BLOCKED 四级 + tools/pre-execute 接入；**只读免审路径已真机验证**（feed_render/hook_list/goal_list/artifact_versions 连续执行 0 审批）；**写路径未走完**：goal_create/artifact_save/browser_open 三次触发审批卡后 1.5h 无人点卡，会话卡在 pending（已归档清理，见 §3.4）。分类表补全（commit 924ae6e29）+ 2026-09-29 下午：browser_close 降为 READ（资源回收免审）、feed_render 带 output_path 时升级 WRITE（收口免审批任意写） | §四 P1 ✅ |
+| 10 | Hooks | 新写插件 | dsh-intelligence-hooks：register/list/remove/fire，内置 file:inbox 轮询；2026-09-29 上线生产，hook_list 可调用。**⚠️ 未闭环**：hook_fire 只写内存队列 + fires.jsonl，无任何消费方（evolve/heartbeat/agent 均不读），不会触发 agent 回路、无用户可见效果。闭环前置：明确谁消费 fires.jsonl（待单独设计） | §四 P2 ✅ |
 | 11 | 用户自建 cron | 新写插件 | `dsh-intelligence-cron`（`cron_create`/`cron_list`/`cron_delete`，中文时间解析；dsh-schedule 触发层 + 系统 cron 后台层，手机可见性为第一判据） | P0 真机验收 |
 | 12 | Goals 长期目标 | 新写插件 | dsh-intelligence-goals：create/list/progress/close，JSON 真相源 + 自动 goals.md；2026-09-29 上线生产，goal_list 真机验证通过 | §四 P2 ✅ |
 | 13 | Quiet-moment | 新写插件 | `dsh-intelligence-quiet`（turn-stopping + 真后台） | 阶段 2 + 真后台修复 |
@@ -100,9 +100,9 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 22 | 结构化用户画像 | 新写插件 | `dsh-intelligence-profile`（仅 Tomas 本人，step 1 注入） | 阶段 4 |
 | 23 | 晨间简报 | 新写插件 | cron 08:00（web_search + 画像 + 记忆 → Feed）；**stage-1 分档激活已批准**，2026-09-29 14:40 执行（含 07:30 学习、09:30 想法、23:30 复盘、周日 03:00 技能审查共 5 个低频任务） | 阶段 4 + 分档激活 |
 
-**统计**：8 dsh 原生 + 9 新写插件 + 5 未排期 + 1 不复刻 = 23 ✅
+**统计**：8 dsh 原生 + 14 新写插件 + 0 未排期 + 1 不复刻 = 23 ✅（另有 dsh-intelligence-guard 生产守卫，不在 23 项内）
 
-**新写插件汇总**（8 个，全部在 `intel-plugins/`，树外独立 npm 包）：
+**新写插件汇总**（15 个，全部在 `intel-plugins/`，树外独立 npm 包；14 个对应 §2 表 + 1 个生产守卫）：
 
 | 插件 | 工具/能力 | 数据位置 |
 |---|---|---|
@@ -110,10 +110,16 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | dsh-intelligence-quiet | `turn-stopping` 监听，真后台复盘（fire-and-forget） | `~/.dsh/intel-quiet/` |
 | dsh-intelligence-evolution | `heartbeat_check` + 5 进化任务 prompt | `~/.dsh/intel-evolution/` |
 | dsh-intelligence-joblog | `joblog_*`，三件套 | `~/.dsh/intel-joblog/` |
-| dsh-intelligence-feed | `feed_post`/`feed_read` | `~/.dsh/intel-feed/feed.json` |
+| dsh-intelligence-feed | `feed_post`/`feed_read` + `feed_render`（HTML 深色卡片） | `~/.dsh/intel-feed/feed.json` |
 | dsh-intelligence-profile | `user_profile_read`/`user_profile_update`，step 1 注入 | `~/.dsh/intel-profile/` |
 | dsh-intelligence-cron | `cron_create`/`cron_list`/`cron_delete`，中文时间解析 | `~/.dsh/intel-cron/` |
 | dsh-intelligence-soul | 每回合 step 1 注入 Soul；`soul_read`/`soul_update` | `~/.dsh/intel-soul/soul.md` |
+| dsh-intelligence-browser | 9 工具：open/snapshot/click/fill/select/wait/screenshot/downloads/close | `~/.dsh/intel-browser/` |
+| dsh-intelligence-artifacts | `artifact_save/get/read/versions`，版本历史 + HTML 元数据 | `~/.dsh/intel-artifacts/` |
+| dsh-intelligence-approvals | READ/WRITE/EXEC/BLOCKED 四级 + `tools/pre-execute` 接入 | （无数据目录） |
+| dsh-intelligence-hooks | `hook_register/list/remove/fire`，file:inbox 轮询（⚠️ 未闭环） | `~/.dsh/intel-hooks/` |
+| dsh-intelligence-goals | `goal_create/list/progress/close`，JSON + goals.md | `~/.dsh/intel-goals/` |
+| dsh-intelligence-guard | 生产环境不变式守卫（仅 web profile，只做启动拦截，无工具） | （无数据目录） |
 
 ---
 
@@ -230,11 +236,14 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **退役**：Python `deepseek-harness.service` 已 disable+inactive；`/opt/deepseek-harness` 已归档删除；`mobile-mirror.service` 已 disable+inactive；旧手动 hmc-test 生产进程已停（`:3095` 释放）；孤儿 mock 端口已清
 - **备份与回滚**：全量备份 `/root/intel/cutover-backup-20260928/`（约 137MB）；一键完整回滚 `/root/intel/dsh-fork/intel/rollback-full.sh --yes`
 - **HMC 手机**：已直连 `100.73.148.102:43197` 配对成功，真 DeepSeek 回复（provider=deepseek-official）。**连接地址口径**（第三轮审计 §3.7）：HMC 服务走 IP（`100.73.148.102:43197`）；`hmc-mirror.tail52c730.ts.net` 域名仅用于 PC Web（Tailscale Serve → 127.0.0.1:8080）。HMC TLS 证书 SAN（`CN=hmc-test`，含 IP 100.75.211.11/100.73.148.102/127.0.0.1）不含该域名——改域名访问 HMC 会因主机名校验失败。保持走 IP，或重签证书补 SAN。
-- **24h 空转存活监控**：web-intel `:3080` + mock LLM `:18099`，2026-09-29 14:34 出结果（结束后停 mock、归档日志、释放 `:18099`）
+- **24h 空转存活监控**：监控对象 = `dsh --profile web-intel --port 3080` 空转进程（**不是**生产 `dsh-prod`）+ mock LLM `:18099`，2026-09-29 14:34 出结果（结束后停 mock、归档日志、释放 `:18099`）
 - **系统 cron**：stage-1 分档激活已批准，2026-09-29 14:40 执行（5 个低频任务）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定
 - **Git**：`intel` 分支已 push（HEAD `96ac06d66`），`master` 跟踪上游
 - **每周养成检查**：已改名"dsh-muse 每周养成检查"（每周一 09:15，覆盖 dsh-muse 生产健康 + 进化产出 + 升级提议）
-- **待 Tomas**：stage-2 cron 激活；§四 P1/P2 开工（#9 dsh 侧 BLOCKED/APPROVAL、#5 浏览器内存压测）
+- **待 Tomas**：stage-2 cron 激活；HTML 预览重装 APK 后真机验收；Hooks 闭环消费方设计评审
+- **运维规则**（2026-09-29 第四轮审计 §2.1 立）：默认 ask 下写操作必须有人值守；无人值守跑写操作只能显式 opt-in（danger-full-access）或接受卡住。
+  2026-09-29 上午 3 个卡在审批 pending 的僵尸会话已归档清理（`~/.dsh/archived-sessions/2026-09-29-approval-zombies/`）
+- **改插件固定验收**（2026-09-29 第四轮审计 §2.2 立）：每次改插件重启后必跑 `journalctl -u dsh-prod --since <重启时刻> | grep "did not activate"`，0 命中才算上线
 - **环境污染系统性修复**（2026-09-29，Tomas 要求"基于整个智能体评估迭代、而非打补丁"）：
   - 根因：dsh 上游把 `DEEPSEEK_BASE_URL` 列为 BOOTSTRAP_NAMES——只能来自进程 ambient env（`.env` 文件反而设不了）。测试 shell 的 `BASE_URL` 泄漏进手动启动的生产进程是设计允许的行为，不是偶然 bug。
   - Layer 1（插件层）：`dsh-intelligence-guard` 只挂 web profile 首位，`apply()` 断言生产不变式（`BASE_URL` 未设置、`API_KEY` 存在、`HMC_CONFIG` 存在、无 `MOCK*` 残留），违反则抛错使 dsh 拒绝启动（fail-closed）。覆盖 systemd/手动/cron 所有进入路径。单测 7/7；隔离真测：污染 env 拒绝启动、干净 env 放行。
@@ -244,7 +253,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 
 ---
 
-## 四、未排期 5 项升级提议评估（2026-09-29 修订）
+## 四、原未排期 5 项：已全部复刻完成（2026-09-29 修订）
 
 评估方法：逐项核对 Python 源码实现 → dsh 原生差距 → dsh-muse 实现路线 → 对 Tomas 的价值 → 成本/风险 → 优先级。
 
@@ -253,7 +262,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **交付**：`dsh-intelligence-cron` 插件，`cron_create`/`cron_list`/`cron_delete` 三个工具，中文时间解析
 - **验证**：单测 42/42（含提醒复述指令回归测试；其中 2 个真解码器用例需 dsh 运行时，服务器上全过、无运行时的环境自动跳过）、隔离集成测试 6/6、旧插件回归 21/21；HMC 真机验收（5 分钟一次性任务到点生成 follow-up turn，`cron.json` 状态流转正确，测试任务已删）
 - **设计**（第三方审计建议拆两层，第二轮审计加选型判据，第三轮审计 §3.1 修正口径，第二份审计报告 §2.1 修订）：**选型第一判据是手机可见性**——但机制上**看得见的是回答，不是提醒正文**：dsh-schedule 到点投递 `source.kind='schedule'`，HMC 客户端只渲染 `kind=="user"`，提醒正文在手机时间线上不可见；手机上能看到的是智能体对提醒的回复。补法（方案 1，已修订）：提醒 prompt 加面向用户的自然标签`【定时提醒 name】prompt`——上游 framing 已要求模型把 `reminder_prompt_json` 作为内容呈现给用户；不写"处理要求"类元指令（第二份审计报告 §2.1：它落在被上游标注为"非指令"的字段里，可能被原样念出成噪音）。`dsh-prod` 已于 2026-09-29 08:26 重启使修法生效（此前进程启动于代码修改之前、无热重载；重启时 `cron.json` 为空，无旧格式任务遗留）。（上游 schedule README：delivery never uses email/SMS/push；HMC ADR 002：后台提醒仅监控单条会话、上限 2 小时）；需脱离会话的后台任务保留系统 cron + `dsh --profile evolve` headless
-- **验收判据**："到点能在手机上看见智能体产生了回答（含提醒原文）"。诚实边界：仅会话活着且处于 2 小时监控窗口内才可能推到手机；出窗口退化为"回 App 才看到"。A 级验证（第二份审计报告 §四 item 2，2026-09-29 08:38 完成 ✅）：生产建 5 分钟一次性提醒（`a级测试：请喝一杯水`），到点触发后手机时间线显示助手回复"The reminder fired. Present it to the user. 【定时提醒 a级测试】请喝一杯水（c1 一次性提醒已到期，任务已自动结束）"——**提醒原文可见、无"（处理要求：…）"括号噪音**，证实 §2.1 的判断（framing 机制足够，元指令属冗余且有噪音风险）✅。截图证据：`~/workspace/audit-evidence/2026-09-29-cron-reminder-phone-A级.png`。测试任务已清（`cron.json` 回 `[]`），测试会话保留（明确标注）
+- **验收判据**："到点能在手机上看见智能体产生了回答（含提醒原文）"。诚实边界：仅会话活着且处于 2 小时监控窗口内才可能推到手机；出窗口退化为"回 App 才看到"。A 级验证（第二份审计报告 §四 item 2，2026-09-29 08:38 完成 ✅）：生产建 5 分钟一次性提醒（`a级测试：请喝一杯水`），到点触发后手机时间线显示助手回复"The reminder fired. Present it to the user. 【定时提醒 a级测试】请喝一杯水（c1 一次性提醒已到期，任务已自动结束）"——**提醒原文可见、无中文括号噪音**，证实 §2.1 的判断（framing 机制足够，元指令属冗余且有噪音风险）✅。**残留说明**（第四轮审计 §1.1）：模型仍把上游英文 framing（`schedule/domain.ts:806-814`）念了出来，回复以 `The reminder fired. Present it to the user.` 开头——噪音源从"我方元指令"转移成"上游英文框架"，并未消失，不阻塞使用。截图证据：审计方独立复现（`outputs/2026-09-29/evidence/phone-current-1125.png`，审计报告 §1.1）；原文引用的 `~/workspace/audit-evidence/2026-09-29-cron-reminder-phone-A级.png` 在服务器/PC 均不存在，已更正。测试任务已清（`cron.json` 回 `[]`），测试会话保留（明确标注）
 - **原评估中的路线已兑现**：中文时间解析 + dsh-schedule 触发层复用，手机可见性判据指导了实现
 
 ### P1：#9 审批卡 + 四级权限（跨仓库决策已解决，dsh 侧未排期）

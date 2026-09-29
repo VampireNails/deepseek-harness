@@ -5,6 +5,12 @@
 //   - file：轮询数据目录下的子目录（默认 inbox/），新文件只触发一次（mtime 去重）
 //   - webhook：由外部事件通过 hook_fire(source=webhook) 触发
 // 触发时按 prompt 模板渲染生成任务文本，记入内存任务队列 + fires.jsonl；
+//
+// ⚠️ 未闭环声明（2026-09-29 第四轮审计 §2.3）：本插件目前没有消费方。
+//    hook_fire 只写内存队列 + fires.jsonl，没有任何代码（evolve/heartbeat/agent）
+//    去读它，也不会触发 agent 回路或产生用户可见效果。"能触发" ≠ "有用"。
+//    闭环的前置条件：明确谁消费 fires.jsonl（候选：evolve 定时任务读取，或
+//    agent.followup 主动拉取），该设计需单独评审，本轮不做。
 // dsh 插件侧不直接跑 agent 回路（与 Python 版"action: agent" 的执行语义差异见 README）。
 //
 // 所有注册走 ctx.effect，可卸载回卷（轮询 timer 停掉）。存储在 DSH_HOME/intel-hooks/。

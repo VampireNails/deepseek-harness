@@ -63,6 +63,8 @@ const READ_TOOLS = [
   "artifact_get", "artifact_read", "artifact_versions",
   "hook_list",
   "browser_snapshot", "browser_downloads", "browser_screenshot",
+  // browser_close 是纯资源回收（关 Chromium 释放内存），无人值守时不应卡审批
+  "browser_close",
   // 本插件自身（查分级不应弹卡）
   "approval_classify",
   // 交互式提问（本身即用户交互，无风险）
@@ -80,7 +82,7 @@ const WRITE_TOOLS = [
   // 待办/目标/工件
   "todo_add", "todo_write", "artifact_save",
   "browser_open", "browser_click", "browser_fill", "browser_select",
-  "browser_wait", "browser_close",
+  "browser_wait",
   "goal_create", "goal_log", "goal_progress", "goal_close",
   "hook_register", "hook_remove", "hook_fire",
   "create_goal", "update_goal",
@@ -239,7 +241,13 @@ export function classify(toolName, args, policy) {
   }
 
   // 2) 查表：配置覆盖 > 默认表 > 默认级别（WRITE，fail-closed）
-  const level = (p.mergedLevels && p.mergedLevels[name]) || p.defaultLevel || LEVELS.WRITE;
+  let level = (p.mergedLevels && p.mergedLevels[name]) || p.defaultLevel || LEVELS.WRITE;
+
+  // READ 工具若携带写路径参数，升级为 WRITE（fail-closed 收口）。
+  // 例：feed_render 默认只返回 HTML（READ 放行），但 output_path 会写任意路径。
+  if (level === LEVELS.READ && typeof a.output_path === "string" && a.output_path.trim()) {
+    level = LEVELS.WRITE;
+  }
 
   // 3) 敏感命令给出更具体的审批理由
   let reason = "";

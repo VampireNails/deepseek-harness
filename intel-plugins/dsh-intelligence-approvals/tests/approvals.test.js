@@ -316,3 +316,26 @@ test("插件元信息：name / Config 缺省", () => {
   assert.equal(cfg.defaultLevel, "WRITE");
   assert.equal(cfg.monitor, false);
 });
+
+test("browser_close 降为 READ（资源回收免审）", () => {
+  const r = classify("browser_close", {});
+  assert.equal(r.level, "READ");
+  assert.equal(r.disposition, "allow");
+});
+
+test("feed_render 无 output_path 时保持 READ", () => {
+  const r = classify("feed_render", {});
+  assert.equal(r.level, "READ");
+  assert.equal(r.disposition, "allow");
+});
+
+test("feed_render 带 output_path 时升级为 WRITE", () => {
+  const r = classify("feed_render", { output_path: "/tmp/evil.html" });
+  assert.equal(r.level, "WRITE");
+  assert.equal(r.disposition, "approve");
+});
+
+test("feed_render output_path 为空字符串时不升级", () => {
+  const r = classify("feed_render", { output_path: "  " });
+  assert.equal(r.level, "READ");
+});
