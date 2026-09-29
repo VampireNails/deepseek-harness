@@ -58,6 +58,16 @@
 > 修订 1 · 2026-09-29 07:23（第三轮审计 12 项确认优化落实）：cron 提醒手机可见性修复（方案 1）；生产默认 workspace-write+ask 运维告知；#9 归因修正。
 > 修订 0 · 2026-09-28 晚间（第二轮审计 HMC 交叉核验修复）：bootstrap 两处硬伤；HMC 端到端证据对齐；#9 APPROVAL 改跨仓库决策；#11 手机可见性判据。
 
+> **修订 14 · 2026-09-29 21:30（HMC 首屏空列表根治，走 PR）：**
+> 背景：N6 修法（c584bca，Tomas 13:56 亲手合入 main）后第八轮审计确认首屏仍偶发卡在「正在同步会话列表…」，需手动点刷新；远端 stale 分支 fix/session-list-cache-n6 已删。
+> 根因：`list()` 的 RPC 回调里 `if(g!=generation||connection!=host) return` **静默丢弃**更新——RPC 超时/失败会走 catch 显示错误文案，只有守卫丢弃会导致 UI 永久卡在「正在同步…」无任何恢复。冷启/后台返回时的竞态（onStart→list→disconnect 世代跳变）可稳定触发。
+> 修法（分支 `fix/session-list-stuck-retry`，commit d5a0a8a，已 push，待 Tomas 在 GitHub 建 PR；deploy key 无 API 权限）：
+> 1. 守卫丢弃时记 `Log.w("HMC",...)`，若仍在列表屏（sessionId==null）且状态仍是「正在同步/正在连接」，自动重试 `list()`（等价于替用户点刷新）：2s 后第 1 次、5s 后第 2 次，最多 2 次后转人工提示；
+> 2. `cachedSessions` 持久化到 SharedPreferences（`cachedSessionsJson`），`onCreate` 恢复并过滤子会话——冷启也能秒显上次列表，不再是纯内存缓存；
+> 3. 成功加载后重置重试计数并持久化。
+> 验证：真机冷启/切后台返回多次抽查列表均正常加载（50 个会话）；竞态为偶发，未能在真机稳定复现，修法为防御性根治——卡死路径已无静默分支。
+
+
 ---
 
 ## 一、结论：dsh-muse 是否完成复刻
