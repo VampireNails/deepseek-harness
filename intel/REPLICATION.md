@@ -7,6 +7,7 @@
 > ④ 原未排期 5 项的复刻完成状态（已全部上线），
 > ⑤ 23 项之外的复刻：Muse 行为规则（Soul）。
 >
+> 修订 7 · 2026-09-29 15:10（24h 空转监控收尾完成 + stage-1 cron 激活落地，文档状态同步）。
 > 修订 6 · 2026-09-29 14:10（第五轮审计落实）：guard 插件 fail-closed 声明撤回（实测 apply() 抛错只产生 did not activate warning，拦不住启动；上游 requiredStartupEntryIds 硬编码）→ 真正的启动拦截前置到 dsh-prod-start（复用 guard checkInvariants，违反 exit 1，污染 env 实测拒绝启动）；guard 改为 warn-only 可观测定位；补启动级回归测试（failclosed.test.js 2/2）；修订行重写为纯列表；插件计数统一为 14；空测试会话归档。
 > 修订 5 · 2026-09-29 12:54（第四轮审计 16 项确认全部落实）：3 僵尸会话归档；approvals 只读免审已验证/写路径未走完；改插件固定验收 journalctl|grep did not activate；默认 ask 写操作需有人值守；feed_render 带 output_path→WRITE；browser_close→READ；Hooks 标注未闭环；浏览器内存口径修正；文档四处同步（8+14+0+1）。
 > 修订 4 · 2026-09-29 12:50（环境污染系统性修复）：guard 三层纵深防御（插件守卫 + dsh-prod-start env -i 白名单 + hmc-test→hmc-prod 正名）。
@@ -45,9 +46,9 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 文档订正 + README npm ci | ✅ 完成 |
 | run-integration.sh DSH_HOME 隔离 | ✅ 完成 |
 | bootstrap 可复现脚本 | ✅ 完成（第二轮审计发现两处硬伤已修：`intel/hmc-service-wrapper` 入库（此前引用路径不存在）+ `npm ci`→`npm install`（无锁文件必然失败）；`DSH_HOME=$(mktemp -d)` 干净验收三 profile 全过。第三轮审计 §3.3 口径修正：hmc-test 是 API 级冒烟 profile（能装、能起、API 通），未并入 HMC `service/cordis.patch.yml` 的 4 项（其中 `pwsh-sandbox` 为 Windows 专用，故意不并）；第二份审计报告 §2.5 修正对比基准：**生产（`--profile web`）同样只用 hmc-service-wrapper、无 HMC 原版 4 项 patch**（`cordis.patch.yml` 为空数组），两者在 patch 面上一致——生产缺 `hmc-directory-picker-host/-ui` 是否影响手机端"选工作区目录"待 HMC 侧评估（PC Web 已实测可达 401，缺 `web-runtime` 重配未阻断）；依赖 `/root/intel/hmc-client` 外部路径，wrapper README 已披露） |
-| 24h 空转存活监控 | 🔄 运行中（2026-09-29 14:34 出结果；仅进程存活+RSS，非负载稳定性） |
+| 24h 空转存活监控 | ✅ 已完成（2026-09-28 14:34 → 09-29 14:40，满 24h 存活；无 OOM、无异常死亡；RSS 全程 10~97MB、收尾 16MB，回落稳定无泄漏；仅进程存活+RSS，非负载稳定性） |
 | HMC 端到端 | ✅ API 级通过（TLS→401→session/create→session/prompt→memory_write SQLite 落盘，全绿；证据 `intel/hmc-e2e-evidence-2026-09-28.log` 为 `hmc-e2e.sh` 真实 stdout，第二轮审计对齐）；手机真机已直连 100.73.148.102:43197，Tomas 确认"已连上" |
-| 系统 cron 分档激活 | 🔄 已批准、待执行；stage-1（5 个低频任务）2026-09-29 14:40 执行（24h 监控结束后）；stage-2（每小时 upkeep/heartbeat）观察后决定 |
+| 系统 cron 分档激活 | ✅ stage-1 已激活（2026-09-29 14:40；5 个低频任务：07:30 学习、08:00 晨报、09:30 想法整理、23:30 深夜复盘、周日 03:00 技能审查）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定 |
 
 **23 项的去向（由 §2 表统计得出，唯一口径）：**
 
@@ -100,7 +101,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 20 | 推送 webhook | 不复刻 | 出站推送；Tomas 决定保留通道不推进 | 2026-09-27 |
 | 21 | joblog 三件套 | 新写插件 | `dsh-intelligence-joblog`（jobs.log/job_runs.json/job_alerts.md） | 阶段 3 |
 | 22 | 结构化用户画像 | 新写插件 | `dsh-intelligence-profile`（仅 Tomas 本人，step 1 注入） | 阶段 4 |
-| 23 | 晨间简报 | 新写插件 | cron 08:00（web_search + 画像 + 记忆 → Feed）；**stage-1 分档激活已批准**，2026-09-29 14:40 执行（含 07:30 学习、09:30 想法、23:30 复盘、周日 03:00 技能审查共 5 个低频任务） | 阶段 4 + 分档激活 |
+| 23 | 晨间简报 | 新写插件 | cron 08:00（web_search + 画像 + 记忆 → Feed）；**stage-1 已激活**（2026-09-29 14:40；含 07:30 学习、09:30 想法、23:30 复盘、周日 03:00 技能审查共 5 个低频任务） | 阶段 4 + 分档激活 |
 
 **统计**：8 dsh 原生 + 14 新写插件 + 0 未排期 + 1 不复刻 = 23 ✅（14 个新写插件 = 12 个 §2 能力条目 + soul + guard；guard 不在 23 项内）
 
@@ -145,7 +146,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 ### 3.2 分阶段改造记录
 
 **阶段 0：环境验证**（2026-09-28）
-- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29）：运行 17 小时后约 10.4MB（`VmRSS`），进程历史峰值 156MB（`VmHWM`），24h 结果待 14:34 出——启动峰值 vs 长期空转稳态是同一进程生命周期的不同点位，非矛盾（第三轮审计 §3.5 口径说明；第二份审计报告 §2.4 实测印证）
+- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29，已完成）：满 24h 存活，无 OOM、无异常死亡；RSS 全程 10~97MB、收尾 16MB，回落稳定无泄漏；进程历史峰值 156MB（`VmHWM`）。启动峰值 vs 长期空转稳态是同一进程生命周期的不同点位，非矛盾（第三轮审计 §3.5 口径说明；第二份审计报告 §2.4 实测印证）
 - 踩坑：`pnpm link` 不装树外插件传递依赖——插件包须自带 `node_modules`
 - 踩坑：`@deepseek-ai/*` 必须 pin `0.1.7-rc.1`，npm 默认 `0.0.1-rc.1` 导致 `unknown tool`
 
@@ -213,7 +214,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - quiet 真后台（3 秒 vs 90 秒）；超时可配；pending→成功状态机
 - `migrate.sh`（备份→31 条记忆→feed 合并→画像→存档）+ `rollback.sh`；spaceCjk 对齐；created_at 回填
 - 文档订正 + README `npm ci`
-- 24h 空转存活监控（运行中；负载版 stability-load.sh 已就绪，待下轮启用）+ HMC 端到端 API 级验证（脚本入库）
+- 24h 空转存活监控（✅ 已完成：满 24h 存活、无 OOM；负载版 stability-load.sh 已就绪，待下轮启用）+ HMC 端到端 API 级验证（脚本入库）
 
 ### 3.3 关键决策记录
 
@@ -238,8 +239,8 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **退役**：Python `deepseek-harness.service` 已 disable+inactive；`/opt/deepseek-harness` 已归档删除；`mobile-mirror.service` 已 disable+inactive；旧手动 hmc-test 生产进程已停（`:3095` 释放）；孤儿 mock 端口已清
 - **备份与回滚**：全量备份 `/root/intel/cutover-backup-20260928/`（约 137MB）；一键完整回滚 `/root/intel/dsh-fork/intel/rollback-full.sh --yes`
 - **HMC 手机**：已直连 `100.73.148.102:43197` 配对成功，真 DeepSeek 回复（provider=deepseek-official）。**连接地址口径**（第三轮审计 §3.7）：HMC 服务走 IP（`100.73.148.102:43197`）；`hmc-mirror.tail52c730.ts.net` 域名仅用于 PC Web（Tailscale Serve → 127.0.0.1:8080）。HMC TLS 证书 SAN（`CN=hmc-test`，含 IP 100.75.211.11/100.73.148.102/127.0.0.1）不含该域名——改域名访问 HMC 会因主机名校验失败。保持走 IP，或重签证书补 SAN。
-- **24h 空转存活监控**：监控对象 = `dsh --profile web-intel --port 3080` 空转进程（**不是**生产 `dsh-prod`）+ mock LLM `:18099`，2026-09-29 14:34 出结果（结束后停 mock、归档日志、释放 `:18099`）
-- **系统 cron**：stage-1 分档激活已批准，2026-09-29 14:40 执行（5 个低频任务）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定
+- **24h 空转存活监控**：✅ 已完成。监控对象 = `dsh --profile web-intel --port 3080` 空转进程（**不是**生产 `dsh-prod`）+ mock LLM `:18099`；满 24h 存活、无 OOM；日志已归档 `/root/intel/stability-archive-20260929.tar.gz`，`:18099`/`:3080` 已释放
+- **系统 cron**：✅ stage-1 已激活（2026-09-29 14:40，`crontab -l` 确认 5 行在位）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定
 - **Git**：`intel` 分支已 push（HEAD `2765849e1`，2026-09-29 13:20 第四轮审计落实），`master` 跟踪上游
 - **每周养成检查**：已改名"dsh-muse 每周养成检查"（每周一 09:15，覆盖 dsh-muse 生产健康 + 进化产出 + 升级提议）
 - **待 Tomas**：stage-2 cron 激活；HTML 预览重装 APK 后真机验收；Hooks 闭环消费方设计评审；向上游 dsh 提需求：profile 条目支持 `required` 标记（或开放 `requiredStartupEntryIds` 扩展点），让第三方守卫插件也能 fail-closed；HMC 侧 N6 已提分支 `fix/session-list-cache-n6`（会话列表缓存先行渲染，不再空屏；N7 后台监控服务确认为 opt-in 设计未改代码）——待 Tomas 在 GitHub 手动创建 PR（deploy key 无 API 权限）
