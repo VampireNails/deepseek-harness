@@ -13,8 +13,16 @@
 > N3（P2）文档口径跟上：fix/hmc-stream-error-visibility 已合入 HMC origin/main（b4ebb7a），不存在「待 PR」；§3.4 HTML 预览「待重装 APK」改为「APK 已重装（16:32），入口已真机验证；未验的是渲染一份真实 HTML 产物」。
 > N4（P2）M5 RSS 口径补点：启动后 5–10 分钟有两个高点（≈142MB / ≈132MB），15 分钟后进入稳态（≤97MB）。
 > N5（P3）HMC 服务端单测跑法坑：node --test tests/ 会假失败，须逐文件跑（14 文件 / 34 用例全过）。
+
+> **修订 10 · 2026-09-29 18:00（第八轮审计 N1–N5 + P0 落实）：**
+> N1（P1）**M1 根因再改一次：从「未定位」改为「子会话混入列表」**。第八轮审计三重证据：①手机点开 `[quiet-moment-reflection]` 子会话 → 必现「会话暂时被占用」；②同一秒服务端日志 `code=session/agent-busy`；③API 对照：普通会话 `session/follow` 返回 snapshot，子会话返回 `session/agent-busy`。14 个子会话（`projections.values.subagent` 非空，全部 `blank=false`）混进手机列表，客户端只有 blank 过滤、没有子会话过滤。**作者第六轮方向对（agent-busy）、对象错（把「重启验证OK」当成子会话）；第七轮不该把正确答案划掉，该做的是找对作案对象。修订 9 N1 作废。**
+> P0（服务端）`hmc-client/service/server.mjs`：`session/list` 加特判分支过滤子会话（判据 `projections.values.subagent` 非空；ID 前缀规则有反例不用），69→56，13 个子会话全滤掉，重启即生效、无需重装 APK。P1（HMC 客户端）`MainActivity.java` 同步加子会话过滤兜底（分支 `fix/filter-subagent-sessions` 已推，待 Tomas 建 PR）。
+> N1（P1）错误日志加会话短标识：`[hmc-service]` 行追加 `session=…<尾8位>`（不记标题/正文），下次出错可定位。
+> N2（P2）L72「新写插件 9」→ **14**，名单补齐：记忆、quiet、进化、Heartbeat、Feed、joblog、画像、晨报、用户 cron、**浏览器、Artifacts、审批四级、Hooks、Goals**（8+14+0+1=23 重新凑齐）。
+> N3（P2）清两处旧口径：①§2 表 #8「APK 22:54 需重装」→「APK 16:32:27 已重装、入口与空态已验、剩渲染真实产物」；②24h 监控两处补 10 分钟点（≈132MB）。
+> N5（P3）`intel-cron/cron.json` 为空 `[]` 是**预期状态**：任务表由 dsh-schedule 触发层管理（系统 cron 激活后由后台层写入），stage-1 激活当天（09-29 14:40）07:30 已过，首次真实执行在 09-30 07:30；「cron 不卡 ask」端到端届时补证据。
 > 修订 8 · 2026-09-29 16:30（第六轮审计 M1–M6 落实）：
-> M1 根因定位【已于修订 9 更正为未定位】——"重启验证OK"会话打开失败现象已于 16:01 重启后消失；此前推测为 subagent 子会话被拒，但三重证据证伪（见修订 9 N1），真因未定位；HMC 服务 catch 分支此前不写日志、客户端丢弃 error.code，导致手机上只有一句通用文案。已修：server.mjs catch 补 console.error（endpoint/session/code/stack）；HostFailure 携带 remoteCode；MainActivity 文案透出 code，agent-busy 给专属提示"这是子任务会话，请从父会话中查看"（分支 fix/hmc-stream-error-visibility 已推，待 PR）。
+> M1 根因定位【已于修订 10 更正为「子会话混入列表」】——"重启验证OK"会话打开失败现象已于 16:01 重启后消失；第八轮审计三重证据（真机点开子会话必现报错 + 同一秒服务端 `code=session/agent-busy` + API 对照普通/子会话）定位真因：14 个子会话（`projections.values.subagent` 非空，`blank=false`）混进手机列表，客户端只有 blank 过滤。作者第六轮方向对、对象错；第七轮把正确答案划掉是错的，修订 9 N1 作废。已修：服务端 `session/list` 过滤子会话（69→56），客户端同步兜底（分支待 PR）；HMC 服务 catch 分支此前不写日志、客户端丢弃 error.code，导致手机上只有一句通用文案。已修：server.mjs catch 补 console.error（endpoint/session/code/stack）；HostFailure 携带 remoteCode；MainActivity 文案透出 code，agent-busy 给专属提示"这是子任务会话，请从父会话中查看"（分支 fix/hmc-stream-error-visibility 已推，待 PR）。
 > M2 流错误码透出（同上，一并落实）。
 > M3 evolve cron 不卡 ask——evolve profile 只挂 base+headless+memory+joblog+evolution+feed，不挂 approvals/guard，不经 dsh-prod-start；隔离 mock 实测 memory_write 直接成功（EXIT=0），exit 后测试记忆已清。文档补 cron 防线边界说明。
 > M4 空测试会话真正移出活动区——此前归档的只是 projcache 投影（/root/.dsh/storages/session_projcache/sessions/*.json），真身在 /root/.dsh/sessions/--root-intel-hmc-prod-workspace--/ 下，dsh 会从真身重建投影。已把真身目录移到 /root/.dsh/archived-sessions/2026-09-29-empty-test/ 并删投影，重启后 session/list 确认消失。客户端另加 blank=true 过滤（同分支，已推）。
@@ -60,7 +68,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 文档订正 + README npm ci | ✅ 完成 |
 | run-integration.sh DSH_HOME 隔离 | ✅ 完成 |
 | bootstrap 可复现脚本 | ✅ 完成（第二轮审计发现两处硬伤已修：`intel/hmc-service-wrapper` 入库（此前引用路径不存在）+ `npm ci`→`npm install`（无锁文件必然失败）；`DSH_HOME=$(mktemp -d)` 干净验收三 profile 全过。第三轮审计 §3.3 口径修正：hmc-test 是 API 级冒烟 profile（能装、能起、API 通），未并入 HMC `service/cordis.patch.yml` 的 4 项（其中 `pwsh-sandbox` 为 Windows 专用，故意不并）；第二份审计报告 §2.5 修正对比基准：**生产（`--profile web`）同样只用 hmc-service-wrapper、无 HMC 原版 4 项 patch**（`cordis.patch.yml` 为空数组），两者在 patch 面上一致——生产缺 `hmc-directory-picker-host/-ui` 是否影响手机端"选工作区目录"待 HMC 侧评估（PC Web 已实测可达 401，缺 `web-runtime` 重配未阻断）；依赖 `/root/intel/hmc-client` 外部路径，wrapper README 已披露） |
-| 24h 空转存活监控 | ✅ 已完成（2026-09-28 14:34 → 09-29 14:40，满 24h 存活；无 OOM、无异常死亡；RSS 稳态 10~97MB（启动后 15 分钟起；启动 5 分钟瞬时峰值约 142MB）、收尾 16MB，回落稳定无泄漏；仅进程存活+RSS，非负载稳定性） |
+| 24h 空转存活监控 | ✅ 已完成（2026-09-28 14:34 → 09-29 14:40，满 24h 存活；无 OOM、无异常死亡；RSS 稳态 10~97MB（启动后 15 分钟起；启动 5 分钟瞬时峰值约 142MB、10 分钟约 132MB）、收尾 16MB，回落稳定无泄漏；仅进程存活+RSS，非负载稳定性） |
 | HMC 端到端 | ✅ API 级通过（TLS→401→session/create→session/prompt→memory_write SQLite 落盘，全绿；证据 `intel/hmc-e2e-evidence-2026-09-28.log` 为 `hmc-e2e.sh` 真实 stdout，第二轮审计对齐）；手机真机已直连 100.73.148.102:43197，Tomas 确认"已连上" |
 | 系统 cron 分档激活 | ✅ stage-1 已激活（2026-09-29 14:40；5 个低频任务：07:30 学习、08:00 晨报、09:30 想法整理、23:30 深夜复盘、周日 03:00 技能审查）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定 |
 
@@ -69,7 +77,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 去向 | 数量 | 说明 |
 |---|---|---|
 | dsh 原生已有 | 8 | agent loop、shell、文件、子智能体、会话、上传、MCP、网页搜索——直接用 |
-| 新写插件 | 9 | 记忆、quiet、进化、Heartbeat、Feed、joblog、画像、晨报、**用户 cron**——dsh-muse 补的 |
+| 新写插件 | 14 | 记忆、quiet、进化、Heartbeat、Feed、joblog、画像、晨报、用户 cron、浏览器、Artifacts、审批四级、Hooks、Goals——dsh-muse 补的 |
 | 未排期 | 0 | 2026-09-29 上午 6 项已全部复刻（见下），未排期清零 |
 | 不复刻 | 1 | 出站推送（#20）——Tomas 决定保留通道不推进 |
 
@@ -100,10 +108,10 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 5 | 多步浏览器（9 工具） | 新写插件 | dsh-intelligence-browser：Playwright 1.63.0 + Chromium 懒加载，open/snapshot/click/fill/select/wait/screenshot/downloads/close；2026-09-29 上线生产 web profile，1GB 机真测 example.com 打开→快照→关闭：Chromium 0 残留进程；整机可用内存净增约 130MB（489→356MB，Chromium 进程 RSS 合计 400MB+ 含共享页重复计算）；browser_close 后 node 侧 playwright 常驻约 +65MB 不回落（需重启进程回收）。测试在隔离 DSH_HOME 下完成，故生产 ~/.dsh/intel-browser/ 无残留；browser_open 等写操作走审批 WRITE 级 | §四 P1 ✅ |
 | 6 | 子智能体 | dsh 原生 | `dsh-tool-subagent`（in-process 驱动） | 阶段 2 真测 |
 | 7 | 语义记忆 | 新写插件 | `dsh-intelligence-memory`（SQLite FTS5 + BM25；分词器待 V2 披露；向量方案因 1GB 内存否决） | 阶段 1 |
-| 8 | Artifacts v2 | 新写插件 | dsh-intelligence-artifacts：save/get/read/versions 四工具，版本历史 + kind=html 元数据；2026-09-29 上线生产；手机呈现走 HMC（commit 641c943 + 2d6a07f 已合入 origin/main，非独立 PR 分支；WebView 沙盒预览，JS/文件/网络/跳转四禁）。⚠️ 手机现装 APK 为 2026-09-28 22:54 构建，不含此功能，需重装后真机验收 | §四 P2 ✅ |
+| 8 | Artifacts v2 | 新写插件 | dsh-intelligence-artifacts：save/get/read/versions 四工具，版本历史 + kind=html 元数据；2026-09-29 上线生产；手机呈现走 HMC（commit 641c943 + 2d6a07f 已合入 origin/main，非独立 PR 分支；WebView 沙盒预览，JS/文件/网络/跳转四禁）。手机现装 APK 为 2026-09-29 16:32:27 构建（含 HtmlPreview，入口与空态已真机验证）；渲染真实 HTML 产物仍未做（`intel-artifacts` 0 文件） | §四 P2 ✅ |
 | 9 | 审批卡 + 四级权限 | 新写插件 | dsh 有审批瀑布，无四级；任务书未要求。**分两条路径**（第三轮审计 §3.2）：② 生产路径（`dsh-prod.service --profile web`，env 未设 `DSH_PERMISSION_MODE`）走上游 base profile 默认即 workspace-write + ask（`apps/cli/reference/README.zh.md:123`），新会话审批卡会弹——切生产那一刻即生效，**与 HMC PR 无关**；① HMC 启动器路径：PR（4b4da70）已合并，把写死的 danger-full-access 改为默认 workspace-write，新会话同样可弹卡。dsh 侧 BLOCKED 硬拦截维持 P1，APPROVAL 分级优先级下调（默认 ask 已能弹卡）。2026-09-29：dsh-intelligence-approvals 上线生产，READ/WRITE/EXEC/BLOCKED 四级 + tools/pre-execute 接入；**只读免审路径已验证**（经 HMC API/同实例执行：feed_render/hook_list/goal_list/artifact_versions 连续执行 0 审批；会话 JSON 无法证明发起端为手机，故不称"真机"）；**写路径未走完**：goal_create/artifact_save/browser_open 三次触发审批卡后 1.5h 无人点卡，会话卡在 pending（已归档清理，见 §3.4）。分类表补全（commit 924ae6e29）+ 2026-09-29 下午：browser_close 降为 READ（资源回收免审）、feed_render 带 output_path 时升级 WRITE（收口免审批任意写） | §四 P1 ✅ |
 | 10 | Hooks | 新写插件 | dsh-intelligence-hooks：register/list/remove/fire，内置 file:inbox 轮询；2026-09-29 上线生产，hook_list 可调用。**⚠️ 未闭环**：hook_fire 只写内存队列 + fires.jsonl，无任何消费方（evolve/heartbeat/agent 均不读），不会触发 agent 回路、无用户可见效果。闭环前置：明确谁消费 fires.jsonl（待单独设计） | §四 P2 ✅ |
-| 11 | 用户自建 cron | 新写插件 | `dsh-intelligence-cron`（`cron_create`/`cron_list`/`cron_delete`，中文时间解析；dsh-schedule 触发层 + 系统 cron 后台层，手机可见性为第一判据） | P0 真机验收 |
+| 11 | 用户自建 cron | 新写插件 | `dsh-intelligence-cron`（`cron_create`/`cron_list`/`cron_delete`，中文时间解析；dsh-schedule 触发层 + 系统 cron 后台层，手机可见性为第一判据）。`intel-cron/cron.json` 为空 `[]` 是预期状态（任务由 dsh-schedule 触发层管理）；stage-1 于 2026-09-29 14:40 激活，首次真实执行在 09-30 07:30，「不卡 ask」端到端届时补证据 | P0 真机验收 |
 | 12 | Goals 长期目标 | 新写插件 | dsh-intelligence-goals：create/list/progress/close，JSON 真相源 + 自动 goals.md；2026-09-29 上线生产，goal_list 真机验证通过 | §四 P2 ✅ |
 | 13 | Quiet-moment | 新写插件 | `dsh-intelligence-quiet`（turn-stopping + 真后台） | 阶段 2 + 真后台修复 |
 | 14 | 自我进化（5 任务） | 新写插件 | `dsh-intelligence-evolution`（cron + headless profile） | 阶段 3 |
@@ -160,7 +168,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 ### 3.2 分阶段改造记录
 
 **阶段 0：环境验证**（2026-09-28）
-- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29，已完成）：满 24h 存活，无 OOM、无异常死亡；RSS 稳态 10~97MB（启动后 15 分钟起；启动 5 分钟瞬时峰值约 142MB）、收尾 16MB，回落稳定无泄漏；进程历史峰值 156MB（`VmHWM`）。启动峰值 vs 长期空转稳态是同一进程生命周期的不同点位，非矛盾（第三轮审计 §3.5 口径说明；第二份审计报告 §2.4 实测印证）
+- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29，已完成）：满 24h 存活，无 OOM、无异常死亡；RSS 稳态 10~97MB（启动后 15 分钟起；启动 5 分钟瞬时峰值约 142MB、10 分钟约 132MB）、收尾 16MB，回落稳定无泄漏；进程历史峰值 156MB（`VmHWM`）。启动峰值 vs 长期空转稳态是同一进程生命周期的不同点位，非矛盾（第三轮审计 §3.5 口径说明；第二份审计报告 §2.4 实测印证）
 - 踩坑：`pnpm link` 不装树外插件传递依赖——插件包须自带 `node_modules`
 - 踩坑：`@deepseek-ai/*` 必须 pin `0.1.7-rc.1`，npm 默认 `0.0.1-rc.1` 导致 `unknown tool`
 
