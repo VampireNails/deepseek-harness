@@ -7,12 +7,18 @@
 > ④ 原未排期 5 项的复刻完成状态（已全部上线），
 > ⑤ 23 项之外的复刻：Muse 行为规则（Soul）。
 >
+> 修订 9 · 2026-09-29 17:30（第七轮审计落实）：
+> N1（P1）M1 根因更正：第六轮写的「失败会话是 subagent 子会话（origin:subagent），被网关以 session/agent-busy 拒绝」**不成立**。三重证据：①该会话真身 header 无 origin 字段、delegationDepth:0，与正常会话结构相同；②它的 subagentCatalog 里有 2 个子会话，它是父会话；③真身目录命名规则：带 session- 前缀=普通会话。且该现象已于 16:01 重启后消失，**真因至今未定位**。根因改回「未定位」；下次复现时用新增的服务端日志与手机 code 抓现场。修「错误可见性」本身长期有价值，但它没有修复这个现象。
+> N2（P1）服务端日志修法曾不生效：18e0b04 的 catch 块引用 try 块内 const 声明的 call → ReferenceError 被内层空 catch 静默吞掉，生产实测无日志。已随 b4ebb7a（Tomas 合入 main）部署到生产：改为外层 let 声明 + 只记 endpoint 与白名单 code（隐私收窄，不记 stack/sessionId）；生产实打 session/follow 错误已验证 [hmc-service] 日志输出。教训：单测跑的是仓库新代码，生产加载的是旧代码——「测试绿灯、生产红灯」。
+> N3（P2）文档口径跟上：fix/hmc-stream-error-visibility 已合入 HMC origin/main（b4ebb7a），不存在「待 PR」；§3.4 HTML 预览「待重装 APK」改为「APK 已重装（16:32），入口已真机验证；未验的是渲染一份真实 HTML 产物」。
+> N4（P2）M5 RSS 口径补点：启动后 5–10 分钟有两个高点（≈142MB / ≈132MB），15 分钟后进入稳态（≤97MB）。
+> N5（P3）HMC 服务端单测跑法坑：node --test tests/ 会假失败，须逐文件跑（14 文件 / 34 用例全过）。
 > 修订 8 · 2026-09-29 16:30（第六轮审计 M1–M6 落实）：
-> M1 根因定位——"重启验证OK"会话打开失败是 subagent 子会话（origin:subagent），session/follow 直接打开被网关以 session/agent-busy 拒绝；HMC 服务 catch 分支此前不写日志、客户端丢弃 error.code，导致手机上只有一句通用文案。已修：server.mjs catch 补 console.error（endpoint/session/code/stack）；HostFailure 携带 remoteCode；MainActivity 文案透出 code，agent-busy 给专属提示"这是子任务会话，请从父会话中查看"（分支 fix/hmc-stream-error-visibility 已推，待 PR）。
+> M1 根因定位【已于修订 9 更正为未定位】——"重启验证OK"会话打开失败现象已于 16:01 重启后消失；此前推测为 subagent 子会话被拒，但三重证据证伪（见修订 9 N1），真因未定位；HMC 服务 catch 分支此前不写日志、客户端丢弃 error.code，导致手机上只有一句通用文案。已修：server.mjs catch 补 console.error（endpoint/session/code/stack）；HostFailure 携带 remoteCode；MainActivity 文案透出 code，agent-busy 给专属提示"这是子任务会话，请从父会话中查看"（分支 fix/hmc-stream-error-visibility 已推，待 PR）。
 > M2 流错误码透出（同上，一并落实）。
 > M3 evolve cron 不卡 ask——evolve profile 只挂 base+headless+memory+joblog+evolution+feed，不挂 approvals/guard，不经 dsh-prod-start；隔离 mock 实测 memory_write 直接成功（EXIT=0），exit 后测试记忆已清。文档补 cron 防线边界说明。
 > M4 空测试会话真正移出活动区——此前归档的只是 projcache 投影（/root/.dsh/storages/session_projcache/sessions/*.json），真身在 /root/.dsh/sessions/--root-intel-hmc-prod-workspace--/ 下，dsh 会从真身重建投影。已把真身目录移到 /root/.dsh/archived-sessions/2026-09-29-empty-test/ 并删投影，重启后 session/list 确认消失。客户端另加 blank=true 过滤（同分支，已推）。
-> M5 RSS 口径修正：稳态 10~97MB（启动 15 分钟后）；启动 5 分钟瞬时峰值约 142MB；收尾 16MB。
+> M5 RSS 口径修正：启动后 5–10 分钟有两个高点（≈142MB / ≈132MB），15 分钟后进入稳态 10~97MB；收尾 16MB。
 > M6 旧 HEAD（2765849e1）更新；"新写插件 14 行"与"磁盘 14 个插件目录"为恰好同数但集合不同，guard 不计入 23 项。
 > N6 口径更正：已由 Tomas 直接合入 HMC origin/main（2421c0b），无需再建 PR。
 > 修订 7 · 2026-09-29 15:10（24h 空转监控收尾完成 + stage-1 cron 激活落地，文档状态同步）。
