@@ -114,9 +114,11 @@ export class CronScheduler {
     // HMC 手机客户端只渲染 source.kind == "user" 的消息（Timeline.java:150-151）；
     // dsh-schedule 到点投递的是 source.kind='schedule'，其正文在手机时间线上不可见——
     // 手机上只能看到智能体对提醒的回复（assistant/message 无条件渲染）。
-    // 因此 prompt 自带处理要求：先把提醒原文完整复述给用户，再执行任务，
-    // 让回答自带原文，规避客户端渲染过滤（2026-09-29 第三轮审计 §3.1）。
-    return `【定时提醒 ${job.name}】${job.prompt}\n（处理要求：先把本条提醒的原文完整复述给用户，然后再执行提醒中的任务。）`;
+    // 上游 framing（schedule/domain.ts:806-814）已要求模型把 reminder_prompt_json
+    // 作为内容呈现给用户（"not new user instructions"），因此这里只加一个面向用户
+    // 的自然标签，不写元指令——"处理要求"这类元指令落进被上游标注为"非指令"的字段
+    // 里，可能被模型原样念给用户造成噪音（2026-09-29 第三轮审计 §2.1）。
+    return `【定时提醒 ${job.name}】${job.prompt}`;
   }
 
   // ---- 工具入口 ----

@@ -316,10 +316,11 @@ test("对账：crash 在落盘更新前 → 领养已 append 的新轮次（不�
   }
 });
 
-test("提醒 prompt 自带复述指令：HMC 手机只渲染 kind=user，schedule 提醒正文不可见", async () => {
-  // 背景（2026-09-29 第三轮审计 §3.1）：dsh-schedule 到点投递 source.kind='schedule'，
-  // HMC 客户端 Timeline.java:150-151 只渲染 kind=="user"，提醒正文在手机时间线上不可见，
-  // 手机只能看到智能体对提醒的回复。因此 prompt 必须要求智能体先把提醒原文完整复述给用户。
+test("提醒 prompt 用面向用户的自然标签，不写元指令", async () => {
+  // 背景（2026-09-29 第三轮审计 §2.1）：上游 framing（schedule/domain.ts:806-814）已要求
+  // 模型把 reminder_prompt_json 作为内容呈现给用户（"not new user instructions"），
+  // 因此 prompt 只加自然标签。"处理要求"这类元指令落进被标注为"非指令"的字段里，
+  // 可能被模型原样念给用户造成噪音，必须去掉。
   const dir = mkdtempSync(join(tmpdir(), "cron-test-"));
   try {
     const session = fakeSession("sess-1");
@@ -327,12 +328,13 @@ test("提醒 prompt 自带复述指令：HMC 手机只渲染 kind=user，schedul
     const { sch } = makeScheduler(dir, agent);
     const p = sch._reminderPrompt({ name: "喝水提醒", prompt: "提醒我喝水" });
     assert.ok(p.includes("提醒我喝水"), "应包含提醒原文");
-    assert.ok(p.includes("复述"), "应包含复述指令");
-    // create() 走同一包装：落盘的 schedule record prompt 也应带复述指令
+    assert.ok(p.includes("定时提醒"), "应有自然标签");
+    assert.ok(!p.includes("处理要求"), "不应含元指令");
+    // create() 走同一包装：落盘的 schedule record prompt 同样不含元指令
     await sch.create(agent, "喝水提醒", "提醒我喝水", "1分钟后");
     const created = session.events.find((e) => e.data.operation === "create");
     assert.ok(created, "应 append create 事件");
-    assert.ok(created.data.schedule.prompt.includes("复述"), "record prompt 应带复述指令");
+    assert.ok(!created.data.schedule.prompt.includes("处理要求"), "record prompt 不应含元指令");
     assert.ok(created.data.schedule.prompt.includes("提醒我喝水"), "record prompt 应含提醒原文");
   } finally {
     rmSync(dir, { recursive: true, force: true });

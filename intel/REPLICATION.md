@@ -8,7 +8,8 @@
 > ⑤ 23 项之外的复刻：Muse 行为规则（Soul）。
 >
 > 修订：2026-09-29，内容对应提交 `96ac06d66`。（本行之外的全部内容与该提交一致；若 HEAD 更新而本行未动，以 git log 为准）。
-> 本次修订（2026-09-29 上午，第三轮审计 12 项确认优化全部落实）：#11 cron 提醒 prompt 自带复述指令（手机可见性硬伤修复，方案 1）；新增"生产默认 workspace-write+ask 运维告知"，#9 归因修正（① HMC 启动器路径 vs ② 生产路径分开）；bootstrap 等价性口径修正（hmc-test 仅冒烟）；数字校正（cron 42 用例、内存双点位说明、cron 激活改 🔄）；Soul 补"手机侧不可见 + step-1 三注入 token 成本"；HMC 连接地址口径澄清（走 IP，域名仅 PC Web）；#9 APPROVAL 分级优先级下调；§3.4 夹具已由 Tomas 在 HMC 2b4f7f6 补回（无需另开 PR）。
+> 本次修订（2026-09-29 上午，第二份审计报告 5 条新发现落实）：#11 方案 1 修订——去掉"处理要求"元指令（落在上游标注为"非指令"的字段里，可能被原样念出；改用面向用户的自然标签，上游 framing 已要求呈现 reminder 内容）；`dsh-prod` 已重启使 cron 修法生效；生产默认 ask 补前提（PC Web General settings 未保存默认权限，2026-09-29 核实为空）；内存改"17 小时实测 10.4MB / 历史峰值 156MB / 24h 待出"口径；bootstrap 等价性修正（生产同样只用 wrapper、无 HMC 原版 4 项 patch）。
+> 上次修订（2026-09-29 上午，第三轮审计 12 项确认优化全部落实）：#11 cron 提醒 prompt 自带复述指令（手机可见性硬伤修复，方案 1）；新增"生产默认 workspace-write+ask 运维告知"，#9 归因修正（① HMC 启动器路径 vs ② 生产路径分开）；bootstrap 等价性口径修正（hmc-test 仅冒烟）；数字校正（cron 42 用例、内存双点位说明、cron 激活改 🔄）；Soul 补"手机侧不可见 + step-1 三注入 token 成本"；HMC 连接地址口径澄清（走 IP，域名仅 PC Web）；#9 APPROVAL 分级优先级下调；§3.4 夹具已由 Tomas 在 HMC 2b4f7f6 补回（无需另开 PR）。
 > 上次修订（2026-09-29 凌晨）：P0 用户自建 cron 插件完成并真机验收（#11 从"未排期"转为"新写插件"，23 项口径变为 8+9+5+1）；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
 > 上上次修订（2026-09-28 晚间）：第二轮审计（HMC 交叉核验）后修正：bootstrap 两处硬伤已修复并通过干净验收；HMC 端到端证据已对齐为脚本真实输出；#9 APPROVAL 层改为跨仓库决策项（V3 关闭）；#11 新增"手机可见性"选型判据；#8 改为"消费通道部分存在"。
 
@@ -41,7 +42,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 迁移脚本（migrate.sh + rollback.sh） | ✅ 完成（含 spaceCjk 对齐修复） |
 | 文档订正 + README npm ci | ✅ 完成 |
 | run-integration.sh DSH_HOME 隔离 | ✅ 完成 |
-| bootstrap 可复现脚本 | ✅ 完成（第二轮审计发现两处硬伤已修：`intel/hmc-service-wrapper` 入库（此前引用路径不存在）+ `npm ci`→`npm install`（无锁文件必然失败）；`DSH_HOME=$(mktemp -d)` 干净验收三 profile 全过。第三轮审计 §3.3 口径修正：hmc-test 是 API 级冒烟 profile（能装、能起、API 通），未并入 HMC `service/cordis.patch.yml` 的 4 项（其中 `pwsh-sandbox` 为 Windows 专用，故意不并），**不等价于真机验收环境**；依赖 `/root/intel/hmc-client` 外部路径，wrapper README 已披露） |
+| bootstrap 可复现脚本 | ✅ 完成（第二轮审计发现两处硬伤已修：`intel/hmc-service-wrapper` 入库（此前引用路径不存在）+ `npm ci`→`npm install`（无锁文件必然失败）；`DSH_HOME=$(mktemp -d)` 干净验收三 profile 全过。第三轮审计 §3.3 口径修正：hmc-test 是 API 级冒烟 profile（能装、能起、API 通），未并入 HMC `service/cordis.patch.yml` 的 4 项（其中 `pwsh-sandbox` 为 Windows 专用，故意不并）；第二份审计报告 §2.5 修正对比基准：**生产（`--profile web`）同样只用 hmc-service-wrapper、无 HMC 原版 4 项 patch**（`cordis.patch.yml` 为空数组），两者在 patch 面上一致——生产缺 `hmc-directory-picker-host/-ui` 是否影响手机端"选工作区目录"待 HMC 侧评估（PC Web 已实测可达 401，缺 `web-runtime` 重配未阻断）；依赖 `/root/intel/hmc-client` 外部路径，wrapper README 已披露） |
 | 24h 空转存活监控 | 🔄 运行中（2026-09-29 14:34 出结果；仅进程存活+RSS，非负载稳定性） |
 | HMC 端到端 | ✅ API 级通过（TLS→401→session/create→session/prompt→memory_write SQLite 落盘，全绿；证据 `intel/hmc-e2e-evidence-2026-09-28.log` 为 `hmc-e2e.sh` 真实 stdout，第二轮审计对齐）；手机真机已直连 100.73.148.102:43197，Tomas 确认"已连上" |
 | 系统 cron 分档激活 | 🔄 已批准、待执行；stage-1（5 个低频任务）2026-09-29 14:40 执行（24h 监控结束后）；stage-2（每小时 upkeep/heartbeat）观察后决定 |
@@ -136,7 +137,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 ### 3.2 分阶段改造记录
 
 **阶段 0：环境验证**（2026-09-28）
-- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29）复核：启动峰值 145936KB 后缓降，24h 后约 11MB——两者是同一进程生命周期的不同点位（启动峰值 vs 长期空转稳态），非矛盾（第三轮审计 §3.5 口径说明）
+- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29）：运行 17 小时后约 10.4MB（`VmRSS`），进程历史峰值 156MB（`VmHWM`），24h 结果待 14:34 出——启动峰值 vs 长期空转稳态是同一进程生命周期的不同点位，非矛盾（第三轮审计 §3.5 口径说明；第二份审计报告 §2.4 实测印证）
 - 踩坑：`pnpm link` 不装树外插件传递依赖——插件包须自带 `node_modules`
 - 踩坑：`@deepseek-ai/*` 必须 pin `0.1.7-rc.1`，npm 默认 `0.0.1-rc.1` 导致 `unknown tool`
 
@@ -164,9 +165,9 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 
 **P0：用户自建 cron 插件**（2026-09-28，Tomas 批准开工）
 - `dsh-intelligence-cron`：`cron_create(name, prompt, schedule)` / `cron_list` / `cron_delete(ref)`；中文时间解析
-- 单测 42/42（含提醒复述指令回归测试；其中 2 个真解码器用例需 dsh 运行时，服务器上全过、无运行时的环境自动跳过）、隔离集成测试 6/6、旧插件回归 21/21
+- 单测 42/42（含提醒 prompt 自然标签回归测试，不写元指令；其中 2 个真解码器用例需 dsh 运行时，服务器上全过、无运行时的环境自动跳过）、隔离集成测试 6/6、旧插件回归 21/21
 - 真机验收：经 HMC API 创建 5 分钟一次性任务，到点生成 follow-up turn（"⏰ p0test 提醒到点"），`cron.json` 状态流转正确，测试任务已删除
-- 手机可见性判据（2026-09-29 第三轮审计 §3.1 修正）：dsh-schedule 到点投递的是 `source.kind='schedule'` 消息，HMC 客户端只渲染 `kind=="user"`（`Timeline.java:150-151`）——**提醒正文在手机时间线上不可见，看得见的是智能体对提醒的回复**（`assistant/message` 无条件渲染）。补法（已实施，方案 1）：cron 插件的提醒 prompt 自带"先把提醒原文完整复述给用户，再执行任务"指令，让回答自带原文，规避渲染过滤。隐形基础设施，不做 followup 弹窗（复刻 Python Muse 方式，Tomas 拍板）
+- 手机可见性判据（2026-09-29 第三轮审计 §3.1 修正、第二份审计报告 §2.1 修订）：dsh-schedule 到点投递的是 `source.kind='schedule'` 消息，HMC 客户端只渲染 `kind=="user"`（`Timeline.java:150-151`）——**提醒正文在手机时间线上不可见，看得见的是智能体对提醒的回复**（`assistant/message` 无条件渲染）。补法（方案 1，已修订）：cron 插件的提醒 prompt 加面向用户的自然标签`【定时提醒 name】prompt`——上游 framing（`schedule/domain.ts:806-814`）已要求模型把 `reminder_prompt_json` 作为内容呈现给用户；**不写"处理要求"类元指令**，因为它落在被上游标注为"非指令"的字段里，可能被模型原样念给用户造成噪音。隐形基础设施，不做 followup 弹窗（复刻 Python Muse 方式，Tomas 拍板）
 
 **Soul：Muse 行为规则复刻**（2026-09-28，Tomas 要求"复刻你 muse 的规则"）
 - `dsh-intelligence-soul`：每回合 step 1 自动注入；`soul_read` / `soul_update(section, content)` 运行时更新；持久化 `~/.dsh/intel-soul/soul.md`（直接改文件下回合生效，无需重启）
@@ -187,7 +188,8 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - 意义：#9 APPROVAL 层的跨仓库卡死条件解除（默认部署下审批卡可弹）
 - 附带发现（第三轮审计 §3.4）：该 PR 改 `tests/host-env.test.mjs` 时删掉了 `UNRELATED_SECRET=do-not-load` 夹具（原用例守的是"只从项目 .env 读 DEEPSEEK_API_KEY，不加载其它密钥"）。**Tomas 已在 HMC `2b4f7f6`（2026-09-28 21:19）亲手补回**，单测 2/2 通过；剩余两处缩进为纯风格问题，未单独立 PR（避免噪音），在此记录
 
-**生产默认 workspace-write + ask 的运维含义**（2026-09-29 第三轮审计 §3.2，新增告知）
+**生产默认 workspace-write + ask 的运维含义**（2026-09-29 第三轮审计 §3.2，新增告知；第二份审计报告 §2.3 补前提）
+- **前提：PC Web General settings 未保存默认权限**——已保存的 `permission.defaultPreset` 优先于进程后备值（`DSH_PERMISSION_MODE` 只在"没有已保存偏好"时才决定新会话权限）。2026-09-29 核实：`/root/.dsh/storages/` 下无 settings 存储，`grep defaultPreset` 无命中，当前为空，"审批卡会弹"的结论在当下成立 ✅。一旦有人在 PC Web 里存过偏好，两条路径的结论都会静默失效。
 - 生产（`--profile web`，env 未设 `DSH_PERMISSION_MODE`）的新会话默认就是 workspace-write + ask：手机顶栏显示「权限：工作区可写，敏感操作需审批」（A 级真机可见），敏感操作会弹审批卡等人点。
 - **这是切生产那一刻即发生的线上行为变化，与 HMC 的 PR 无关**（生产由 `dsh-prod.service` 直接启动 dsh，不经过 HMC 启动器）——此前文档把功劳记在 PR 名下，现修正归因：① HMC 启动器路径靠 PR 解除写死，② 生产路径靠上游 base profile 默认。
 - `ask` 是 fail-closed：无人值守时（没开后台提醒，或超过 HMC 2 小时监控窗口），触发审批的回合会**卡住等人**。要无人值守：显式 opt-in `DSH_PERMISSION_MODE=danger-full-access`，或把后台提醒开着。
@@ -244,8 +246,8 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 
 - **交付**：`dsh-intelligence-cron` 插件，`cron_create`/`cron_list`/`cron_delete` 三个工具，中文时间解析
 - **验证**：单测 42/42（含提醒复述指令回归测试；其中 2 个真解码器用例需 dsh 运行时，服务器上全过、无运行时的环境自动跳过）、隔离集成测试 6/6、旧插件回归 21/21；HMC 真机验收（5 分钟一次性任务到点生成 follow-up turn，`cron.json` 状态流转正确，测试任务已删）
-- **设计**（第三方审计建议拆两层，第二轮审计加选型判据，第三轮审计 §3.1 修正口径）：**选型第一判据是手机可见性**——但机制上**看得见的是回答，不是提醒正文**：dsh-schedule 到点投递 `source.kind='schedule'`，HMC 客户端只渲染 `kind=="user"`，提醒正文在手机时间线上不可见；手机上能看到的是智能体对提醒的回复。补法（已实施，方案 1）：提醒 prompt 自带"先把提醒原文完整复述给用户"指令，让回答自带原文，规避渲染过滤（上游 schedule README：delivery never uses email/SMS/push；HMC ADR 002：后台提醒仅监控单条会话、上限 2 小时）；需脱离会话的后台任务保留系统 cron + `dsh --profile evolve` headless
-- **验收判据**："到点能在手机上看见智能体产生了回答（含复述的提醒原文）"。诚实边界：仅会话活着且处于 2 小时监控窗口内才可能推到手机；出窗口退化为"回 App 才看到"。真机投递 schedule 消息的 A 级验证待补（第三轮审计 §六：建一条 cron 等触发后手机截图）
+- **设计**（第三方审计建议拆两层，第二轮审计加选型判据，第三轮审计 §3.1 修正口径，第二份审计报告 §2.1 修订）：**选型第一判据是手机可见性**——但机制上**看得见的是回答，不是提醒正文**：dsh-schedule 到点投递 `source.kind='schedule'`，HMC 客户端只渲染 `kind=="user"`，提醒正文在手机时间线上不可见；手机上能看到的是智能体对提醒的回复。补法（方案 1，已修订）：提醒 prompt 加面向用户的自然标签`【定时提醒 name】prompt`——上游 framing 已要求模型把 `reminder_prompt_json` 作为内容呈现给用户；不写"处理要求"类元指令（第二份审计报告 §2.1：它落在被上游标注为"非指令"的字段里，可能被原样念出成噪音）。`dsh-prod` 已于 2026-09-29 08:26 重启使修法生效（此前进程启动于代码修改之前、无热重载；重启时 `cron.json` 为空，无旧格式任务遗留）。（上游 schedule README：delivery never uses email/SMS/push；HMC ADR 002：后台提醒仅监控单条会话、上限 2 小时）；需脱离会话的后台任务保留系统 cron + `dsh --profile evolve` headless
+- **验收判据**："到点能在手机上看见智能体产生了回答（含提醒原文）"。诚实边界：仅会话活着且处于 2 小时监控窗口内才可能推到手机；出窗口退化为"回 App 才看到"。A 级验证（第二份审计报告 §四 item 2，2026-09-29 08:38 完成 ✅）：生产建 5 分钟一次性提醒（`a级测试：请喝一杯水`），到点触发后手机时间线显示助手回复"The reminder fired. Present it to the user. 【定时提醒 a级测试】请喝一杯水（c1 一次性提醒已到期，任务已自动结束）"——**提醒原文可见、无"（处理要求：…）"括号噪音**，证实 §2.1 的判断（framing 机制足够，元指令属冗余且有噪音风险）✅。截图证据：`~/workspace/audit-evidence/2026-09-29-cron-reminder-phone-A级.png`。测试任务已清（`cron.json` 回 `[]`），测试会话保留（明确标注）
 - **原评估中的路线已兑现**：中文时间解析 + dsh-schedule 触发层复用，手机可见性判据指导了实现
 
 ### P1：#9 审批卡 + 四级权限（跨仓库决策已解决，dsh 侧未排期）
