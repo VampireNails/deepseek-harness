@@ -20,7 +20,7 @@ function fmtGoal(g) {
 
 export function apply(ctx, config) {
   const goals = new GoalsStore(goalsDir());
-  ctx.provide("goals", goals);
+  ctx.provide("intelGoals", goals);
 
   ctx.effect(
     function* () {
