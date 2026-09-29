@@ -4,10 +4,10 @@
 > ① dsh-muse 是否完成复刻（结论先行），
 > ② 完整复刻清单（23 项 Python 能力 → dsh 的去向，**以 §2 表为唯一权威口径**），
 > ③ DeepSeek Harness 改造汇总（Python 单体 → dsh 插件架构），
-> ④ 未排期 5 项的升级提议详细评估（P0/P1/P2），
+> ④ 原未排期 5 项的复刻完成状态（已全部上线），
 > ⑤ 23 项之外的复刻：Muse 行为规则（Soul）。
 >
-> 修订：2026-09-29，内容对应提交 `96ac06d66`。（本行之外的全部内容与该提交一致；若 HEAD 更新而本行未动，以 git log 为准）。
+> 修订 5 · 2026-09-29 13:20（第四轮审计 16 项确认全部落实；以 git log 为准）。
 > 本次修订（2026-09-29 上午，第二份审计报告 5 条新发现落实）：#11 方案 1 修订——去掉"处理要求"元指令（落在上游标注为"非指令"的字段里，可能被原样念出；改用面向用户的自然标签，上游 framing 已要求呈现 reminder 内容）；`dsh-prod` 已重启使 cron 修法生效；生产默认 ask 补前提（PC Web General settings 未保存默认权限，2026-09-29 核实为空）；内存改"17 小时实测 10.4MB / 历史峰值 156MB / 24h 待出"口径；bootstrap 等价性修正（生产同样只用 wrapper、无 HMC 原版 4 项 patch）。
 > 修订 5 · 2026-09-29 13:00（第四轮审计 16 项确认全部落实；git log 为准）：#11 cron 提醒 prompt 自带复述指令（手机可见性硬伤修复，方案 1）；新增"生产默认 workspace-write+ask 运维告知"，#9 归因修正（① HMC 启动器路径 vs ② 生产路径分开）；bootstrap 等价性口径修正（hmc-test 仅冒烟）；数字校正（cron 42 用例、内存双点位说明、cron 激活改 🔄）；Soul 补"手机侧不可见 + step-1 三注入 token 成本"；HMC 连接地址口径澄清（走 IP，域名仅 PC Web）；#9 APPROVAL 分级优先级下调；§3.4 夹具已由 Tomas 在 HMC 2b4f7f6 补回（无需另开 PR）。
 > 上次修订（2026-09-29 上午）：6 项 web 能力服务端全部复刻完成（多步浏览器、Artifacts v2、审批四级、Hooks、Goals、Feed Web UI 呈现层；23 项口径变为 8+14+0+1，另有 dsh-intelligence-guard 生产守卫不在 23 项内；dsh 侧工具真机验证覆盖只读路径，写路径未走完（见 #9）；手机呈现层（HTML 预览）待重装 APK 后验收）；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；HMC 新增 HTML 预览已合入 origin/main（commit 641c943 + 2d6a07f，非独立 PR 分支；feed_render/HTML 产物手机渲染，待重装 APK 后真机验收）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
@@ -238,7 +238,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **HMC 手机**：已直连 `100.73.148.102:43197` 配对成功，真 DeepSeek 回复（provider=deepseek-official）。**连接地址口径**（第三轮审计 §3.7）：HMC 服务走 IP（`100.73.148.102:43197`）；`hmc-mirror.tail52c730.ts.net` 域名仅用于 PC Web（Tailscale Serve → 127.0.0.1:8080）。HMC TLS 证书 SAN（`CN=hmc-test`，含 IP 100.75.211.11/100.73.148.102/127.0.0.1）不含该域名——改域名访问 HMC 会因主机名校验失败。保持走 IP，或重签证书补 SAN。
 - **24h 空转存活监控**：监控对象 = `dsh --profile web-intel --port 3080` 空转进程（**不是**生产 `dsh-prod`）+ mock LLM `:18099`，2026-09-29 14:34 出结果（结束后停 mock、归档日志、释放 `:18099`）
 - **系统 cron**：stage-1 分档激活已批准，2026-09-29 14:40 执行（5 个低频任务）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定
-- **Git**：`intel` 分支已 push（HEAD `96ac06d66`），`master` 跟踪上游
+- **Git**：`intel` 分支已 push（HEAD `2765849e1`，2026-09-29 13:20 第四轮审计落实），`master` 跟踪上游
 - **每周养成检查**：已改名"dsh-muse 每周养成检查"（每周一 09:15，覆盖 dsh-muse 生产健康 + 进化产出 + 升级提议）
 - **待 Tomas**：stage-2 cron 激活；HTML 预览重装 APK 后真机验收；Hooks 闭环消费方设计评审
 - **运维规则**（2026-09-29 第四轮审计 §2.1 立）：默认 ask 下写操作必须有人值守；无人值守跑写操作只能显式 opt-in（danger-full-access）或接受卡住。
