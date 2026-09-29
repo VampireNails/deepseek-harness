@@ -58,8 +58,11 @@ const READ_TOOLS = [
   // 技能/呈现
   "skill", "present", "noop", "probe",
   // intel 插件只读工具
-  "memory_read", "memory_search", "feed_read", "cron_list",
+  "memory_read", "memory_search", "feed_read", "feed_render", "cron_list",
   "schedule_list", "todo_list", "goal_list",
+  "artifact_get", "artifact_read", "artifact_versions",
+  "hook_list",
+  "browser_snapshot", "browser_downloads", "browser_screenshot",
   // 本插件自身（查分级不应弹卡）
   "approval_classify",
   // 交互式提问（本身即用户交互，无风险）
@@ -76,7 +79,10 @@ const WRITE_TOOLS = [
   "cron_create", "cron_delete", "schedule_create", "schedule_delete",
   // 待办/目标/工件
   "todo_add", "todo_write", "artifact_save",
-  "goal_create", "goal_log", "goal_close",
+  "browser_open", "browser_click", "browser_fill", "browser_select",
+  "browser_wait", "browser_close",
+  "goal_create", "goal_log", "goal_progress", "goal_close",
+  "hook_register", "hook_remove", "hook_fire",
   "create_goal", "update_goal",
   "team_task_create", "team_task_update",
   // 智能体间消息/派生
