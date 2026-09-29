@@ -1,8 +1,14 @@
 // dsh-intelligence-guard —— 生产环境不变式守卫
 //
 // 只挂载在 web（生产）profile。插件 apply() 在 profile 加载时执行，
-// 早于任何 agent 回合。若生产环境契约被违反，直接抛错，
-// 使 dsh 拒绝启动（fail-closed），而不是带着污染的环境继续跑。
+// 早于任何 agent 回合。若生产环境契约被违反，抛错并在启动日志留下明确告警。
+//
+// ⚠️ 能力边界（2026-09-29 第五轮审计 N1 实测）：apply() 抛错只能产生 dsh 的
+// "did not activate" warning，**拦不住 dsh 启动**——上游 dsh-app-boot 的
+// requiredStartupEntryIds 是硬编码全局集合（agent-loop/webserver/modules/...），
+// 第三方插件加不进去。真正的 fail-closed 拦截在 /usr/local/bin/dsh-prod-start
+//（入口脚本复用本插件 checkInvariants 做启动前断言，违反则 exit 1）。
+// 本插件的价值是可观测性：污染发生时在启动日志里留下明确、可 grep 的告警。
 //
 // 防的是 2026-09-28 事故类：测试 shell 的 DEEPSEEK_BASE_URL 泄漏进
 // 手动启动的生产进程，导致 HMC 收到 mock 回复。

@@ -7,11 +7,13 @@
 > ④ 原未排期 5 项的复刻完成状态（已全部上线），
 > ⑤ 23 项之外的复刻：Muse 行为规则（Soul）。
 >
-> 修订 5 · 2026-09-29 13:20（第四轮审计 16 项确认全部落实；以 git log 为准）。
-> 本次修订（2026-09-29 上午，第二份审计报告 5 条新发现落实）：#11 方案 1 修订——去掉"处理要求"元指令（落在上游标注为"非指令"的字段里，可能被原样念出；改用面向用户的自然标签，上游 framing 已要求呈现 reminder 内容）；`dsh-prod` 已重启使 cron 修法生效；生产默认 ask 补前提（PC Web General settings 未保存默认权限，2026-09-29 核实为空）；内存改"17 小时实测 10.4MB / 历史峰值 156MB / 24h 待出"口径；bootstrap 等价性修正（生产同样只用 wrapper、无 HMC 原版 4 项 patch）。
-> 修订 5 · 2026-09-29 13:00（第四轮审计 16 项确认全部落实；git log 为准）：#11 cron 提醒 prompt 自带复述指令（手机可见性硬伤修复，方案 1）；新增"生产默认 workspace-write+ask 运维告知"，#9 归因修正（① HMC 启动器路径 vs ② 生产路径分开）；bootstrap 等价性口径修正（hmc-test 仅冒烟）；数字校正（cron 42 用例、内存双点位说明、cron 激活改 🔄）；Soul 补"手机侧不可见 + step-1 三注入 token 成本"；HMC 连接地址口径澄清（走 IP，域名仅 PC Web）；#9 APPROVAL 分级优先级下调；§3.4 夹具已由 Tomas 在 HMC 2b4f7f6 补回（无需另开 PR）。
-> 上次修订（2026-09-29 上午）：6 项 web 能力服务端全部复刻完成（多步浏览器、Artifacts v2、审批四级、Hooks、Goals、Feed Web UI 呈现层；23 项口径变为 8+14+0+1，另有 dsh-intelligence-guard 生产守卫不在 23 项内；dsh 侧工具真机验证覆盖只读路径，写路径未走完（见 #9）；手机呈现层（HTML 预览）待重装 APK 后验收）；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；HMC 新增 HTML 预览已合入 origin/main（commit 641c943 + 2d6a07f，非独立 PR 分支；feed_render/HTML 产物手机渲染，待重装 APK 后真机验收）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
-> 上上次修订（2026-09-28 晚间）：第二轮审计（HMC 交叉核验）后修正：bootstrap 两处硬伤已修复并通过干净验收；HMC 端到端证据已对齐为脚本真实输出；#9 APPROVAL 层改为跨仓库决策项（V3 关闭）；#11 新增"手机可见性"选型判据；#8 改为"消费通道部分存在"。
+> 修订 6 · 2026-09-29 14:10（第五轮审计落实）：guard 插件 fail-closed 声明撤回（实测 apply() 抛错只产生 did not activate warning，拦不住启动；上游 requiredStartupEntryIds 硬编码）→ 真正的启动拦截前置到 dsh-prod-start（复用 guard checkInvariants，违反 exit 1，污染 env 实测拒绝启动）；guard 改为 warn-only 可观测定位；补启动级回归测试（failclosed.test.js 2/2）；修订行重写为纯列表；插件计数统一为 14；空测试会话归档。
+> 修订 5 · 2026-09-29 12:54（第四轮审计 16 项确认全部落实）：3 僵尸会话归档；approvals 只读免审已验证/写路径未走完；改插件固定验收 journalctl|grep did not activate；默认 ask 写操作需有人值守；feed_render 带 output_path→WRITE；browser_close→READ；Hooks 标注未闭环；浏览器内存口径修正；文档四处同步（8+14+0+1）。
+> 修订 4 · 2026-09-29 12:50（环境污染系统性修复）：guard 三层纵深防御（插件守卫 + dsh-prod-start env -i 白名单 + hmc-test→hmc-prod 正名）。
+> 修订 3 · 2026-09-29 10:14（6 项 web 能力服务端复刻完成）：多步浏览器、Artifacts v2、审批四级、Hooks、Goals、Feed 呈现层；口径 8+14+0+1；HMC HTML 预览已合入 origin/main（待重装 APK 真机验收）。
+> 修订 2 · 2026-09-29 08:39（第二份审计报告 5 条新发现落实）：cron 提醒 prompt 去元指令（改自然标签）；dsh-prod 重启使修法生效；生产默认 ask 补前提；内存双点位口径；bootstrap 等价性修正。
+> 修订 1 · 2026-09-29 07:23（第三轮审计 12 项确认优化落实）：cron 提醒手机可见性修复（方案 1）；生产默认 workspace-write+ask 运维告知；#9 归因修正。
+> 修订 0 · 2026-09-28 晚间（第二轮审计 HMC 交叉核验修复）：bootstrap 两处硬伤；HMC 端到端证据对齐；#9 APPROVAL 改跨仓库决策；#11 手机可见性判据。
 
 ---
 
@@ -84,7 +86,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 6 | 子智能体 | dsh 原生 | `dsh-tool-subagent`（in-process 驱动） | 阶段 2 真测 |
 | 7 | 语义记忆 | 新写插件 | `dsh-intelligence-memory`（SQLite FTS5 + BM25；分词器待 V2 披露；向量方案因 1GB 内存否决） | 阶段 1 |
 | 8 | Artifacts v2 | 新写插件 | dsh-intelligence-artifacts：save/get/read/versions 四工具，版本历史 + kind=html 元数据；2026-09-29 上线生产；手机呈现走 HMC（commit 641c943 + 2d6a07f 已合入 origin/main，非独立 PR 分支；WebView 沙盒预览，JS/文件/网络/跳转四禁）。⚠️ 手机现装 APK 为 2026-09-28 22:54 构建，不含此功能，需重装后真机验收 | §四 P2 ✅ |
-| 9 | 审批卡 + 四级权限 | 新写插件 | dsh 有审批瀑布，无四级；任务书未要求。**分两条路径**（第三轮审计 §3.2）：② 生产路径（`dsh-prod.service --profile web`，env 未设 `DSH_PERMISSION_MODE`）走上游 base profile 默认即 workspace-write + ask（`apps/cli/reference/README.zh.md:123`），新会话审批卡会弹——切生产那一刻即生效，**与 HMC PR 无关**；① HMC 启动器路径：PR（4b4da70）已合并，把写死的 danger-full-access 改为默认 workspace-write，新会话同样可弹卡。dsh 侧 BLOCKED 硬拦截维持 P1，APPROVAL 分级优先级下调（默认 ask 已能弹卡）。2026-09-29：dsh-intelligence-approvals 上线生产，READ/WRITE/EXEC/BLOCKED 四级 + tools/pre-execute 接入；**只读免审路径已真机验证**（feed_render/hook_list/goal_list/artifact_versions 连续执行 0 审批）；**写路径未走完**：goal_create/artifact_save/browser_open 三次触发审批卡后 1.5h 无人点卡，会话卡在 pending（已归档清理，见 §3.4）。分类表补全（commit 924ae6e29）+ 2026-09-29 下午：browser_close 降为 READ（资源回收免审）、feed_render 带 output_path 时升级 WRITE（收口免审批任意写） | §四 P1 ✅ |
+| 9 | 审批卡 + 四级权限 | 新写插件 | dsh 有审批瀑布，无四级；任务书未要求。**分两条路径**（第三轮审计 §3.2）：② 生产路径（`dsh-prod.service --profile web`，env 未设 `DSH_PERMISSION_MODE`）走上游 base profile 默认即 workspace-write + ask（`apps/cli/reference/README.zh.md:123`），新会话审批卡会弹——切生产那一刻即生效，**与 HMC PR 无关**；① HMC 启动器路径：PR（4b4da70）已合并，把写死的 danger-full-access 改为默认 workspace-write，新会话同样可弹卡。dsh 侧 BLOCKED 硬拦截维持 P1，APPROVAL 分级优先级下调（默认 ask 已能弹卡）。2026-09-29：dsh-intelligence-approvals 上线生产，READ/WRITE/EXEC/BLOCKED 四级 + tools/pre-execute 接入；**只读免审路径已验证**（经 HMC API/同实例执行：feed_render/hook_list/goal_list/artifact_versions 连续执行 0 审批；会话 JSON 无法证明发起端为手机，故不称"真机"）；**写路径未走完**：goal_create/artifact_save/browser_open 三次触发审批卡后 1.5h 无人点卡，会话卡在 pending（已归档清理，见 §3.4）。分类表补全（commit 924ae6e29）+ 2026-09-29 下午：browser_close 降为 READ（资源回收免审）、feed_render 带 output_path 时升级 WRITE（收口免审批任意写） | §四 P1 ✅ |
 | 10 | Hooks | 新写插件 | dsh-intelligence-hooks：register/list/remove/fire，内置 file:inbox 轮询；2026-09-29 上线生产，hook_list 可调用。**⚠️ 未闭环**：hook_fire 只写内存队列 + fires.jsonl，无任何消费方（evolve/heartbeat/agent 均不读），不会触发 agent 回路、无用户可见效果。闭环前置：明确谁消费 fires.jsonl（待单独设计） | §四 P2 ✅ |
 | 11 | 用户自建 cron | 新写插件 | `dsh-intelligence-cron`（`cron_create`/`cron_list`/`cron_delete`，中文时间解析；dsh-schedule 触发层 + 系统 cron 后台层，手机可见性为第一判据） | P0 真机验收 |
 | 12 | Goals 长期目标 | 新写插件 | dsh-intelligence-goals：create/list/progress/close，JSON 真相源 + 自动 goals.md；2026-09-29 上线生产，goal_list 真机验证通过 | §四 P2 ✅ |
@@ -100,9 +102,9 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 22 | 结构化用户画像 | 新写插件 | `dsh-intelligence-profile`（仅 Tomas 本人，step 1 注入） | 阶段 4 |
 | 23 | 晨间简报 | 新写插件 | cron 08:00（web_search + 画像 + 记忆 → Feed）；**stage-1 分档激活已批准**，2026-09-29 14:40 执行（含 07:30 学习、09:30 想法、23:30 复盘、周日 03:00 技能审查共 5 个低频任务） | 阶段 4 + 分档激活 |
 
-**统计**：8 dsh 原生 + 14 新写插件 + 0 未排期 + 1 不复刻 = 23 ✅（另有 dsh-intelligence-guard 生产守卫，不在 23 项内）
+**统计**：8 dsh 原生 + 14 新写插件 + 0 未排期 + 1 不复刻 = 23 ✅（14 个新写插件 = 12 个 §2 能力条目 + soul + guard；guard 不在 23 项内）
 
-**新写插件汇总**（15 个，全部在 `intel-plugins/`，树外独立 npm 包；14 个对应 §2 表 + 1 个生产守卫）：
+**新写插件汇总**（物理插件 14 个：13 个功能插件 + 1 个生产守卫，全部在 `intel-plugins/`，树外独立 npm 包；对应 §2 表 12 个能力条目——#14/#15 同属 evolution、#11/#23 同属 cron，soul 属 §五在 23 项之外）：
 
 | 插件 | 工具/能力 | 数据位置 |
 |---|---|---|
@@ -240,14 +242,14 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **系统 cron**：stage-1 分档激活已批准，2026-09-29 14:40 执行（5 个低频任务）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定
 - **Git**：`intel` 分支已 push（HEAD `2765849e1`，2026-09-29 13:20 第四轮审计落实），`master` 跟踪上游
 - **每周养成检查**：已改名"dsh-muse 每周养成检查"（每周一 09:15，覆盖 dsh-muse 生产健康 + 进化产出 + 升级提议）
-- **待 Tomas**：stage-2 cron 激活；HTML 预览重装 APK 后真机验收；Hooks 闭环消费方设计评审
+- **待 Tomas**：stage-2 cron 激活；HTML 预览重装 APK 后真机验收；Hooks 闭环消费方设计评审；向上游 dsh 提需求：profile 条目支持 `required` 标记（或开放 `requiredStartupEntryIds` 扩展点），让第三方守卫插件也能 fail-closed
 - **运维规则**（2026-09-29 第四轮审计 §2.1 立）：默认 ask 下写操作必须有人值守；无人值守跑写操作只能显式 opt-in（danger-full-access）或接受卡住。
   2026-09-29 上午 3 个卡在审批 pending 的僵尸会话已归档清理（`~/.dsh/archived-sessions/2026-09-29-approval-zombies/`）
-- **改插件固定验收**（2026-09-29 第四轮审计 §2.2 立）：每次改插件重启后必跑 `journalctl -u dsh-prod --since <重启时刻> | grep "did not activate"`，0 命中才算上线
+- **改插件固定验收**（2026-09-29 第四轮审计 §2.2 立，第五轮 N1 升级）：每次改插件重启后必跑 `journalctl -u dsh-prod --since <重启时刻> | grep "did not activate"`；0 命中才算上线；**若有命中，必须确认告警名单里没有 `dsh-intelligence-guard`**——守卫失败会混在"插件没装好"里，不单独检查会被当成噪音忽略
 - **环境污染系统性修复**（2026-09-29，Tomas 要求"基于整个智能体评估迭代、而非打补丁"）：
   - 根因：dsh 上游把 `DEEPSEEK_BASE_URL` 列为 BOOTSTRAP_NAMES——只能来自进程 ambient env（`.env` 文件反而设不了）。测试 shell 的 `BASE_URL` 泄漏进手动启动的生产进程是设计允许的行为，不是偶然 bug。
-  - Layer 1（插件层）：`dsh-intelligence-guard` 只挂 web profile 首位，`apply()` 断言生产不变式（`BASE_URL` 未设置、`API_KEY` 存在、`HMC_CONFIG` 存在、无 `MOCK*` 残留），违反则抛错使 dsh 拒绝启动（fail-closed）。覆盖 systemd/手动/cron 所有进入路径。单测 7/7；隔离真测：污染 env 拒绝启动、干净 env 放行。
-  - Layer 2（入口层）：`/usr/local/bin/dsh-prod-start`，`env -i` 后只注入白名单变量（`DEEPSEEK_API_KEY/MODEL`、`HMC_CONFIG`、基础 `PATH/HOME`），`dsh-prod.service` 已改用它。
+  - Layer 1（插件层）：`dsh-intelligence-guard` 只挂 web profile 首位，`apply()` 断言生产不变式（`BASE_URL` 未设置、`API_KEY` 存在、`HMC_CONFIG` 存在、无 `MOCK*` 残留），违反则抛错并在启动日志留下明确告警。**⚠️ 能力边界（第五轮审计 N1 实测）**：`apply()` 抛错只能产生 dsh 的 `did not activate` warning，**拦不住 dsh 启动**——上游 `dsh-app-boot` 的 `requiredStartupEntryIds` 是硬编码全局集合，第三方插件加不进去。真正的 fail-closed 拦截在 Layer 2（见下）。本插件的价值是可观测性。单测 7/7 + 启动级回归 2/2（`failclosed.test.js`：污染 env 下 `dsh-prod-start` exit 1）。
+  - Layer 2（入口层）：`/usr/local/bin/dsh-prod-start`，`env -i` 后只注入白名单变量；**2026-09-29 14:10 起补启动前断言**：复用 guard 插件的 `checkInvariants()` 检查调用方环境，违反则 `exit 1` 拒绝启动——这是唯一真正的 fail-closed 点（污染 `DEEPSEEK_BASE_URL`/`MOCK_LLM` 实测 exit 1，干净 env 放行）。`dsh-prod.service` 的 `ExecStart` 已指向本脚本。
   - Layer 3（命名层）：`/root/intel/hmc-test/` → `/root/intel/hmc-prod/`（生产 token/config/log 一直放在"test"名下是误操作隐患；保留 `hmc-test` symlink 兼容）。
   - 不做：测试/生产数据目录物理隔离（`DSH_HOME` 分流改动面大，列为后续迭代）；不改 dsh core env 语义（上游设计，`packages/` 禁止修改）。
 
