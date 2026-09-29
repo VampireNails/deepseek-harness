@@ -242,7 +242,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **系统 cron**：stage-1 分档激活已批准，2026-09-29 14:40 执行（5 个低频任务）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定
 - **Git**：`intel` 分支已 push（HEAD `2765849e1`，2026-09-29 13:20 第四轮审计落实），`master` 跟踪上游
 - **每周养成检查**：已改名"dsh-muse 每周养成检查"（每周一 09:15，覆盖 dsh-muse 生产健康 + 进化产出 + 升级提议）
-- **待 Tomas**：stage-2 cron 激活；HTML 预览重装 APK 后真机验收；Hooks 闭环消费方设计评审；向上游 dsh 提需求：profile 条目支持 `required` 标记（或开放 `requiredStartupEntryIds` 扩展点），让第三方守卫插件也能 fail-closed
+- **待 Tomas**：stage-2 cron 激活；HTML 预览重装 APK 后真机验收；Hooks 闭环消费方设计评审；向上游 dsh 提需求：profile 条目支持 `required` 标记（或开放 `requiredStartupEntryIds` 扩展点），让第三方守卫插件也能 fail-closed；HMC 侧 N6 已提分支 `fix/session-list-cache-n6`（会话列表缓存先行渲染，不再空屏；N7 后台监控服务确认为 opt-in 设计未改代码）——待 Tomas 在 GitHub 手动创建 PR（deploy key 无 API 权限）
 - **运维规则**（2026-09-29 第四轮审计 §2.1 立）：默认 ask 下写操作必须有人值守；无人值守跑写操作只能显式 opt-in（danger-full-access）或接受卡住。
   2026-09-29 上午 3 个卡在审批 pending 的僵尸会话已归档清理（`~/.dsh/archived-sessions/2026-09-29-approval-zombies/`）
 - **改插件固定验收**（2026-09-29 第四轮审计 §2.2 立，第五轮 N1 升级）：每次改插件重启后必跑 `journalctl -u dsh-prod --since <重启时刻> | grep "did not activate"`；0 命中才算上线；**若有命中，必须确认告警名单里没有 `dsh-intelligence-guard`**——守卫失败会混在"插件没装好"里，不单独检查会被当成噪音忽略
