@@ -242,7 +242,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - **24h 空转存活监控**：✅ 已完成。监控对象 = `dsh --profile web-intel --port 3080` 空转进程（**不是**生产 `dsh-prod`）+ mock LLM `:18099`；满 24h 存活、无 OOM；日志已归档 `/root/intel/stability-archive-20260929.tar.gz`，`:18099`/`:3080` 已释放
 - **系统 cron**：✅ stage-1 已激活（2026-09-29 14:40，`crontab -l` 确认 5 行在位）；stage-2（每小时 upkeep/heartbeat）观察几天 token 消耗与稳定性后再决定
 - **cron 防线边界**：5 个定时任务走 `dsh --profile evolve`，该 profile **不挂 guard 插件、也不经 `dsh-prod-start`**——Layer 1+2 防线在 cron 路径上不生效（cron 环境为系统最小环境集，现实风险低，但纵深防御口径需点名）。另经 mock 实测：evolve 未挂 `dsh-intelligence-approvals`，`memory_write` 等写工具直接放行、不会卡在 `ask` 等待确认（2026-09-29 实测 EXIT=0）
-- **Git**：`intel` 分支已 push（HEAD `6e482b318`，2026-09-29 第六轮审计落实），`master` 跟踪上游
+- **Git**：`intel` 分支已 push（HEAD `15f231b53`，2026-09-29 第六轮审计落实），`master` 跟踪上游
 - **每周养成检查**：已改名"dsh-muse 每周养成检查"（每周一 09:15，覆盖 dsh-muse 生产健康 + 进化产出 + 升级提议）
 - **待 Tomas**：stage-2 cron 激活；HTML 预览重装 APK 后真机验收；Hooks 闭环消费方设计评审；向上游 dsh 提需求：profile 条目支持 `required` 标记（或开放 `requiredStartupEntryIds` 扩展点），让第三方守卫插件也能 fail-closed；HMC 侧 N6（会话列表缓存先行渲染，不再空屏）已由 Tomas 直接合入 `main`（`2421c0b`，含其追加的 2 个提交），无需再建 PR；N7 后台监控服务确认为 opt-in 设计未改代码
 - **运维规则**（2026-09-29 第四轮审计 §2.1 立）：默认 ask 下写操作必须有人值守；无人值守跑写操作只能显式 opt-in（danger-full-access）或接受卡住。
