@@ -10,7 +10,7 @@
 > 修订：2026-09-29，内容对应提交 `96ac06d66`。（本行之外的全部内容与该提交一致；若 HEAD 更新而本行未动，以 git log 为准）。
 > 本次修订（2026-09-29 上午，第二份审计报告 5 条新发现落实）：#11 方案 1 修订——去掉"处理要求"元指令（落在上游标注为"非指令"的字段里，可能被原样念出；改用面向用户的自然标签，上游 framing 已要求呈现 reminder 内容）；`dsh-prod` 已重启使 cron 修法生效；生产默认 ask 补前提（PC Web General settings 未保存默认权限，2026-09-29 核实为空）；内存改"17 小时实测 10.4MB / 历史峰值 156MB / 24h 待出"口径；bootstrap 等价性修正（生产同样只用 wrapper、无 HMC 原版 4 项 patch）。
 > 上次修订（2026-09-29 上午，第三轮审计 12 项确认优化全部落实）：#11 cron 提醒 prompt 自带复述指令（手机可见性硬伤修复，方案 1）；新增"生产默认 workspace-write+ask 运维告知"，#9 归因修正（① HMC 启动器路径 vs ② 生产路径分开）；bootstrap 等价性口径修正（hmc-test 仅冒烟）；数字校正（cron 42 用例、内存双点位说明、cron 激活改 🔄）；Soul 补"手机侧不可见 + step-1 三注入 token 成本"；HMC 连接地址口径澄清（走 IP，域名仅 PC Web）；#9 APPROVAL 分级优先级下调；§3.4 夹具已由 Tomas 在 HMC 2b4f7f6 补回（无需另开 PR）。
-> 上次修订（2026-09-29 凌晨）：P0 用户自建 cron 插件完成并真机验收（#11 从"未排期"转为"新写插件"，23 项口径变为 8+9+5+1）；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
+> 上次修订（2026-09-29 上午）：6 项 web 能力全部复刻完成并生产真机验收（多步浏览器、Artifacts v2、审批四级、Hooks、Goals、Feed Web UI 呈现层；23 项口径变为 8+14+0+1）；Muse Soul 行为规则复刻上线（新增 §五）；生产切换完成（Python 退役，dsh-prod 接管，不留遗留）；HMC 默认权限 PR 已合并（#9 跨仓库决策解决）；HMC 新增 HTML 预览 PR 分支 intel-html-preview（feed_render/HTML 产物手机渲染）；系统 cron 分档激活已批准（stage-1 待 2026-09-29 14:40 执行）。
 > 上上次修订（2026-09-28 晚间）：第二轮审计（HMC 交叉核验）后修正：bootstrap 两处硬伤已修复并通过干净验收；HMC 端到端证据已对齐为脚本真实输出；#9 APPROVAL 层改为跨仓库决策项（V3 关闭）；#11 新增"手机可见性"选型判据；#8 改为"消费通道部分存在"。
 
 ---
@@ -53,7 +53,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 |---|---|---|
 | dsh 原生已有 | 8 | agent loop、shell、文件、子智能体、会话、上传、MCP、网页搜索——直接用 |
 | 新写插件 | 9 | 记忆、quiet、进化、Heartbeat、Feed、joblog、画像、晨报、**用户 cron**——dsh-muse 补的 |
-| 未排期 | 5 | 浏览器工具、Artifacts v2、审批四级、Hooks、Goals——任务书范围外，见 §四 评估 |
+| 未排期 | 0 | 2026-09-29 上午 6 项已全部复刻（见下），未排期清零 |
 | 不复刻 | 1 | 出站推送（#20）——Tomas 决定保留通道不推进 |
 
 **另有 7 项 Python 能力不在 23 项对比范围内**（dsh-muse 任务书从未纳入，Tomas 已决策不复刻）：
@@ -80,14 +80,14 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 2 | 终端 `shell_exec` | dsh 原生 | `dsh-tool-bash`（profile 挂载 `bash-sandbox` 变体时多一层沙箱；待 V1 确认实际挂载） | 阶段 0 |
 | 3 | 文件读写 | dsh 原生 | `dsh-tool-fs`（多搜索/替换，超集） | 阶段 0 |
 | 4 | 网页抓取 + 搜索 | dsh 原生 | `dsh-tool-web`（Exa/Perplexity/DeepSeek 三后端可选；dsh-muse 部署选用 DeepSeek） | 阶段 0 |
-| 5 | 多步浏览器（11 工具） | 未排期 | dsh 安装版无等价物；任务书未要求 | §四 P1 |
+| 5 | 多步浏览器（9 工具） | 新写插件 | dsh-intelligence-browser：Playwright 1.63.0 + Chromium 懒加载，open/snapshot/click/fill/select/wait/screenshot/downloads/close；2026-09-29 上线生产 web profile，1GB 机真测 example.com 打开→快照→关闭干净（0 残留进程）；browser_open 等写操作走审批 WRITE 级 | §四 P1 ✅ |
 | 6 | 子智能体 | dsh 原生 | `dsh-tool-subagent`（in-process 驱动） | 阶段 2 真测 |
 | 7 | 语义记忆 | 新写插件 | `dsh-intelligence-memory`（SQLite FTS5 + BM25；分词器待 V2 披露；向量方案因 1GB 内存否决） | 阶段 1 |
-| 8 | Artifacts v2 | 未排期 | dsh 只有交付声明，无版本/沙盒；任务书未要求 | §四 P2 |
-| 9 | 审批卡 + 四级权限 | 未排期 | dsh 有审批瀑布，无四级；任务书未要求。**分两条路径**（第三轮审计 §3.2）：② 生产路径（`dsh-prod.service --profile web`，env 未设 `DSH_PERMISSION_MODE`）走上游 base profile 默认即 workspace-write + ask（`apps/cli/reference/README.zh.md:123`），新会话审批卡会弹——切生产那一刻即生效，**与 HMC PR 无关**；① HMC 启动器路径：PR（4b4da70）已合并，把写死的 danger-full-access 改为默认 workspace-write，新会话同样可弹卡。dsh 侧 BLOCKED 硬拦截维持 P1，APPROVAL 分级优先级下调（默认 ask 已能弹卡） | §四 P1 |
-| 10 | Hooks | 未排期 | dsh 有入站 webhook，无 inbox 轮询；任务书未要求 | §四 P2 |
+| 8 | Artifacts v2 | 新写插件 | dsh-intelligence-artifacts：save/get/read/versions 四工具，版本历史 + kind=html 元数据；2026-09-29 上线生产；手机呈现走 HMC PR（intel-html-preview 分支，WebView 沙盒预览，JS 禁用） | §四 P2 ✅ |
+| 9 | 审批卡 + 四级权限 | 未排期 | dsh 有审批瀑布，无四级；任务书未要求。**分两条路径**（第三轮审计 §3.2）：② 生产路径（`dsh-prod.service --profile web`，env 未设 `DSH_PERMISSION_MODE`）走上游 base profile 默认即 workspace-write + ask（`apps/cli/reference/README.zh.md:123`），新会话审批卡会弹——切生产那一刻即生效，**与 HMC PR 无关**；① HMC 启动器路径：PR（4b4da70）已合并，把写死的 danger-full-access 改为默认 workspace-write，新会话同样可弹卡。dsh 侧 BLOCKED 硬拦截维持 P1，APPROVAL 分级优先级下调（默认 ask 已能弹卡）。2026-09-29：dsh-intelligence-approvals 上线生产，READ/WRITE/EXEC/BLOCKED 四级 + tools/pre-execute 接入真机验证（goal_create→WRITE 弹卡、feed_render 等只读免审）；新 6 插件工具分类补全（commit 924ae6e29） | §四 P1 ✅ |
+| 10 | Hooks | 新写插件 | dsh-intelligence-hooks：register/list/remove/fire，内置 file:inbox 轮询；2026-09-29 上线生产，hook_list 真机验证通过 | §四 P2 ✅ |
 | 11 | 用户自建 cron | 新写插件 | `dsh-intelligence-cron`（`cron_create`/`cron_list`/`cron_delete`，中文时间解析；dsh-schedule 触发层 + 系统 cron 后台层，手机可见性为第一判据） | P0 真机验收 |
-| 12 | Goals 长期目标 | 未排期 | dsh goal 是同会话驱动，语义不同；任务书未要求 | §四 P2 |
+| 12 | Goals 长期目标 | 新写插件 | dsh-intelligence-goals：create/list/progress/close，JSON 真相源 + 自动 goals.md；2026-09-29 上线生产，goal_list 真机验证通过 | §四 P2 ✅ |
 | 13 | Quiet-moment | 新写插件 | `dsh-intelligence-quiet`（turn-stopping + 真后台） | 阶段 2 + 真后台修复 |
 | 14 | 自我进化（5 任务） | 新写插件 | `dsh-intelligence-evolution`（cron + headless profile） | 阶段 3 |
 | 15 | Heartbeat | 新写插件 | 同上（`heartbeat_check` + 3 项分块） | 阶段 3 |
