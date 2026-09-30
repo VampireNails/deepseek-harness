@@ -8,11 +8,11 @@
 //
 // 与 Python 的差异及消费方（2026-09-30 闭环）：
 // Python 版 fire 后直接跑 `action: agent`（无节流）；dsh-muse 采用有界自动调度——
-// 触发的任务进入 pending 队列（pending/<hook>.jsonl，at-most-once），按「单 hook
+// 触发的任务进入 pending 队列（pending/<hook>.jsonl），按「单 hook
 // 冷却（默认 15 分钟）+ 全局并发上限（默认 3）+ 单 hook 串行」分批执行，每批通过
 // intel-task.sh 起一个 headless 任务（dsh --profile evolve），多次触发合并为一批
-// prompt。调度记录记 dispatch.log；fires.jsonl 保留全量审计。调度失败保留 pending
-// 下次重试。auto=false 的 hook 只记录不调度。
+// prompt。dispatch.log 区分启动和退出；dispatch-runs 保存批次及结果。
+// 未启动失败保留 pending 重试；启动后的失败/结果不明需人工核对，不能自动重放。
 // 这是对 Python 版的超越：冷却节流 + 并发上限 + 审计 + 失败保留；dsh 插件侧不直接
 // 跑 agent 回路，而是复用系统已有的 intel-task.sh 任务通道（与 cron 一致）。
 
@@ -24,9 +24,24 @@ mkdirSync,
 appendFileSync,
 readFileSync,
 writeFileSync,
+renameSync,
+unlinkSync,
 } from "node:fs";
 import { join, relative} from "node:path";
 import { spawn as nodeSpawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+
+function atomicWrite(file, text) {
+const temporary = `${file}.${randomUUID()}.tmp`;
+try {
+writeFileSync(temporary, text, { encoding: "utf-8", flag: "wx", mode: 0o600 });
+renameSync(temporary, file);
+} finally {
+if (existsSync(temporary)) unlinkSync(temporary);
+}
+}
+
+const RUN_STATUSES = new Set(["starting", "started", "start_failed", "succeeded", "failed", "uncertain"]);
 
 export const DEFAULT_POLL_INTERVAL_MS = 60000;
 export const MAX_HOOKS = 50;
@@ -105,8 +120,10 @@ this._spawnFn = spawnFn || ((bin, args, opts) => nodeSpawn(bin, args, opts));
 this._pendingDir = join(this.dataDir, "pending");
 this._dispatchStateFile = join(this.dataDir, "dispatch_state.json");
 this._dispatchLogFile = join(this.dataDir, "dispatch.log");
+this._runsDir = join(this.dataDir, "dispatch-runs");
 this._inFlight = new Map(); // hook -> child（单 hook 串行）
 this._cooldownTimers = new Map(); // hook -> timeout
+this._stopped = false;
 }
 
 warn(msg) {
@@ -230,7 +247,7 @@ if (this._locks.get(n) === gate) this._locks.delete(n);
 }
 }
 
-/** pending 队列入队（durable；at-most-once：调度成功才消费）。 */
+/** pending 入队；spawn 事件确认启动后，只消费当前批次的前缀。 */
 _enqueuePending(hook, record) {
 mkdirSync(this._pendingDir, { recursive: true});
 appendFileSync(join(this._pendingDir, `${hook}.jsonl`), JSON.stringify(record) + "\n", "utf-8");
@@ -253,13 +270,39 @@ return [];
 }
 }
 
-/** 清空某 hook 的 pending（调度成功后调用）。 */
-_clearPending(hook) {
-try {
-writeFileSync(join(this._pendingDir, `${hook}.jsonl`), "", "utf-8");
-} catch (err) {
-this.warn(`pending 清空失败: ${err?.message}`);
+/** 消费某 hook 的 pending 前缀，保留等待 spawn 期间的新事件。 */
+_clearPending(hook, count) {
+const remaining = this._readPending(hook).slice(count);
+atomicWrite(join(this._pendingDir, `${hook}.jsonl`),
+remaining.map(record => JSON.stringify(record) + "\n").join(""));
 }
+
+_readRuns() {
+if (!existsSync(this._runsDir)) return {};
+const runs = {};
+for (const file of readdirSync(this._runsDir)) {
+if (!file.endsWith(".json")) continue;
+const hook = checkName(file.slice(0, -5));
+const run = JSON.parse(readFileSync(join(this._runsDir, file), "utf-8"));
+if (!run || run.hook !== hook || !RUN_STATUSES.has(run.status) ||
+typeof run.active !== "boolean" || !Array.isArray(run.records)) {
+throw new Error(`dispatch journal 无效：${file}，自动执行已阻止，请先核对`);
+}
+runs[hook] = run;
+}
+return runs;
+}
+
+_writeRun(run) {
+mkdirSync(this._runsDir, { recursive: true, mode: 0o700 });
+atomicWrite(join(this._runsDir, `${run.hook}.json`), JSON.stringify(run));
+}
+
+/** 返回最近批次、退出结果及当前积压；starting/started 在重载后仍占并发位，不能自动重放。 */
+dispatchStatus(hook) {
+const name = checkName(hook);
+const run = this._readRuns()[name];
+return { ...(run || { status: "idle", active: false }), pending: this._readPending(name).length };
 }
 
 _loadDispatchState() {
@@ -288,8 +331,14 @@ this.warn(`dispatch state 写入失败: ${err?.message}`);
 * 全局并发满则等待 tick 扫尾或在途任务完成回调重扫。
 */
 _maybeDispatch(hook) {
-if (!this.autoDispatch) return;
+if (!this.autoDispatch || this._stopped) return;
+const current = this.list()[hook];
+if (!current || current.auto === false) return;
 if (this._inFlight.has(hook)) return;
+const runs = this._readRuns();
+const previous = runs[hook];
+if (previous?.active || ["failed", "uncertain"].includes(previous?.status)) return;
+const occupied = new Set([...this._inFlight.keys(), ...Object.keys(runs).filter(name => runs[name].active)]);
 let pending;
 try {
 pending = this._readPending(hook);
@@ -298,9 +347,9 @@ this.warn(`pending 读取失败: ${err?.message}`);
 return;
 }
 if (pending.length === 0) return;
-if (this._inFlight.size >= this.maxConcurrent) return;
+if (occupied.size >= this.maxConcurrent) return;
 const state = this._loadDispatchState();
-const last = Number(state[hook]) || 0;
+const last = Math.max(Number(state[hook]) || 0, Number(previous?.attemptedAt) || 0);
 const wait = this.dispatchCooldownMs - (Date.now() - last);
 if (wait > 0) {
 if (!this._cooldownTimers.has(hook)) {
@@ -332,62 +381,87 @@ parts.join("\n\n");
 }
 
 /**
-* 执行一次调度：spawn intel-task.sh（detached，不阻塞插件）。
-* 成功才消费 pending（at-most-once）；失败保留 pending、冷却照算，下次 tick/触发重试。
+* 持久化批次后启动 intel-task.sh。spawn 事件只表示启动，close 才提供退出结果。
+* 未启动失败可冷却重试；已启动失败及不明结果保留批次，阻止自动重放。
 */
 _doDispatch(hook, pending) {
 const prompt = this._buildBatchPrompt(hook, pending);
 const ts = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-const jobId = `hook_${hook}_${ts}`;
+const jobId = `hook_${hook}_${ts}_${randomUUID().slice(0, 8)}`;
 let child = null;
+let started = false;
+let finished = false;
+let storageError = false;
+const run = { hook, job: jobId, records: pending, attemptedAt: Date.now(), status: "starting", active: true };
+// 先持久化批次和并发位；进程退出或插件重载都不能把不明结果当成可重试任务。
+this._writeRun(run);
+const saveRun = (status, detail = {}) => {
+Object.assign(run, { status, ...detail });
+try { this._writeRun(run); }
+catch (err) {
+storageError = true;
+this.warn(`dispatch journal 写入失败 ${hook}: ${err?.message}，保留并发屏障，请先核对`);
+}
+};
+const state = this._loadDispatchState();
+state[hook] = Date.now();
+this._saveDispatchState(state);
+const log = (status, detail = {}) => {
+try {
+mkdirSync(this.dataDir, { recursive: true });
+appendFileSync(this._dispatchLogFile, JSON.stringify({
+at: new Date().toISOString(), hook, job: jobId, tasks: pending.length, status, ...detail,
+}) + "\n", "utf-8");
+} catch (err) {
+this.warn(`dispatch log 写入失败: ${err?.message}`);
+}
+};
+const done = (code, signal) => {
+if (finished) return;
+finished = true;
+this._inFlight.delete(hook);
+const status = storageError ? "uncertain" : !started ? "start_failed" : code === 0 && !signal ? "succeeded" : "failed";
+saveRun(status, { code, signal, active: false, completedAt: new Date().toISOString() });
+log(status, { code, signal });
+if (!started) this.warn(`hook 未启动 ${hook}，保留 pending 下次重试`);
+else if (code !== 0 || signal) this.warn(`hook 任务失败 ${hook} job=${jobId} code=${code} signal=${signal}，请核对 joblog，勿自动重复执行`);
+if (this._stopped) return;
+for (const n of Object.keys(this.list())) {
+try { this._maybeDispatch(n); }
+catch (err) { this.warn(`完成重扫失败: ${err?.message}`); }
+}
+};
 try {
 child = this._spawnFn(this.taskBin, [jobId, prompt], { detached: true, stdio: "ignore"});
 } catch (err) {
 this.warn(`hook 调度失败 ${hook}: ${err?.message}，保留 pending 下次重试`);
-const state = this._loadDispatchState();
-state[hook] = Date.now();
-this._saveDispatchState(state);
+log("start_failed", { error: err?.message });
+saveRun("start_failed", { error: err?.message, active: false });
 return;
 }
-// spawn 成功才消费 pending
-const state = this._loadDispatchState();
-state[hook] = Date.now();
-this._saveDispatchState(state);
-this._clearPending(hook);
+this._inFlight.set(hook, child);
+child.on("spawn", () => {
+started = true;
+saveRun("started", { pid: child.pid, startedAt: new Date().toISOString() });
+try { this._clearPending(hook, pending.length); }
+catch (err) {
+storageError = true;
+this.warn(`pending 消费失败 ${hook}: ${err?.message}，批次不能自动重放`);
+}
+log("started");
+});
+child.on("error", err => {
+this.warn(`hook 子进程错误 ${hook}: ${err?.message}`);
+// 启动后的 error 也可能是 kill/send 失败；只有 close 才释放并发位。
+if (!started) log("start_failed", { error: err?.message });
+});
+child.on("close", done);
 if (child && typeof child.unref === "function") {
 try {
 child.unref();
 } catch {
 /* ignore */
 }
-}
-this._inFlight.set(hook, child || true);
-try {
-mkdirSync(this.dataDir, { recursive: true});
-appendFileSync(this._dispatchLogFile,
-JSON.stringify({ at: new Date().toISOString(), hook, job: jobId, tasks: pending.length }) + "\n",
-"utf-8");
-} catch (err) {
-this.warn(`dispatch log 写入失败: ${err?.message}`);
-}
-const done = () => {
-if (!this._inFlight.has(hook)) return;
-this._inFlight.delete(hook);
-// 完成后重扫所有 hook：处理排队 pending 与释放的全局并发
-for (const n of Object.keys(this.list())) {
-try {
-this._maybeDispatch(n);
-} catch (err) {
-this.warn(`完成重扫失败: ${err?.message}`);
-}
-}
-};
-if (child && typeof child.on === "function") {
-child.on("exit", done);
-child.on("error", done);
-} else {
-// 测试 stub 无事件：同步视为完成
-done();
 }
 }
 
@@ -398,6 +472,7 @@ done();
 * 末尾做调度扫尾：失败重试 / 冷却到期 / 并发释放后的 pending 由此兜底。
 */
 async tick() {
+if (this._stopped) return;
 const hooks = this.list();
 let state = {};
 try {
@@ -462,6 +537,7 @@ this.warn(`tick 调度扫尾失败 ${n}: ${err?.message}`);
 /** 启动轮询（幂等）。卸载时 stop() 回卷。 */
 start() {
 if (this._timer) return;
+this._stopped = false;
 mkdirSync(this.dataDir, { recursive: true});
 for (const h of Object.values(this.list())) {
 if (h.trigger?.type === "file") {
@@ -493,8 +569,9 @@ get running() {
 return this._timer!== null;
 }
 
-/** 停止轮询（ctx.effect 卸载回卷）。 */
+/** 停止发现与调度；已启动的独立任务继续执行，持久化并发位保留至 close。 */
 stop() {
+this._stopped = true;
 if (this._timer) {
 clearInterval(this._timer);
 this._timer = null;

@@ -29,11 +29,12 @@
 ## 与 Python 版的执行语义差异
 
 Python 版 `fire` 会实际执行 action（`agent` 回路 / `shell` 命令）并写 daily note。
-dsh 插件侧能做的是**生成任务描述文本 + 记录**：
+dsh 插件将任务记录写入 `pending/<hook>.jsonl`，按单 hook 冷却、单 hook 串行和全局并发上限调用 `taskBin`。默认包装器通过 `dsh --profile evolve` 执行 headless 任务，并记录 Joblog。
 
-- 触发时渲染好的 prompt 文本记入内存任务队列（`hooks.deliveredTasks()`）和 `fires.jsonl`
-- 实际执行（开 agent 回路处理）由消费方决定，例如 evolve/heartbeat 任务定期读取
-  `fires.jsonl` 后用 `dsh --profile` 跑任务
+- `fires.jsonl` 表示触发记录，不能证明启动或完成。`spawn` 事件确认包装器启动；`close` 的退出码为 0 且无终止信号才记录 `succeeded`，业务结果仍须核对 Joblog 和实际产物。
+- 未启动失败（包括异步 ENOENT）保留 pending，并按冷却重试。启动后非零退出或存储结果不明保存原批次并暂停该 hook；不能自动重放可能已产生副作用的任务。
+- `dispatch-runs/<hook>.json` 保存最近批次、唯一 job ID、启动及退出结果。重载后 `starting`/`started` 仍占并发位；主进程退出导致结果不明时须人工核对，不能仅凭 PID 消失释放任务。
+- 当前 `auto=false`、已删除 hook、全局关闭或 `stop()` 都阻止后续调度。禁用保留已有 pending，重新启用后可继续；删除不清除历史数据。内置 inbox 可覆盖为 `auto=false`。
 
 Python 版的 `POST /api/hooks/<name>` webhook HTTP 入口本插件不提供；
 webhook 触发器可注册，由外部通过 `hook_fire(source=webhook)` 触发。
@@ -47,6 +48,9 @@ intel-hooks/
   hooks.json      # 自定义 hook 配置（内置不落盘）
   hook_state.json # 轮询去重账本 name:filename → mtime
   fires.jsonl     # 触发记录（每行一个任务）
+  pending/        # 尚未确认启动的任务
+  dispatch-runs/  # 最近批次及状态；失败/不明结果阻止自动重放
+  dispatch.log    # started/start_failed/succeeded/failed/uncertain
   inbox/          # 默认轮询目录
 ```
 
@@ -54,8 +58,7 @@ intel-hooks/
 
 ## 卸载
 
-`ctx.effect` 注册：工具 + 轮询 timer。卸载时 effect 回卷停掉 timer；
-已生成的任务记录（`fires.jsonl`）保留，彻底清理请先 `hook_remove` 再删数据目录。
+`ctx.effect` 注册工具和轮询。卸载停止发现与后续调度；已启动的独立 headless 任务继续执行，完成回调只更新结果，不能启动下一批。其持久化并发位在插件重载后仍生效。一个数据目录由一个调度实例使用；不能并行启动多个 Host 共享该目录。备份和人工恢复须保留 pending、批次及 Joblog，避免重复执行。
 
 ## Profile 接线
 
@@ -65,7 +68,7 @@ intel-hooks/
 { "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-intelligence-hooks"] } } }
 ```
 
-可选配置（plugin 行 `config`）：`{ "dataDir": "/path/to/dir", "pollIntervalMs": 30000 }`。
+可选配置（plugin 行 `config`）：`dataDir`、`pollIntervalMs`、`autoDispatch`（默认 true）、`dispatchCooldownMs`（默认 900000）、`taskBin`（默认 `/root/intel/bin/intel-task.sh`）、`maxConcurrentDispatches`（默认 3）。
 
 ## 不碰 dsh 核心
 
