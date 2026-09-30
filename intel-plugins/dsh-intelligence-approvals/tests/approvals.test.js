@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { LEVELS, DISPOSITIONS, classify, levelDisposition, isValidLevel } from "../src/classify.js";
 import { buildPolicy, DEFAULT_POLICY } from "../src/policy.js";
 import { apply, name, Config } from "../index.js";
+import { QuietMemoryAuthority } from "../../dsh-intelligence-quiet/src/memory-authority.js";
 
 // ---------------------------------------------------------------------------
 // 纯函数分类：四级分类表
@@ -219,6 +220,25 @@ function mockCtx() {
 }
 
 const fakeExec = (toolName, args) => ({ name: toolName, arguments: args || {} });
+
+test("Quiet capability permits two memory writes without changing ordinary approvals", async () => {
+  const m=mockCtx(), authority=new QuietMemoryAuthority(),child={};
+  m.ctx.get=key=>key==='quietMemoryAuthority'?authority:undefined;
+  apply(m.ctx,{});
+  authority.begin(new AbortController().signal)({localAgent:child});
+  const exec=name=>({...fakeExec(name,{}),agent:child,signal:new AbortController().signal});
+  assert.equal((await m.firePreExecute(exec('memory_write'))).kind,'allow');
+  assert.equal((await m.firePreExecute({...exec('memory_write'),agent:{}})).kind,'ask');
+  assert.equal((await m.firePreExecute(exec('file_write'))).kind,'ask');
+  assert.equal((await m.firePreExecute(exec('memory_write'))).kind,'allow');
+  assert.equal((await m.firePreExecute(exec('memory_write'))).kind,'ask');
+});
+test("explicit BLOCKED memory policy overrides Quiet's capability", async () => {
+  const m=mockCtx(),authority=new QuietMemoryAuthority(),child={};
+  m.ctx.get=()=>authority;apply(m.ctx,{levels:{memory_write:LEVELS.BLOCKED}});
+  authority.begin(new AbortController().signal)({localAgent:child});
+  assert.equal((await m.firePreExecute({...fakeExec('memory_write'),agent:child})).kind,'deny');
+});
 
 test("apply 注册 approval_classify 工具并可执行", async () => {
   const m = mockCtx();

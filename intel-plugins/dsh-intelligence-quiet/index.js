@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { QuietState } from "./src/state.js";
 import { buildTranscript } from "./src/reflect.js";
+import { QuietMemoryAuthority } from "./src/memory-authority.js";
+import { ReflectionLifetime } from "./src/reflection-lifetime.js";
 
 export const name = "dsh-intelligence-quiet";
 export const inject = ["agents", "sessionQuery", "subagents"];
@@ -14,6 +16,7 @@ export const Config = z
     minUserChars: z.number().default(8),
     provider: z.string().default("spawn"),
     reflectTimeoutMs: z.number().default(90000),
+    autoApproveMemoryWrites: z.boolean().default(false),
   })
   .default({});
 
@@ -40,6 +43,10 @@ ${transcript}
 
 export function apply(ctx, config) {
   const state = new QuietState(dataDir());
+  const authority = new QuietMemoryAuthority();
+  const lifetime = new ReflectionLifetime();
+  ctx.provide("quietMemoryAuthority", authority);
+  ctx.effect(() => async () => { authority.close(); await lifetime.close(); }, "intelQuiet.memoryAuthority");
 
   // 复刻 Python 版 daemon 线程语义：handler 不 await，复盘在后台跑，
   // 回合结束不被阻塞（评估问题 3 的修复）。
@@ -47,7 +54,7 @@ export function apply(ctx, config) {
   ctx.effect(
     () =>
       ctx.on("agent/turn-stopping", ({ agent, turn }) => {
-        maybeReflect(ctx, config, state, agent, turn).catch((e) => {
+        maybeReflect(ctx, config, state, authority, lifetime, agent, turn).catch((e) => {
           console.error("[dsh-intelligence-quiet]", e?.message || e);
         });
       }),
@@ -55,9 +62,9 @@ export function apply(ctx, config) {
   );
 }
 
-async function maybeReflect(ctx, config, state, agent, turn) {
+async function maybeReflect(ctx, config, state, authority, lifetime, agent, turn) {
   const sessionId = agent?.session?.id;
-  if (!sessionId) return;
+  if (!sessionId || lifetime.closed) return;
 
   // 1. 冷却：5 分钟内已复盘则跳过
   const now = Date.now();
@@ -65,7 +72,7 @@ async function maybeReflect(ctx, config, state, agent, turn) {
 
   // 2. 取本 turn 的真实用户消息 + 助手回复，拼 transcript
   const transcript = await buildTranscript(ctx, sessionId, turn, config.minUserChars);
-  if (!transcript) return;
+  if (!transcript || lifetime.closed) return;
   if (transcript.includes(REFLECT_MARKER)) return; // 反射子智能体自己的 turn
 
   // 3. 去重：内容与上次复盘相同则跳过；已有 pending 的也不重复触发
@@ -85,12 +92,12 @@ async function maybeReflect(ctx, config, state, agent, turn) {
   // start 抛错时清 pending，冷却期过后可重试，不静默丢数据（评估 2.7）
   state.set("pendingHash", hash);
 
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort("quiet reflection timeout"),
-    config.reflectTimeoutMs
-  );
+  const owned = lifetime.begin(config.reflectTimeoutMs);
+  if (!owned) { state.delete("pendingHash"); return; }
+  const {controller} = owned;
   let run;
+  const publishGrant = config.autoApproveMemoryWrites
+    ? authority.begin(controller.signal, sessionId) : () => {};
   try {
     run = await ctx.subagents.start(provider.name, {
       label: "quiet-moment reflection",
@@ -100,8 +107,13 @@ async function maybeReflect(ctx, config, state, agent, turn) {
       maxDepth: 1,
       signal: controller.signal,
     });
+    if (!await lifetime.publish(owned, run) || lifetime.closed) {
+      publishGrant();lifetime.release(owned);state.delete("pendingHash");return;
+    }
+    publishGrant(run);
   } catch (e) {
-    clearTimeout(timer);
+    publishGrant();
+    lifetime.release(owned);
     state.delete("pendingHash");
     console.error("[dsh-intelligence-quiet] start failed:", e?.message || e);
     return;
@@ -110,19 +122,16 @@ async function maybeReflect(ctx, config, state, agent, turn) {
   state.set("lastAt", now);
   state.set("lastHash", hash);
   state.delete("pendingHash");
-  // 注意：只等 start() 发布成功，不 await run.result。
-  // 复盘在后台跑完，结果 via .then 清理——复刻 Python daemon 线程的 fire-and-forget。
-  run.result.then(
-    () => {
-      clearTimeout(timer);
-      run.dispose().catch(() => {});
-    },
-    (e) => {
-      clearTimeout(timer);
-      if (e?.name !== "AbortError") {
-        console.error("[dsh-intelligence-quiet] reflection failed:", e?.message || e);
-      }
-      run.dispose().catch(() => {});
-    }
-  );
+  // The turn listener does not await this function, so the parent stays free.
+  // Keep ownership until BOTH the child result and native disposal settle.
+  try {
+    await run.result;
+  } catch (e) {
+    if (e?.name !== "AbortError")
+      console.error("[dsh-intelligence-quiet] reflection failed:", e?.message || e);
+  } finally {
+    authority.release(run.localAgent);
+    try { await lifetime.dispose(owned); }
+    finally { lifetime.release(owned); }
+  }
 }
