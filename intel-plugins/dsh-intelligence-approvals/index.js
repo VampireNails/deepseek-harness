@@ -87,6 +87,10 @@ export function apply(ctx, config) {
             info: { name: exec.name, code: "APPROVAL_BLOCKED", reason: r.reason },
           };
         }
+        // Quiet issues a bounded capability to its exact in-process child.
+        // BLOCKED still wins; ordinary/remote/forged children remain ask.
+        if (r.level === LEVELS.WRITE && exec.name === "memory_write" &&
+            await ctx.get?.("quietMemoryAuthority")?.authorize(exec)) return next();
         if (policy.monitor) {
           warn(ctx, `monitor: ${exec.name} → ${r.level}（仅记录，未拦截）`);
           return next();
