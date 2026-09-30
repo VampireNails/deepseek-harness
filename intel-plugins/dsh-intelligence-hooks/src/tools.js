@@ -10,7 +10,8 @@ name: "hook_register",
 description:
 "注册或更新一个 hook（事件自动化）。trigger_type 为 file 时轮询数据目录下的子目录（默认 inbox），" +
 "新文件只触发一次；为 webhook 时由外部事件通过 hook_fire(source=webhook) 触发。prompt 模板支持 " +
-"{name} / {path} / {payload} 占位。触发时只生成任务描述文本并记录，不直接执行 agent 回路。",
+"{name} / {path} / {payload} 占位。触发后自动调度执行（有界：单 hook 冷却 15 分钟、全局并发 3、" +
+"单 hook 串行，多次触发合并为一批经 intel-task.sh 起 headless 任务）；auto=false 则只记录不执行。",
 parameters: {
 name: { type: "string", required: true, description: "hook 名称，如 inbox、deploy-notify"},
 trigger_type: {
@@ -25,6 +26,7 @@ description: "prompt 模板，支持 {name}/{path}/{payload} 占位",
 },
 dir: { type: "string", description: "file 触发器的轮询子目录（相对数据目录），默认 inbox"},
 desc: { type: "string", description: "hook 描述"},
+auto: { type: "boolean", description: "触发后是否自动调度执行，默认 true；false 则只记录不执行"},
 },
 output: jsonOutput((args, value) => textBlock(value.text)),
 execute: async (args) => {
@@ -33,6 +35,7 @@ const n = manager.register(args.name, {
 trigger: { type: args.trigger_type, dir: args.dir},
 prompt: args.prompt,
 desc: args.desc,
+auto: args.auto,
 });
 return { ok: true, text: `已注册 hook`};
 } catch (err) {
@@ -58,7 +61,7 @@ for (const n of names) {
 const h = hooks[n];
 const trig =
 h.trigger?.type === "file"? `file:${h.trigger.dir || "inbox"}`: h.trigger?.type || "?";
-lines.push(`${trig}${h.desc? " —— " + h.desc: ""}`);
+lines.push(`${trig}${h.auto === false ? "[不自动执行]" : ""}${h.desc? " —— " + h.desc: ""}`);
 }
 return { ok: true, text: lines.join("\n")};
 } catch (err) {

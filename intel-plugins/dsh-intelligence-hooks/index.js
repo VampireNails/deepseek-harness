@@ -1,23 +1,29 @@
 // dsh-intelligence-hooks —— 事件自动化 Hooks（复刻 Python 版 agent/hooks.py）
 //
-// hook = name → { trigger, prompt 模板, desc }，持久化到 DSH_HOME/intel-hooks/hooks.json。
+// hook = name → { trigger, prompt 模板, desc, auto }，持久化到 DSH_HOME/intel-hooks/hooks.json。
 // trigger 类型：
 //   - file：轮询数据目录下的子目录（默认 inbox/），新文件只触发一次（mtime 去重）
 //   - webhook：由外部事件通过 hook_fire(source=webhook) 触发
 // 触发时按 prompt 模板渲染生成任务文本，记入内存任务队列 + fires.jsonl；
 //
-// ⚠️ 未闭环声明（2026-09-29 第四轮审计 §2.3）：本插件目前没有消费方。
-//    hook_fire 只写内存队列 + fires.jsonl，没有任何代码（evolve/heartbeat/agent）
-//    去读它，也不会触发 agent 回路或产生用户可见效果。"能触发" ≠ "有用"。
-//    闭环的前置条件：明确谁消费 fires.jsonl（候选：evolve 定时任务读取，或
-//    agent.followup 主动拉取），该设计需单独评审，本轮不做。
-// dsh 插件侧不直接跑 agent 回路（与 Python 版"action: agent" 的执行语义差异见 README）。
+// 消费方（2026-09-30 闭环）：有界自动调度。fire() 把任务记入 pending/<hook>.jsonl 后，
+// _maybeDispatch 按「单 hook 冷却（默认 15 分钟）+ 全局并发上限（默认 3）+ 单 hook 串行」
+// 起一个 headless 任务（taskBin，默认 /root/intel/bin/intel-task.sh → dsh --profile evolve），
+// 多次触发合并为一批 prompt。相对 Python 版 `action: agent`（无节流）的超越点：
+// at-most-once 消费、冷却节流、并发上限、dispatch.log 审计、调度失败保留 pending 重试。
+// auto=false 的 hook 只记录不调度。可通过插件配置关闭全局自动调度。
 //
 // 所有注册走 ctx.effect，可卸载回卷（轮询 timer 停掉）。存储在 DSH_HOME/intel-hooks/。
 
 import z from "@deepseek-ai/schemastery";
 import { HookStore, defaultDataDir } from "./src/store.js";
-import { HookManager, DEFAULT_POLL_INTERVAL_MS } from "./src/manager.js";
+import {
+  HookManager,
+  DEFAULT_POLL_INTERVAL_MS,
+  DEFAULT_DISPATCH_COOLDOWN_MS,
+  DEFAULT_TASK_BIN,
+  DEFAULT_MAX_CONCURRENT_DISPATCHES,
+} from "./src/manager.js";
 import {
   hookRegisterTool,
   hookListTool,
@@ -32,6 +38,10 @@ export const inject = ["tools"];
 export const Config = z.object({
   dataDir: z.string().default(""),
   pollIntervalMs: z.number().default(DEFAULT_POLL_INTERVAL_MS),
+  autoDispatch: z.boolean().default(true),
+  dispatchCooldownMs: z.number().default(DEFAULT_DISPATCH_COOLDOWN_MS),
+  taskBin: z.string().default(DEFAULT_TASK_BIN),
+  maxConcurrentDispatches: z.number().default(DEFAULT_MAX_CONCURRENT_DISPATCHES),
 });
 
 export function apply(ctx, config) {
@@ -41,6 +51,12 @@ export function apply(ctx, config) {
     store,
     ctx,
     pollIntervalMs: cfg.pollIntervalMs || DEFAULT_POLL_INTERVAL_MS,
+    dispatch: {
+      enabled: cfg.autoDispatch !== false,
+      cooldownMs: cfg.dispatchCooldownMs || DEFAULT_DISPATCH_COOLDOWN_MS,
+      taskBin: cfg.taskBin || DEFAULT_TASK_BIN,
+      maxConcurrent: cfg.maxConcurrentDispatches || DEFAULT_MAX_CONCURRENT_DISPATCHES,
+    },
   });
   ctx.provide("hooks", manager);
 

@@ -14,7 +14,22 @@ return mkdtempSync(join(tmpdir(), "hooks-test-"));
 }
 function makeManager(dir, opts = {}) {
 const store = new HookStore(dir);
-return new HookManager({ store, ctx: { logger: { warn() {}}}, pollIntervalMs: 50,...opts});
+// 默认关闭自动调度：旧单测只验证 fire 记录，不碰真 spawn
+const dispatch = opts.dispatch ?? { enabled: false };
+return new HookManager({ store, ctx: { logger: { warn() {}}}, pollIntervalMs: 50,...opts, dispatch});
+}
+// 带 fake spawn 的调度测试专用 manager
+function makeDispatchManager(dir, dispOpts = {}) {
+const calls = [];
+const store = new HookStore(dir);
+const m = new HookManager({
+store,
+ctx: { logger: { warn() {}}},
+pollIntervalMs: 50,
+dispatch: { enabled: true, cooldownMs: 50, taskBin: "/bin/echo-stub", maxConcurrent: 3, ...dispOpts},
+spawnFn: (bin, args, opts) => { calls.push({ bin, args, opts }); return { unref() {}, on() {} }; },
+});
+return { m, calls };
 }
 function writeInbox(dir, name, content = "x") {
 mkdirSync(join(dir, "inbox"), { recursive: true});
@@ -263,4 +278,115 @@ assert.equal(d2.ok, false);
 } finally {
 rmSync(dir, { recursive: true, force: true});
 }
+});
+
+// ---- 有界自动调度 ----
+
+test("dispatch: fire 默认自动调度，spawn 参数正确", async () => {
+const dir = freshDir();
+try {
+const { m, calls } = makeDispatchManager(dir);
+m.register("w1", { trigger: { type: "webhook" }, prompt: "do {payload}", desc: "t" });
+await m.fire("w1", { source: "webhook", payload: "hello" });
+assert.equal(calls.length, 1, "应调度一次");
+assert.equal(calls[0].bin, "/bin/echo-stub");
+assert.match(calls[0].args[0], /^hook_w1_\d{14}$/, "jobId 格式 hook_<name>_<ts>");
+assert.ok(calls[0].args[1].includes("do hello"), "prompt 应包含渲染后的任务");
+assert.ok(calls[0].args[1].includes("[hook 自动任务]"), "应有任务头");
+assert.equal(m._readPending("w1").length, 0, "at-most-once：pending 已消费");
+assert.ok(existsSync(join(dir, "dispatch.log")), "应写 dispatch.log");
+} finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("dispatch: 冷却期内不重复调度", async () => {
+const dir = freshDir();
+try {
+const { m, calls } = makeDispatchManager(dir, { cooldownMs: 60000 });
+m.register("w2", { trigger: { type: "webhook" }, prompt: "x", desc: "t" });
+await m.fire("w2", { source: "webhook" });
+await m.fire("w2", { source: "webhook" });
+assert.equal(calls.length, 1, "冷却期内第二次不应调度");
+assert.equal(m._readPending("w2").length, 1, "第二次触发应留在 pending");
+} finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("dispatch: auto=false 的 hook 只记录不调度", async () => {
+const dir = freshDir();
+try {
+const { m, calls } = makeDispatchManager(dir);
+m.register("w3", { trigger: { type: "webhook" }, prompt: "x", desc: "t", auto: false });
+await m.fire("w3", { source: "webhook" });
+assert.equal(calls.length, 0, "不应调度");
+assert.equal(m._readPending("w3").length, 0, "不应入 pending");
+const lines = readFileSync(join(dir, "fires.jsonl"), "utf-8").trim().split("\n");
+assert.equal(lines.length, 1, "fires.jsonl 仍应记录");
+} finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("dispatch: spawn 失败保留 pending", async () => {
+const dir = freshDir();
+try {
+const store = new HookStore(dir);
+const m = new HookManager({
+store, ctx: { logger: { warn() {} } }, pollIntervalMs: 50,
+dispatch: { enabled: true, cooldownMs: 50, taskBin: "/bin/echo-stub", maxConcurrent: 3 },
+spawnFn: () => { throw new Error("spawn 炸了"); },
+});
+m.register("w4", { trigger: { type: "webhook" }, prompt: "x", desc: "t" });
+await m.fire("w4", { source: "webhook" });
+assert.equal(m._readPending("w4").length, 1, "失败应保留 pending");
+} finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("dispatch: 在途不重入，完成后重踢消费排队", async () => {
+const dir = freshDir();
+try {
+const { m, calls } = makeDispatchManager(dir, { cooldownMs: 1 });
+m.register("w5", { trigger: { type: "webhook" }, prompt: "task {payload}", desc: "t" });
+m._inFlight.set("w5", true);
+await m.fire("w5", { source: "webhook", payload: "a" });
+assert.equal(calls.length, 0, "在途时不应调度");
+assert.equal(m._readPending("w5").length, 1);
+m._inFlight.delete("w5");
+m._saveDispatchState({ w5: Date.now() - 60000 });
+m._maybeDispatch("w5");
+assert.equal(calls.length, 1, "重踢后应调度");
+assert.ok(calls[0].args[1].includes("task a"), "应消费排队的任务");
+assert.equal(m._readPending("w5").length, 0);
+} finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("dispatch: 批量合并多次触发", async () => {
+const dir = freshDir();
+try {
+const { m, calls } = makeDispatchManager(dir, { cooldownMs: 1 });
+m.register("w6", { trigger: { type: "webhook" }, prompt: "job {payload}", desc: "t" });
+m._inFlight.set("w6", true);
+await m.fire("w6", { source: "webhook", payload: "first" });
+await m.fire("w6", { source: "webhook", payload: "second" });
+assert.equal(m._readPending("w6").length, 2);
+m._inFlight.delete("w6");
+m._saveDispatchState({ w6: Date.now() - 60000 });
+m._maybeDispatch("w6");
+assert.equal(calls.length, 1, "应合并为一次调度");
+assert.ok(calls[0].args[1].includes("job first"), "应含第一次");
+assert.ok(calls[0].args[1].includes("job second"), "应含第二次");
+assert.ok(calls[0].args[1].includes("共触发 2 次"), "应注明批量");
+} finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("dispatch: 全局关闭时不调度", async () => {
+const dir = freshDir();
+try {
+const store = new HookStore(dir);
+let spawned = 0;
+const m = new HookManager({
+store, ctx: { logger: { warn() {} } }, pollIntervalMs: 50,
+dispatch: { enabled: false },
+spawnFn: () => { spawned++; return { unref() {}, on() {} }; },
+});
+m.register("w7", { trigger: { type: "webhook" }, prompt: "x", desc: "t" });
+await m.fire("w7", { source: "webhook" });
+assert.equal(spawned, 0, "全局关闭不应 spawn");
+} finally { rmSync(dir, { recursive: true, force: true }); }
 });

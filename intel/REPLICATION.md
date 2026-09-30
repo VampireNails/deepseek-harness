@@ -412,3 +412,26 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 **手机侧可见性与 token 成本**（2026-09-29 第三轮审计 §3.6 补充）：
 - Soul 注入用 `createUserMessage({ source: { kind: "dsh-intelligence-soul" } })`（`index.js:71-74`），HMC 客户端只渲染 `kind=="user"`——**Soul 不会在手机时间线上刷屏**（好消息）；但用户也无法在手机上感知 Soul 是否生效，只能靠提问验证（已用"做事方式第一条"验过一次，快照命中"先自己动手"）。
 - 成本：step 1 现在有三条独立注入（记忆召回、画像、Soul；`soul.md` 2275 字节，`index.js:63` 有 `step !== 1` 守卫），是每回合的固定 token 开销。在 1GB 机器上这不是内存问题，是钱的问题。2026-09-29 已评估不实施：合并仅省约 10–20 tokens/回合的消息 framing，内容一字不少；跨插件耦合风险大于收益。Soul 不加长度上限（人格不截断，属智能层固定成本）。
+
+---
+
+## 六、Hooks 消费方闭环 + Stage-2 激活（2026-09-30）
+
+**背景**：2026-09-29 第四轮审计 §2.3 声明 hooks"未闭环"——`hook_fire` 只写内存队列 + `fires.jsonl`，没有任何代码消费。2026-09-30 Tomas 要求按"复刻甚至超越自己智能体"的方向修复这两个问题点：(1) Hooks 自动执行缺消费方；(2) stage-2 未启用。
+
+**拍板基准**（2026-09-30 23:40 Tomas 升级）：对标对象从 Python 旧版换成 Muse 本体的实际能力。Muse 的 hooks 是事件驱动、按需唤醒 agent；dsh-muse 的消费方设计对齐此语义。
+
+**实现**：`dsh-intelligence-hooks` 有界自动调度（`src/manager.js`）
+- `fire()` 后任务记入 `pending/<hook>.jsonl`（durable），`_maybeDispatch` 按「单 hook 冷却（默认 15 分钟）+ 全局并发上限（默认 3）+ 单 hook 串行」决策
+- 调度成功才消费 pending（at-most-once）；失败保留 pending，冷却照算，下次 tick/触发重试
+- 多次触发合并为一批 prompt，经 `taskBin`（默认 `/root/intel/bin/intel-task.sh` → `dsh --profile evolve`）起 detached headless 任务，不阻塞插件
+- 审计：`dispatch.log`；`fires.jsonl` 保留全量；`dispatch_state.json` 持久化冷却
+- 重启恢复：`start()` 扫描 pending 残留；`tick()` 末尾调度扫尾；`stop()` 清理冷却 timer
+- `auto=false` 的 hook 只记录不调度；插件配置可全局关闭（`autoDispatch`）
+- `hook_register` 新增 `auto` 参数；`hook_list` 显示 `[不自动执行]` 标记
+
+**对 Python 版的超越点**：Python `action: agent` 无节流；本实现加冷却节流 + 并发上限 + at-most-once + 审计 + 失败保留。
+
+**验证**：单测 21/21（含 7 个调度单测：参数/冷却/auto=false/失败保留/在途重入/批量合并/全局关闭）；生产冒烟：inbox 丢测试文件 → tick 触发 → `dispatch.log` 落 job `hook_inbox_20260930155004` → `intel-task.sh` 真实执行 → joblog 记录；测试文件已清理。
+
+**Stage-2**：Tomas 2026-09-30 23:4x 明确批准修复"stage-2 未启用"。执行 `crontab /root/intel/cron/intel-cron.txt`，新增 `0 * * * *` evolve_upkeep 与 `15 * * * *` heartbeat；同时清掉一次性 `verify-0730.sh` cron。Soul 规则"持续烧 token 须先批准"已满足（本次即批准）。
