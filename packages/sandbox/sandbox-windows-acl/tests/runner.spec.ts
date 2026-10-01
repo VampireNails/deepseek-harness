@@ -559,7 +559,16 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
       }
       expect(openForFullControl(join(granted, 'file.txt'))).toEqual({ opened: true, error: 0 })
       expect(openForFullControl(join(child, 'deep.txt'))).toEqual({ opened: true, error: 0 })
-      expect(openForFullControl(child)).toEqual({ opened: false, error: 5 }) // ERROR_ACCESS_DENIED
+      const directory = openForFullControl(child)
+      const diagnostics = directory.opened
+        ? ['whoami /priv', 'root ACL', 'child ACL'].map((label, index) => {
+          const result = index === 0
+            ? spawnSync('whoami', ['/priv'], { encoding: 'utf8', timeout: 10_000 })
+            : spawnSync('icacls', [index === 1 ? granted : child], { encoding: 'utf8', timeout: 10_000 })
+          return `${label}: status=${result.status}, error=${result.error?.message ?? 'none'}\n${result.stdout}\n${result.stderr}`
+        }).join('\n')
+        : undefined
+      expect(directory, diagnostics).toEqual({ opened: false, error: 5 }) // ERROR_ACCESS_DENIED
     } finally {
       grant.dispose()
       rmSync(granted, { recursive: true, force: true })
