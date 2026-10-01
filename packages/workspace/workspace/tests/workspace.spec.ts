@@ -2,7 +2,7 @@ import type { z } from 'zod'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join, relative } from 'node:path'
+import { basename, isAbsolute, join, relative } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import type { StorageBackend } from '@deepseek-ai/dsh-storage'
@@ -1289,8 +1289,13 @@ describe('first-use Workspace preparation', () => {
 
   it('rejects a relative candidate before creating its directory', async () => {
     const h = await firstUse()
-    const candidate = join(h.directoryRoot, 'relative')
-    h.resolveDirectory.mockResolvedValueOnce({ path: relative(process.cwd(), candidate), title: 'Workspace' })
+    // Windows relative() returns an absolute path when the temp directory is on another drive.
+    const directoryRoot = await mkdtemp(join(process.cwd(), '.dsh-workspace-relative-'))
+    tempDirs.push(directoryRoot)
+    const candidate = join(directoryRoot, 'relative')
+    const candidatePath = relative(process.cwd(), candidate)
+    expect(isAbsolute(candidatePath)).toBe(false)
+    h.resolveDirectory.mockResolvedValueOnce({ path: candidatePath, title: 'Workspace' })
     await expect(h.registry.initializeDefault(h.resolveDirectory)).rejects.toThrow('fully qualified')
     await expect(realpath(candidate)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(h.registry.list()).toEqual([])
