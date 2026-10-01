@@ -65,7 +65,9 @@ export function claudeSpawnSpec(
  * in the official SDK; this adapter only projects streams and exit events.
  */
 export class ManagedClaudeCodeProcess implements SpawnedProcess {
+  /** SDK input stream owned by the managed child process. */
   readonly stdin
+  /** SDK output stream owned by the managed child process. */
   readonly stdout
   private readonly events = new EventEmitter()
   private outcomeValue: SubprocessOutcome | undefined
@@ -130,7 +132,11 @@ export class ManagedClaudeCodeProcess implements SpawnedProcess {
     return true
   }
 
-  /** Register a persistent process lifecycle listener. */
+  /**
+   * Register a persistent process lifecycle listener.
+   * @param event - Process exit or spawn failure event.
+   * @param listener - Callback receiving that event's outcome.
+   */
   on(
     event: 'exit' | 'error',
     listener: ((code: number | null, signal: NodeJS.Signals | null) => void)
@@ -139,7 +145,11 @@ export class ManagedClaudeCodeProcess implements SpawnedProcess {
     this.events.on(event, listener)
   }
 
-  /** Register a one-shot process lifecycle listener. */
+  /**
+   * Register a one-shot process lifecycle listener.
+   * @param event - Process exit or spawn failure event.
+   * @param listener - Callback receiving that event's outcome once.
+   */
   once(
     event: 'exit' | 'error',
     listener: ((code: number | null, signal: NodeJS.Signals | null) => void)
@@ -148,7 +158,11 @@ export class ManagedClaudeCodeProcess implements SpawnedProcess {
     this.events.once(event, listener)
   }
 
-  /** Remove a process lifecycle listener. */
+  /**
+   * Remove a process lifecycle listener.
+   * @param event - Event whose listener is detached.
+   * @param listener - Previously registered callback.
+   */
   off(
     event: 'exit' | 'error',
     listener: ((code: number | null, signal: NodeJS.Signals | null) => void)

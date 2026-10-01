@@ -44,6 +44,15 @@ function repository(test: TestContext) {
 }
 
 describe('maintained repository reference policy', () => {
+  it('preserves machine source pins and the two original external audits without exempting current Intel docs', () => {
+    const hash = 'a'.repeat(40)
+    for (const file of ['dsh-baseline.json', 'intel/audits/audit-round1-2026-09-28.md', 'intel/audits/audit-round2-2026-09-28-hmc.md']) {
+      expect(findRepositoryReferences(file, hash, new Set([hash]))).toEqual([])
+    }
+    for (const file of ['intel/REPLICATION.md', 'intel/audits/new-report.md', 'other-baseline.json']) {
+      expect(findRepositoryReferences(file, hash, new Set([hash]))).toHaveLength(1)
+    }
+  })
   it('permits only the independent kit repository and its source URLs', () => {
     for (const suffix of ['', '.git', '/tree/main/packages/entry']) {
       expect(findRepositoryReferences('package.json', `${organizationUrl}/libreoffice-kit${suffix}`, new Set())).toEqual([])

@@ -10,6 +10,8 @@ English | [中文](README.zh.md)
 
 Contributors can link Issues as context without coupling pull-request validation to Project availability. Resolving references additionally enforce Project Priority. The required `Issue policy` job and the separate lifecycle workflow use trusted default-branch code.
 
+The checked-in configuration targets the upstream organization Project. Both workflows restrict the entire job to that repository, including trusted preflight reads. Forks do not query or modify upstream Issues using their local event numbers.
+
 ## Table of Contents
 
 - [Pull-request policy](#pull-request-policy)
