@@ -65,10 +65,12 @@ describe('fork workflows', () => {
     expect(evaluate(step.if, upstream)).toBeFalsy()
     const windows = ['windows-build', 'windows-native-tests']
     const results = Object.fromEntries(job.needs!.map(id => [id, { result: windows.includes(id) ? 'skipped' : 'success' }]))
-    const execute = (needs: typeof results) => runInNewContext(String(step.with!.script), {
-      process: { env: { CI_JOB_RESULTS: JSON.stringify(needs) } },
-      core: { setFailed(message: string) { throw new Error(message) }, info() {} },
-    }, { timeout: 1000 })
+    const execute = (needs: typeof results): void => {
+      runInNewContext(String(step.with!.script), {
+        process: { env: { CI_JOB_RESULTS: JSON.stringify(needs) } },
+        core: { setFailed(message: string) { throw new Error(message) }, info() {} },
+      }, { timeout: 1000 })
+    }
     expect(() => execute(results)).not.toThrow()
     for (const id of job.needs!) {
       for (const result of ['failure', 'cancelled', ...(windows.includes(id) ? [] : ['skipped'])]) {
