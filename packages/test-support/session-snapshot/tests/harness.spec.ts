@@ -968,7 +968,8 @@ describe('runScenario', () => {
     )).rejects.toThrow(/did not persist turn\/end within 200ms/)
   })
 
-  it('waitForGoalPhase requires the requested durable goal phase', { timeout: 20_000 }, async () => {
+  it('waitForGoalPhase requires the requested durable goal phase', { timeout: 20_000 }, async ({ onTestFinished }) => {
+    isolateDiagnosticTimeout(onTestFinished)
     const reached = await scenario({
       prompt: 'hang-until-cancel',
       persistLogsOnCancel: true,
