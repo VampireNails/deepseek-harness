@@ -48,7 +48,7 @@ return { ok: false, text: `注册失败：${err?.message?? err}`};
 export function hookListTool(manager) {
 return defineTool({
 name: "hook_list",
-description: "列出所有 hook（内置 + 自定义）：名称、触发类型、描述。",
+description: "列出 hook 的名称、自动开关、积压、最近批次启动/退出结果。触发或 started 不等于业务完成。",
 parameters: {},
 output: jsonOutput((args, value) => textBlock(value.text)),
 execute: async () => {
@@ -61,8 +61,14 @@ for (const n of names) {
 const h = hooks[n];
 const trig =
 h.trigger?.type === "file"? `file:${h.trigger.dir || "inbox"}`: h.trigger?.type || "?";
-lines.push(`${trig}${h.auto === false ? "[不自动执行]" : ""}${h.desc? " —— " + h.desc: ""}`);
+const status = manager.dispatchStatus(n);
+lines.push(`${n}: ${trig}${h.auto === false ? " [不自动执行]" : ""}` +
+`；pending=${status.pending}；${status.status}${status.active ? " [并发位保留，结果待核对]" : ""}` +
+`${status.job ? `；job=${status.job}` : ""}` +
+`${status.code != null ? `；退出码=${status.code}` : ""}` +
+`${status.signal ? `；signal=${status.signal}` : ""}${h.desc ? " —— " + h.desc : ""}`);
 }
+lines.push("started 仅代表包装器启动；请结合 joblog_status/joblog_alerts 和实际产物核对结果。failed/uncertain 暂停该 hook，需 PC 人工恢复；禁用或删除保留已有记录。");
 return { ok: true, text: lines.join("\n")};
 } catch (err) {
 return { ok: false, text: `查询失败：${err?.message?? err}`};
@@ -112,7 +118,7 @@ source: args.source || "manual",
 path: args.path || "",
 payload: args.payload?? null,
 });
-return { ok: true, text: prompt};
+return { ok: true, text: prompt + "\n\n[触发已记录；这不表示执行完成。请查询 hook_list 与 Joblog。]"};
 } catch (err) {
 return { ok: false, text: `触发失败：${err?.message?? err}`};
 }

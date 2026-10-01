@@ -10,7 +10,7 @@
 // _maybeDispatch 按「单 hook 冷却（默认 15 分钟）+ 全局并发上限（默认 3）+ 单 hook 串行」
 // 起一个 headless 任务（taskBin，默认 /root/intel/bin/intel-task.sh → dsh --profile evolve），
 // 多次触发合并为一批 prompt。相对 Python 版 `action: agent`（无节流）的超越点：
-// at-most-once 消费、冷却节流、并发上限、dispatch.log 审计、调度失败保留 pending 重试。
+// 冷却节流、持久并发位、批次记录；未启动失败保留 pending，启动后失败需 PC 人工核对。
 // auto=false 的 hook 只记录不调度。可通过插件配置关闭全局自动调度。
 //
 // 所有注册走 ctx.effect，可卸载回卷（轮询 timer 停掉）。存储在 DSH_HOME/intel-hooks/。
@@ -23,6 +23,10 @@ import {
   DEFAULT_DISPATCH_COOLDOWN_MS,
   DEFAULT_TASK_BIN,
   DEFAULT_MAX_CONCURRENT_DISPATCHES,
+  DEFAULT_MAX_PENDING_BYTES,
+  DEFAULT_MAX_BATCH_BYTES,
+  DEFAULT_MAX_BATCH_RECORDS,
+  DEFAULT_MAX_DELIVERED_TASKS,
 } from "./src/manager.js";
 import {
   hookRegisterTool,
@@ -42,6 +46,10 @@ export const Config = z.object({
   dispatchCooldownMs: z.number().default(DEFAULT_DISPATCH_COOLDOWN_MS),
   taskBin: z.string().default(DEFAULT_TASK_BIN),
   maxConcurrentDispatches: z.number().default(DEFAULT_MAX_CONCURRENT_DISPATCHES),
+  maxPendingBytes: z.number().default(DEFAULT_MAX_PENDING_BYTES),
+  maxBatchBytes: z.number().default(DEFAULT_MAX_BATCH_BYTES),
+  maxBatchRecords: z.number().default(DEFAULT_MAX_BATCH_RECORDS),
+  maxDeliveredTasks: z.number().default(DEFAULT_MAX_DELIVERED_TASKS),
 });
 
 export function apply(ctx, config) {
@@ -56,6 +64,10 @@ export function apply(ctx, config) {
       cooldownMs: cfg.dispatchCooldownMs || DEFAULT_DISPATCH_COOLDOWN_MS,
       taskBin: cfg.taskBin || DEFAULT_TASK_BIN,
       maxConcurrent: cfg.maxConcurrentDispatches || DEFAULT_MAX_CONCURRENT_DISPATCHES,
+      maxPendingBytes: cfg.maxPendingBytes,
+      maxBatchBytes: cfg.maxBatchBytes,
+      maxBatchRecords: cfg.maxBatchRecords,
+      maxDeliveredTasks: cfg.maxDeliveredTasks,
     },
   });
   ctx.provide("hooks", manager);

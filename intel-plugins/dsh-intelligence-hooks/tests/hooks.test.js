@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync, readFileSync, existsSync} from "node:fs";
 import { tmpdir} from "node:os";
 import { join} from "node:path";
+import { EventEmitter } from "node:events";
 import { HookStore, defaultDataDir} from "../src/store.js";
 import { HookManager, renderTemplate, defaultHooks, DEFAULT_POLL_INTERVAL_MS} from "../src/manager.js";
 import { hookRegisterTool, hookListTool, hookRemoveTool, hookFireTool} from "../src/tools.js";
@@ -27,7 +28,14 @@ store,
 ctx: { logger: { warn() {}}},
 pollIntervalMs: 50,
 dispatch: { enabled: true, cooldownMs: 50, taskBin: "/bin/echo-stub", maxConcurrent: 3, ...dispOpts},
-spawnFn: (bin, args, opts) => { calls.push({ bin, args, opts }); return { unref() {}, on() {} }; },
+spawnFn: (bin, args, opts) => {
+calls.push({ bin, args, opts });
+const child = new EventEmitter();
+child.pid = process.pid;
+child.unref = () => {};
+queueMicrotask(() => child.emit("spawn"));
+return child;
+},
 });
 return { m, calls };
 }
@@ -61,7 +69,7 @@ test("defaultDataDir: DSH_HOME 下的 intel-hooks", () => {
 assert.ok(defaultDataDir().endsWith("intel-hooks"));
 process.env.DSH_HOME = "/tmp/x-dsh-home";
 try {
-assert.equal(defaultDataDir(), "/tmp/x-dsh-home/intel-hooks");
+assert.equal(defaultDataDir(), join("/tmp/x-dsh-home", "intel-hooks"));
 } finally {
 delete process.env.DSH_HOME;
 }
@@ -290,7 +298,7 @@ m.register("w1", { trigger: { type: "webhook" }, prompt: "do {payload}", desc: "
 await m.fire("w1", { source: "webhook", payload: "hello" });
 assert.equal(calls.length, 1, "应调度一次");
 assert.equal(calls[0].bin, "/bin/echo-stub");
-assert.match(calls[0].args[0], /^hook_w1_\d{14}$/, "jobId 格式 hook_<name>_<ts>");
+assert.match(calls[0].args[0], /^hook_w1_\d{14}_[a-f0-9]{8}$/, "jobId 含唯一批次后缀");
 assert.ok(calls[0].args[1].includes("do hello"), "prompt 应包含渲染后的任务");
 assert.ok(calls[0].args[1].includes("[hook 自动任务]"), "应有任务头");
 assert.equal(m._readPending("w1").length, 0, "at-most-once：pending 已消费");
@@ -350,6 +358,7 @@ assert.equal(m._readPending("w5").length, 1);
 m._inFlight.delete("w5");
 m._saveDispatchState({ w5: Date.now() - 60000 });
 m._maybeDispatch("w5");
+await Promise.resolve();
 assert.equal(calls.length, 1, "重踢后应调度");
 assert.ok(calls[0].args[1].includes("task a"), "应消费排队的任务");
 assert.equal(m._readPending("w5").length, 0);
@@ -368,6 +377,7 @@ assert.equal(m._readPending("w6").length, 2);
 m._inFlight.delete("w6");
 m._saveDispatchState({ w6: Date.now() - 60000 });
 m._maybeDispatch("w6");
+await Promise.resolve();
 assert.equal(calls.length, 1, "应合并为一次调度");
 assert.ok(calls[0].args[1].includes("job first"), "应含第一次");
 assert.ok(calls[0].args[1].includes("job second"), "应含第二次");
