@@ -94,7 +94,7 @@ describe('fork workflows', () => {
 
   it('rejects every incomplete credential set before enabling deployment', (test) => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-preview-credentials-'))
-    test.onTestFinished(() => rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }))
+    test.onTestFinished(() => { rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }) })
     const step = workflow('build-preview-cloudflare.yml').jobs.preview!.steps.find(item => item.name === 'Check preview deployment credentials')!
     const names = ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET']
     for (const missing of [...names, undefined]) {

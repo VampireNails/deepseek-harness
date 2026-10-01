@@ -7,7 +7,7 @@ import { removeSystemPlatforms } from './optional-system-platforms.ts'
 
 it('removes root and nested system platforms while preserving Koffi and the system entry', (test) => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-optional-platforms-'))
-  test.onTestFinished(() => rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }))
+  test.onTestFinished(() => { rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }) })
   const payloads = [
     'node_modules/@deepseek-ai/node-addon-system-linux-x64',
     'node_modules/consumer/node_modules/@deepseek-ai/node-addon-system-darwin-arm64',
