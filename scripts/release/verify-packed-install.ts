@@ -2,9 +2,9 @@
  * Install packed tarballs into a throwaway consumer outside the repository and
  * drive the installed executable with plain Node.
  *
- * Every tarball the installed tree needs comes from `--from`, so the only
- * registry traffic is for external dependencies. That matters beyond hermetic
- * verification: the harness packages declare the vendored framework as a peer,
+ * Required release-family dependencies come from `--from`; npm still resolves
+ * external dependencies and optional platform payloads from the registry.
+ * The harness packages declare the vendored framework as a peer,
  * those packages live in another release sequence, and this job must not depend
  * on the registry already carrying versions that match — one pull request may
  * bump both families before either publishes — so a dsh verification passes the
@@ -22,9 +22,10 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { releaseFamily } from './families.ts'
-import { capture, isEntry } from './process.ts'
+import { capture, isEntry, npmCommand } from './process.ts'
 import { packedIdentity } from './tarball.ts'
 import { verifyInstalledProductIsolation } from './installed-product-isolation.ts'
+import { removeSystemPlatforms } from './optional-system-platforms.ts'
 
 /**
  * Environment for the installed artifact: no host Node hooks, no host DeepSeek
@@ -100,12 +101,10 @@ function main(): void {
 
     const environment = consumerEnvironment(consumerRoot)
     console.log(`release verify-packed-install: installing ${String(packed.size)} tarball(s) into ${consumerRoot}`)
-    // Optional dependencies are omitted: the Landlock platform packages behind
-    // them need a musl toolchain and one build per architecture, and a consumer
-    // that cannot install them must still start — which is what optional means
-    // here. Their entry package is a plain dependency of dsh-sandbox-local, so
-    // its tarball is supplied through --from.
-    capture('npm', ['install', '--no-audit', '--no-fund', '--package-lock=false', '--omit=optional', '--loglevel=http'],
+    // Ordinary installs retain native prebuilds such as Koffi. Test the missing
+    // system-platform startup separately after the normal installed smoke.
+    const [npm, ...npmArgs] = npmCommand()
+    capture(npm, [...npmArgs, 'install', '--no-audit', '--no-fund', '--package-lock=false', '--loglevel=error'],
       { cwd: consumerRoot, env: environment })
 
     const installedEntry = join(consumerRoot, 'node_modules', entry.packageName)
@@ -117,6 +116,17 @@ function main(): void {
       throw new Error(`installed ${entry.packageName} --version reported ${JSON.stringify(version)}, expected ${expected.version}`)
     }
     console.log(`release verify-packed-install: installed ${entry.packageName} reports ${version}`)
+    if (family.id === 'dsh') {
+      const removed = removeSystemPlatforms(consumerRoot)
+      const result = capture(process.execPath, ['--input-type=module', '-e',
+        "import {probe} from '@deepseek-ai/node-addon-system/landlock-run'; if(probe()!=='unusable') throw new Error('Missing platform must probe unusable');"],
+      { cwd: consumerRoot, env: environment })
+      if (result !== '') throw new Error('release: unexpected missing-platform probe output')
+      if (capture(process.execPath, [bin, '--version'], { cwd: consumerRoot, env: environment }) !== expected.version) {
+        throw new Error('release: CLI version failed without system platform packages')
+      }
+      console.log(`release verify-packed-install: removed ${String(removed)} system platform package(s); probe unusable and CLI startup verified (session persistence not exercised)`)
+    }
   } finally {
     rmSync(consumerRoot, { recursive: true, force: true })
   }

@@ -1,14 +1,9 @@
-# intel-plugins — 智能层插件（dsh 树外插件）
+# Intel plugins
 
-把复刻版 Harness 的"智能"能力搬进 dsh 的插件，HMC 零改动即可遥控。
+English | [中文](README.zh.md)
 
-- 基线: dsh `0.1.7-rc.1`（见 `../dsh-baseline.json`），本分支就建在这个提交上
-- 每个插件是独立 npm 包，用 `dsh plugin --profile <name> add <path>` 安装
-- **先装依赖**：`node_modules/` 被 `.gitignore` 排除，clone 后每个插件目录先跑 `npm ci`
-  （lockfile 已钉死版本），否则启动只报 `failed to import` 且日志不给原因（阶段 0 踩坑）
-- 约束: 不改 dsh `packages/` 核心包；所有注册走 `ctx.effect`；密钥不落盘
+Intel plugins add Muse capabilities to the DSH Host through the existing plugin interfaces. HMC accesses them through its service bridge. The DSH baseline is recorded in ../dsh-baseline.json.
 
-| 插件 | 状态 | 说明 |
-|---|---|---|
-| hello-intel | 阶段 0 验证用 | 最小挂载验证，可删除 |
-| dsh-intelligence-cron | P0（REPLICATION #11），已验收 | 用户自建定时间解析 + cron_create/list/delete；调度层走 `@deepseek-ai/dsh-schedule`（cron 插件自带 bundle overlay 挂载，profile 只需挂载 cron 插件）；session-local，错过触发点不补发 |
+Install each plugin's locked dependencies with npm ci before adding its directory to a DSH profile. Ignored node_modules directories are not supplied by a clone. Plugin tools and listeners use ctx.effect so unloading removes registrations. Credentials remain outside Git.
+
+The cron plugin supplies a Schedule overlay, the approvals plugin classifies tool execution, and the artifacts, browser, Feed, Goals, memory, profile, Soul, Hooks and upkeep plugins expose their own tools and data. Each plugin README owns its configuration, operational limits and test commands.

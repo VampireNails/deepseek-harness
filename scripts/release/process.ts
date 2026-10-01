@@ -127,3 +127,14 @@ export function pnpmCommand(): readonly [command: string, ...args: string[]] {
   }
   return ['pnpm']
 }
+
+/**
+ * Resolve npm without a shell; Windows Node distributions ship its JavaScript entry beside Node.
+ * @returns Command and leading arguments to prepend before npm's arguments.
+ */
+export function npmCommand(): readonly [command: string, ...args: string[]] {
+  if (process.platform !== 'win32') return ['npm']
+  const entry = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  if (!existsSync(entry)) throw new Error('release: install a complete Node distribution containing npm')
+  return [process.execPath, entry]
+}

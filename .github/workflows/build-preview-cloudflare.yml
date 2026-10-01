@@ -34,6 +34,9 @@ jobs:
   preview:
     runs-on: ubuntu-24.04
     name: cloudflare pages preview
+    env:
+      # Forks explicitly opt in after configuring their own deployment credentials.
+      DEPLOY_PREVIEW: ${{ (github.repository == 'deepseek-harness/deepseek-harness' || vars.DSH_PREVIEW_DEPLOY_ENABLED == 'true') && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -87,7 +90,33 @@ jobs:
           find apps/web/dist -name '*.map' -delete
           cp apps/web/dist/preview.html apps/web/dist/index.html
 
+      - name: Preserve PR preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-preview-pr-${{ github.event.pull_request.number }}
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Check preview deployment credentials
+        id: deployment
+        if: env.DEPLOY_PREVIEW == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CF_ACCESS_CLIENT_ID CF_ACCESS_CLIENT_SECRET; do
+            if [ -z "${!name}" ]; then
+              echo "Configured preview deployment requires $name"
+              exit 1
+            fi
+          done
+          echo 'enabled=true' >> "$GITHUB_OUTPUT"
+
       - name: Upload to Cloudflare Pages
+        if: steps.deployment.outputs.enabled == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -112,6 +141,7 @@ jobs:
       # Accept-Encoding is sent because a browser sends it; the assertion is
       # about what the platform does with a body that is already compressed.
       - name: Verify the protected deployment serves the image
+        if: steps.deployment.outputs.enabled == 'true'
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
@@ -151,6 +181,7 @@ jobs:
       # idempotent: a pull request opened before this workflow existed never
       # sees an `opened` event, and every later push must not restate the URL.
       - name: Comment the preview URL
+        if: steps.deployment.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}

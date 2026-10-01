@@ -13,7 +13,10 @@ export type SerializedTextRefNode = SerializedTextNode
 
 /** One matched plain-text reference as a styled, fully editable text node. */
 export class TextRefNode extends TextNode {
-  /** Lexical node registry type tag. */
+  /**
+   * Lexical node registry type tag.
+   * @returns The text-reference node's registry key.
+   */
   static override getType(): string {
     return 'composer-text-ref'
   }
@@ -41,7 +44,10 @@ export class TextRefNode extends TextNode {
     return node
   }
 
-  /** Serialize to the JSON node form. */
+  /**
+   * Serialize to the JSON node form.
+   * @returns Text and formatting with the reference registry type.
+   */
   override exportJSON(): SerializedTextRefNode {
     return {
       ...super.exportJSON(),
@@ -49,7 +55,11 @@ export class TextRefNode extends TextNode {
     }
   }
 
-  /** Style the span the base TextNode mounts. */
+  /**
+   * Style the span the base TextNode mounts.
+   * @param config - Lexical editor configuration.
+   * @returns The styled reference span.
+   */
   override createDOM(config: EditorConfig): HTMLElement {
     const el = super.createDOM(config)
     el.className = clsx(el.className, css.reference, css.textRef, this.getTextContent().startsWith('/') && css.openable)
@@ -58,12 +68,18 @@ export class TextRefNode extends TextNode {
     return el
   }
 
-  /** Entity nodes never merge with plain siblings (the transform owns their bounds). */
+  /**
+   * Entity nodes never merge with plain siblings (the transform owns their bounds).
+   * @returns True to retain reference entity behavior.
+   */
   override isTextEntity(): true {
     return true
   }
 
-  /** Editing continues inside; the transform re-evaluates match shape per edit. */
+  /**
+   * Editing continues inside; the transform re-evaluates the reference match per edit.
+   * @returns True to permit insertion inside the reference.
+   */
   override canInsertTextBefore(): boolean {
     return true
   }

@@ -14,6 +14,8 @@ permissions:
 jobs:
   policy:
     name: Issue policy
+    # The checked-in policy owns the upstream organization's Project, not fork issues.
+    if: github.repository == 'deepseek-harness/deepseek-harness'
     runs-on: ubuntu-latest
     steps:
       - name: Check out trusted policy

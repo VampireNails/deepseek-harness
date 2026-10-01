@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { AclWriteGrant, tempWriteSid, workspaceWriteSid } from '../src/index.ts'
+import { isInvalidHandle, win32Sync } from '../src/ffi.ts'
 
 const isWin32 = process.platform === 'win32'
 const runnerEntry = fileURLToPath(new URL('../src/runner.ts', import.meta.url))
@@ -542,27 +543,32 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     const grant = AclWriteGrant.create(workspaceWriteSid(granted))
     grant.add(granted, true)
     try {
-      const probe = `
-$ErrorActionPreference='SilentlyContinue'
-Add-Type -Namespace P -Name F -MemberDefinition @'
-[DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode, EntryPoint="CreateFileW")]
-public static extern IntPtr CreateFileW(string n, uint a, uint s, IntPtr sa, uint d, uint f, IntPtr t);
-[DllImport("kernel32.dll", SetLastError=true)]
-public static extern bool CloseHandle(IntPtr h);
-'@ | Out-Null
-function TryOpen([string]$label, [string]$path) {
-  $h = [P.F]::CreateFileW($path, 0x10000000, 7, [IntPtr]::Zero, 3, 0x02000000, [IntPtr]::Zero)
-  if ($h -eq [IntPtr]::new(-1)) { "$($label): DENIED" } else { [void][P.F]::CloseHandle($h); "$($label): OK" }
-}
-TryOpen 'FILE' '${join(granted, 'file.txt')}'
-TryOpen 'NESTED-FILE' '${join(child, 'deep.txt')}'
-TryOpen 'DIRECTORY' '${child}'
-`
-      const result = spawnSync('pwsh', ['-NoLogo', '-NonInteractive', '-NoProfile', '-Command', probe], { encoding: 'utf8', timeout: 60_000 })
-      expect(result.status, `stderr: ${result.stderr}`).toBe(0)
-      expect(result.stdout).toContain('FILE: OK')
-      expect(result.stdout).toContain('NESTED-FILE: OK')
-      expect(result.stdout).toContain('DIRECTORY: DENIED')
+      // Probe the real Win32 handles directly. A suppressed PowerShell
+      // Add-Type/PInvoke error yields $null, which the old probe reported as
+      // a successful open because it was not INVALID_HANDLE_VALUE.
+      const api = win32Sync()
+      const openForFullControl = (path: string): { opened: boolean; error: number } => {
+        const handle = api.createFileW(
+          path, 0x10000000, 7, null, 3, 0x02000000, null,
+          // GENERIC_ALL, shared read/write/delete, OPEN_EXISTING,
+          // FILE_FLAG_BACKUP_SEMANTICS (required for directory handles).
+        )
+        if (isInvalidHandle(handle)) return { opened: false, error: api.getLastError() }
+        expect(api.closeHandle(handle), `CloseHandle(${path})`).toBe(1)
+        return { opened: true, error: 0 }
+      }
+      expect(openForFullControl(join(granted, 'file.txt'))).toEqual({ opened: true, error: 0 })
+      expect(openForFullControl(join(child, 'deep.txt'))).toEqual({ opened: true, error: 0 })
+      const directory = openForFullControl(child)
+      const diagnostics = directory.opened
+        ? ['whoami /priv', 'root ACL', 'child ACL'].map((label, index) => {
+          const result = index === 0
+            ? spawnSync('whoami', ['/priv'], { encoding: 'utf8', timeout: 10_000 })
+            : spawnSync('icacls', [index === 1 ? granted : child], { encoding: 'utf8', timeout: 10_000 })
+          return `${label}: status=${result.status}, error=${result.error?.message ?? 'none'}\n${result.stdout}\n${result.stderr}`
+        }).join('\n')
+        : undefined
+      expect(directory, diagnostics).toEqual({ opened: false, error: 5 }) // ERROR_ACCESS_DENIED
     } finally {
       grant.dispose()
       rmSync(granted, { recursive: true, force: true })

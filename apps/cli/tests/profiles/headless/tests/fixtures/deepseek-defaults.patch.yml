@@ -10,7 +10,8 @@
     baseURL: !!js process.env.DSH_SNAPSHOT_BASE_URL
     thinking: enabled
     reasoningEffort: low
-    streamIdleTimeoutMs: 150
+    # Use the provider's normal idle budget for this subprocess scenario.
+    # Exact comment reset deadlines belong to llm-deepseek's fake-timer tests.
 
 - id: agent-loop
   config:

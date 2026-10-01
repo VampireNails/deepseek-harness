@@ -132,6 +132,8 @@ The keyless [CI workflow](../.github/workflows/ci.yml) groups independent gates 
 
 The credential-free dsh dependency-layout and dsh/vendor pack rehearsals use the existing Linux self-hosted pool only when `DSH_CI_FAILOVER_LINUX=selfhosted` and the event is a trusted master push or same-repository, non-fork, non-Dependabot pull request. All other cases, including manual dispatch, use `ubuntu-24.04`; manual publication stays hosted. See the [release rehearsal runner decision](../.agents/notes/implemented/process/2026-09-06-release-rehearsal-selfhosted.md) for persistent-store isolation and fallback limits.
 
+Fork PR checks use standard GitHub-hosted Linux and native Windows runners unless a repository failover pool is configured. Issue Project automation belongs only to its configured upstream repository. PR preview builds retain a downloadable artifact; fork Cloudflare deployment requires DSH_PREVIEW_DEPLOY_ENABLED=true and the deployment and Access credentials. Packed-install verification uses ordinary npm installation, then separately checks CLI startup and an unusable Landlock probe after removing only system platform payloads; that absence check does not establish session persistence.
+
 ### Daily commands
 
 The root [contributor instructions](../AGENTS.md#commands) summarize common commands, while [`package.json`](../package.json) and [scripts/run-gates.ts](../scripts/run-gates.ts) own the current script and gate inventories. Select the smallest checks that cover the changed surface. Documentation changes use `pnpm run doc-sync`; package-public behavior changes also update the owning README or JSDoc, and built-artifact checks require `pnpm run build` first.

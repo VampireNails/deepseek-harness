@@ -1,13 +1,7 @@
-# 第三方审计报告归档
+# External audit originals
 
-本目录存放 dsh-muse 复刻的外部独立审计报告。审计结论的"含金量"以报告原文为准；
-REPLICATION.md 引用审计结论时，必须能在这里找到对应报告。
+English | [中文](README.zh.md)
 
-| 文件 | 审计轮次 | 时间 | 范围 | 结论 |
-|---|---|---|---|---|
-| `audit-round1-2026-09-28.md` | 第一轮 | 2026-09-28 日间 | REPLICATION.md 公开上游能力断言（23 项分类、#1/#2/#4/#5/#7/#11/#18 口径） | 有条件通过；9 条问题 |
-| `audit-round2-2026-09-28-hmc.md` | 第二轮 | 2026-09-28 晚间 | 第一轮 9 条落实情况 + HMC 客户端/服务端源码交叉核验（审批卡、cron 可见性、artifacts 通道、浏览器产物） | 上轮 8/9 通过；新发现 bootstrap 两处硬伤 + HMC 证据错位（均已修复，见 REPLICATION.md） |
+This directory preserves the original independent reports about Muse replication. audit-round1-2026-09-28.md examines public upstream capability claims; audit-round2-2026-09-28-hmc.md examines follow-up corrections and HMC source alignment.
 
-说明：
-- 两轮审计均**未复跑**本地插件代码、单元/集成测试、HMC 端到端、bootstrap、稳定性监控——这些由仓库内脚本与证据日志自证（`intel/hmc-e2e.sh`、`intel/bootstrap.sh` 等），待 V6 由持有仓库访问权的独立评估者做第二轮代码审计。
-- 报告原文未改一字入库；文件名加了轮次前缀以便引用。
+The reports retain historical source identifiers and wording. They are frozen evidence, not current installation instructions or a present-day completion claim. The audit authors did not rerun local plugin tests, HMC end-to-end tests, bootstrap or stability monitoring; the reports state their own evidence limits. Current deployment evidence belongs to the corresponding delivery receipt.

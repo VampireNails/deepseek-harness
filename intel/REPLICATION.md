@@ -47,7 +47,7 @@
 > M3 evolve cron 不卡 ask——evolve profile 只挂 base+headless+memory+joblog+evolution+feed，不挂 approvals/guard，不经 dsh-prod-start；隔离 mock 实测 memory_write 直接成功（EXIT=0），exit 后测试记忆已清。文档补 cron 防线边界说明。
 > M4 空测试会话真正移出活动区——此前归档的只是 projcache 投影（/root/.dsh/storages/session_projcache/sessions/*.json），真身在 /root/.dsh/sessions/--root-intel-hmc-prod-workspace--/ 下，dsh 会从真身重建投影。已把真身目录移到 /root/.dsh/archived-sessions/2026-09-29-empty-test/ 并删投影，重启后 session/list 确认消失。客户端另加 blank=true 过滤（同分支，已推）。
 > M5 RSS 口径修正：启动后 5–10 分钟有两个高点（≈142MB / ≈132MB），15 分钟后进入稳态 10~97MB；收尾 16MB。
-> M6 旧 HEAD（2765849e1）更新；"新写插件 14 行"与"磁盘 14 个插件目录"为恰好同数但集合不同，guard 不计入 23 项。
+> M6 旧 HEAD（早期审计版本）更新；"新写插件 14 行"与"磁盘 14 个插件目录"为恰好同数但集合不同，guard 不计入 23 项。
 > N6 口径更正：已由 Tomas 直接合入 HMC origin/main（2421c0b），无需再建 PR。
 > 修订 7 · 2026-09-29 15:10（24h 空转监控收尾完成 + stage-1 cron 激活落地，文档状态同步）。
 > 修订 6 · 2026-09-29 14:10（第五轮审计落实）：guard 插件 fail-closed 声明撤回（实测 apply() 抛错只产生 did not activate warning，拦不住启动；上游 requiredStartupEntryIds 硬编码）→ 真正的启动拦截前置到 dsh-prod-start（复用 guard checkInvariants，违反 exit 1，污染 env 实测拒绝启动）；guard 改为 warn-only 可观测定位；补启动级回归测试（failclosed.test.js 2/2）；修订行重写为纯列表；插件计数统一为 14；空测试会话归档。
@@ -145,7 +145,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | 6 | 子智能体 | dsh 原生 | `dsh-tool-subagent`（in-process 驱动） | 阶段 2 真测 |
 | 7 | 语义记忆 | 新写插件 | `dsh-intelligence-memory`（SQLite FTS5 + BM25；分词器待 V2 披露；向量方案因 1GB 内存否决） | 阶段 1 |
 | 8 | Artifacts v2 | 新写插件 | dsh-intelligence-artifacts：save/get/read/versions 四工具，版本历史 + kind=html 元数据；2026-09-29 上线生产；手机呈现走 HMC（commit 641c943 + 2d6a07f 已合入 origin/main，非独立 PR 分支；WebView 沙盒预览，JS/文件/网络/跳转四禁）。手机现装 APK 为 2026-09-29 16:32:27 构建（含 HtmlPreview，入口与空态已真机验证）；生产写路径已真机闭环：`artifact_save`/`feed_render`/`goal_create` 三次审批卡 ADB 代点全部放行落盘；真机 HtmlPreview 渲染深色卡片完美（见修订 13）；测试数据已清理 | §四 P2 ✅ |
-| 9 | 审批卡 + 四级权限 | 新写插件 | dsh 有审批瀑布，无四级；任务书未要求。**分两条路径**（第三轮审计 §3.2）：② 生产路径（`dsh-prod.service --profile web`，env 未设 `DSH_PERMISSION_MODE`）走上游 base profile 默认即 workspace-write + ask（`apps/cli/reference/README.zh.md:123`），新会话审批卡会弹——切生产那一刻即生效，**与 HMC PR 无关**；① HMC 启动器路径：PR（4b4da70）已合并，把写死的 danger-full-access 改为默认 workspace-write，新会话同样可弹卡。dsh 侧 BLOCKED 硬拦截维持 P1，APPROVAL 分级优先级下调（默认 ask 已能弹卡）。2026-09-29：dsh-intelligence-approvals 上线生产，READ/WRITE/EXEC/BLOCKED 四级 + tools/pre-execute 接入；**只读免审路径已验证**（经 HMC API/同实例执行：feed_render/hook_list/goal_list/artifact_versions 连续执行 0 审批；会话 JSON 无法证明发起端为手机，故不称"真机"）；**写路径未走完**：goal_create/artifact_save/browser_open 三次触发审批卡后 1.5h 无人点卡，会话卡在 pending（已归档清理，见 §3.4）。分类表补全（commit 924ae6e29）+ 2026-09-29 下午：browser_close 降为 READ（资源回收免审）、feed_render 带 output_path 时升级 WRITE（收口免审批任意写） | §四 P1 ✅ |
+| 9 | 审批卡 + 四级权限 | 新写插件 | dsh 有审批瀑布，无四级；任务书未要求。**分两条路径**（第三轮审计 §3.2）：② 生产路径（`dsh-prod.service --profile web`，env 未设 `DSH_PERMISSION_MODE`）走上游 base profile 默认即 workspace-write + ask（`apps/cli/reference/README.zh.md:123`），新会话审批卡会弹——切生产那一刻即生效，**与 HMC PR 无关**；① HMC 启动器路径：PR（4b4da70）已合并，把写死的 danger-full-access 改为默认 workspace-write，新会话同样可弹卡。dsh 侧 BLOCKED 硬拦截维持 P1，APPROVAL 分级优先级下调（默认 ask 已能弹卡）。2026-09-29：dsh-intelligence-approvals 上线生产，READ/WRITE/EXEC/BLOCKED 四级 + tools/pre-execute 接入；**只读免审路径已验证**（经 HMC API/同实例执行：feed_render/hook_list/goal_list/artifact_versions 连续执行 0 审批；会话 JSON 无法证明发起端为手机，故不称"真机"）；**写路径未走完**：goal_create/artifact_save/browser_open 三次触发审批卡后 1.5h 无人点卡，会话卡在 pending（已归档清理，见 §3.4）。分类表补全（commit 审批分类修复）+ 2026-09-29 下午：browser_close 降为 READ（资源回收免审）、feed_render 带 output_path 时升级 WRITE（收口免审批任意写） | §四 P1 ✅ |
 | 10 | Hooks | 新写插件 | dsh-intelligence-hooks：register/list/remove/fire，内置 file:inbox 轮询；2026-09-29 上线生产，hook_list 可调用。**⚠️ 未闭环**：hook_fire 只写内存队列 + fires.jsonl，无任何消费方（evolve/heartbeat/agent 均不读），不会触发 agent 回路、无用户可见效果。闭环前置：明确谁消费 fires.jsonl（待单独设计） | §四 P2 ✅ |
 | 11 | 用户自建 cron | 新写插件 | `dsh-intelligence-cron`（`cron_create`/`cron_list`/`cron_delete`，中文时间解析；dsh-schedule 触发层 + 系统 cron 后台层，手机可见性为第一判据）。`intel-cron/cron.json` 为空 `[]` 是预期状态（任务由 dsh-schedule 触发层管理）；stage-1 于 2026-09-29 14:40 激活，首次真实执行在 09-30 07:30。**dsh-schedule 触发层已有真机证据**：c1「a级测试/请喝一杯水」08:33 准时触发、提醒正文手机可见、任务自动结束（父会话「重启验证OK」时间线）；系统 cron 后台层待 09-30 首跑 | P0 真机验收（触发层✅/后台层待验证） |
 | 12 | Goals 长期目标 | 新写插件 | dsh-intelligence-goals：create/list/progress/close，JSON 真相源 + 自动 goals.md；2026-09-29 上线生产，goal_list 真机验证通过 | §四 P2 ✅ |
@@ -204,7 +204,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 ### 3.2 分阶段改造记录
 
 **阶段 0：环境验证**（2026-09-28）
-- dsh 0.1.7-rc.1（46a7f68b0）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29，已完成）：满 24h 存活，无 OOM、无异常死亡；RSS 稳态 10~97MB（启动后 15 分钟起；启动 5 分钟瞬时峰值约 142MB、10 分钟约 132MB）、收尾 16MB，回落稳定无泄漏；进程历史峰值 156MB（`VmHWM`）。启动峰值 vs 长期空转稳态是同一进程生命周期的不同点位，非矛盾（第三轮审计 §3.5 口径说明；第二份审计报告 §2.4 实测印证）
+- dsh 0.1.7-rc.1（0.1.7-rc.1）在 1GB 机器上内存无忧：web 启动后 RSS 峰值约 144MB（阶段 0 测量），单回合峰值 139MB；24h 空转监控（2026-09-28/29，已完成）：满 24h 存活，无 OOM、无异常死亡；RSS 稳态 10~97MB（启动后 15 分钟起；启动 5 分钟瞬时峰值约 142MB、10 分钟约 132MB）、收尾 16MB，回落稳定无泄漏；进程历史峰值 156MB（`VmHWM`）。启动峰值 vs 长期空转稳态是同一进程生命周期的不同点位，非矛盾（第三轮审计 §3.5 口径说明；第二份审计报告 §2.4 实测印证）
 - 踩坑：`pnpm link` 不装树外插件传递依赖——插件包须自带 `node_modules`
 - 踩坑：`@deepseek-ai/*` 必须 pin `0.1.7-rc.1`，npm 默认 `0.0.1-rc.1` 导致 `unknown tool`
 
@@ -246,7 +246,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - 迁移：Python 记忆 31/31、Feed、`user_profile.md`、goals/todos/ideas、两天日记归档；清理一条混入的假测试记忆（"用户喜欢喝茶"）
 - HMC API 真 DeepSeek 端到端验证通过（provider=deepseek-official）；Web `:8080` 返回 401（token 鉴权正常）
 - 不留遗留：`deepseek-harness.service` / `mobile-mirror.service` disable+inactive；旧手动 hmc-test 生产进程已停（`:3095` 释放）；孤儿 mock `:18003/:18091/:18092` 已清；`headless` 实验 profile 已删；`/opt/deepseek-harness`（467MB）先归档后删除
-- 备份与回滚：全量备份 `/root/intel/cutover-backup-20260928/`（137MB）；一键完整回滚 `/root/intel/dsh-fork/intel/rollback-full.sh --yes`（commit `96ac06d66`，已 push）
+- 备份与回滚：全量备份 `/root/intel/cutover-backup-20260928/`（137MB）；一键完整回滚 `/root/intel/dsh-fork/intel/rollback-full.sh --yes`（commit `完整回滚修复`，已 push）
 
 **HMC 默认权限 PR**（2026-09-28，Tomas 批准，已合并）
 - `scripts/host-env.mjs`：`hostEnv.DSH_PERMISSION_MODE ??= 'workspace-write'`——新会话默认 workspace-write + ask（触发审批卡），`danger-full-access` 仅显式 opt-in；旧会话持久化权限不受影响
@@ -389,7 +389,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 
 **背景**：2026-09-28 Tomas 要求"复刻你 muse 的规则"——把 Muse 本人的行为方式搬进 dsh-muse。这是 23 项 Python 能力清单之外的**新复刻轴**：复刻的不是 Python harness 的某个功能，而是智能体做事的方式。
 
-**实现**：`dsh-intelligence-soul`（`intel-plugins/`，commit `bcc22bedf`，已 push）
+**实现**：`dsh-intelligence-soul`（`intel-plugins/`，commit `Soul 插件实现`，已 push）
 - 每回合 step 1 自动注入 Soul，全会话生效
 - 工具：`soul_read`（读指定小节）、`soul_update(section, content)`（运行时更新规则）
 - 持久化 `~/.dsh/intel-soul/soul.md`；直接改文件下回合生效，无需重启

@@ -45,7 +45,7 @@
 ## 5. 版本管理
 
 - fork：`VampireNails/deepseek-harness`（上游 `deepseek-ai/deepseek-harness`），clone 到 `/root/intel/dsh-fork`
-- `master` 保持干净跟踪上游；智能层工作在 `intel` 分支，基于基线提交 `46a7f68b0`（= 0.1.7-rc.1）
+- `master` 保持干净跟踪上游；智能层工作在 `intel` 分支，基于基线提交 `0.1.7-rc.1`（= 0.1.7-rc.1）
 - `dsh-baseline.json` 钉住版本；插件在 `intel-plugins/`，独立 npm 包形态
 - push 待用户在 GitHub 仓库加 deploy key（write 权限），公钥已生成待添加
 

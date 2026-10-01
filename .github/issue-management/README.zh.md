@@ -10,6 +10,8 @@ description: "面向仓库维护者的 Issue 策略强制范围、Project 访问
 
 贡献者可以引用 Issue 作为背景，而无需让 PR（Pull Request）校验依赖 Project 可用性。解决型引用还会强制检查 Project Priority。必需的 `Issue policy` job 与独立的生命周期工作流使用受信任的默认分支代码。
 
+入库配置指向上游组织的 Project。两个工作流将整个 job 限制在该仓库，包括受信任的预检读取。fork 不会使用本地事件编号查询或修改上游 Issue。
+
 ## 目录
 
 - [PR 策略](#pull-request-policy)

@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { capture, pnpmCommand } from './process.ts'
+import { capture, npmCommand, pnpmCommand } from './process.ts'
 import { packedIdentity, tarballFiles } from './tarball.ts'
 
 const directories: string[] = []
@@ -29,6 +29,14 @@ async function packedTarball(name: string, version: string): Promise<string> {
 }
 
 describe('release process helpers', () => {
+  it('starts npm without interpreting a Windows batch shim', () => {
+    const [command, ...args] = npmCommand()
+    if (process.platform === 'win32') {
+      expect(command).toBe(process.execPath)
+      expect(args[0]).toMatch(/npm-cli\.js$/u)
+    }
+    expect(capture(command, [...args, '--version'])).toMatch(/^\d+\.\d+\.\d+/u)
+  })
   it('runs pnpm through a JavaScript entry, which spawnSync can start on Windows', () => {
     const [command, ...args] = pnpmCommand()
     expect(command === 'pnpm' || /node(?:\.exe)?$/iu.test(command)).toBe(true)
