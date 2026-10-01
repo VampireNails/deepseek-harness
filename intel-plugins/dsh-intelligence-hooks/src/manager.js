@@ -41,13 +41,53 @@ if (existsSync(temporary)) unlinkSync(temporary);
 }
 }
 
-const RUN_STATUSES = new Set(["starting", "started", "start_failed", "succeeded", "failed", "uncertain"]);
+const RUN_STATUSES = new Set(["starting", "started", "start_failed", "succeeded", "failed", "uncertain", "recovering", "resolved"]);
+
+function recordsText(records) {
+return records.map(record => JSON.stringify(record) + "\n").join("");
+}
+
+function recoveredPending(run, before, action) {
+const prefixPresent = recordsText(before.slice(0, run.records.length)) === recordsText(run.records);
+const remaining = prefixPresent ? before.slice(run.records.length) : before;
+return action === "retry" ? [...run.records, ...remaining] : remaining;
+}
+
+function validRun(run, hook) {
+const recordsValid = records => Array.isArray(records) && records.every(record => record?.hook === hook && typeof record.prompt === "string");
+if (!run || run.hook !== hook || !RUN_STATUSES.has(run.status) ||
+run.active !== ["starting", "started", "recovering"].includes(run.status) ||
+!recordsValid(run.records) || !run.records.length || typeof run.consumed !== "boolean" ||
+!Number.isSafeInteger(run.attemptedAt) || run.attemptedAt <= 0 ||
+!/^hook_[A-Za-z0-9_-]+_\d{14}_[a-f0-9]{8}$/.test(run.job) || !run.job.startsWith(`hook_${hook}_`)) return false;
+let status = run.status;
+if (run.recovery != null && !["recovering", "resolved"].includes(status)) return false;
+if (["recovering", "resolved"].includes(status)) {
+const recovery = run.recovery;
+if (!recovery || !["retry", "release"].includes(recovery.action) ||
+!["failed", "uncertain", "starting", "started"].includes(recovery.originalStatus) ||
+!recordsValid(recovery.before) || !recordsValid(recovery.after) ||
+recordsText(recovery.after) !== recordsText(recoveredPending(run, recovery.before, recovery.action))) return false;
+status = recovery.originalStatus;
+}
+const started = Number.isSafeInteger(run.pid) && run.pid > 0 &&
+typeof run.startedAt === "string" && Number.isFinite(Date.parse(run.startedAt));
+if (["starting", "start_failed"].includes(status)) return !run.consumed && run.pid == null && run.startedAt == null;
+if (!started) return false;
+if (status === "succeeded") return run.consumed && run.code === 0 && run.signal === null;
+if (status === "failed") return (Number.isInteger(run.code) && run.code !== 0) || (typeof run.signal === "string" && !!run.signal);
+return true;
+}
 
 export const DEFAULT_POLL_INTERVAL_MS = 60000;
 export const MAX_HOOKS = 50;
 export const DEFAULT_DISPATCH_COOLDOWN_MS = 15 * 60 * 1000;
 export const DEFAULT_TASK_BIN = "/root/intel/bin/intel-task.sh";
 export const DEFAULT_MAX_CONCURRENT_DISPATCHES = 3;
+export const DEFAULT_MAX_PENDING_BYTES = 1024 * 1024;
+export const DEFAULT_MAX_BATCH_BYTES = 48 * 1024;
+export const DEFAULT_MAX_BATCH_RECORDS = 32;
+export const DEFAULT_MAX_DELIVERED_TASKS = 100;
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
@@ -106,6 +146,16 @@ this._locks = new Map(); // name -> promise tail（加锁防并发）
 this._delivered = []; // 内存任务队列：{ at, hook, source, path, prompt}
 // 有界自动调度配置
 const d = dispatch || {};
+for (const [key, fallback] of Object.entries({
+maxPendingBytes: DEFAULT_MAX_PENDING_BYTES,
+maxBatchBytes: DEFAULT_MAX_BATCH_BYTES,
+maxBatchRecords: DEFAULT_MAX_BATCH_RECORDS,
+maxDeliveredTasks: DEFAULT_MAX_DELIVERED_TASKS,
+})) {
+const value = d[key] ?? fallback;
+if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${key} 必须是正整数`);
+this[key] = value;
+}
 this.autoDispatch = d.enabled !== false;
 this.dispatchCooldownMs =
 Number.isSafeInteger(d.cooldownMs) && d.cooldownMs > 0
@@ -170,11 +220,11 @@ return n;
 
 remove(name) {
 const n = checkName(name);
+if (Object.prototype.hasOwnProperty.call(defaultHooks(), n)) {
+throw new Error("是内置 hook，不能删除；请用 hook_register 覆盖为 auto=false 停用。");
+}
 const hooks = this.store.load();
 if (!Object.prototype.hasOwnProperty.call(hooks, n)) {
-if (Object.prototype.hasOwnProperty.call(defaultHooks(), n)) {
-throw new Error(`是内置 hook，不能删除；可以用 hook_register 覆盖它的配置。`);
-}
 throw new Error(`没找到 hook：${n}`);
 }
 delete hooks[n];
@@ -206,7 +256,8 @@ throw new Error(`未知 source：${source}`);
 const tail = this._locks.get(n)?? Promise.resolve();
 let release;
 const gate = new Promise((r) => (release = r));
-this._locks.set(n, tail.then(() => gate));
+const lock = tail.then(() => gate);
+this._locks.set(n, lock);
 await tail;
 try {
 const ctx = {
@@ -218,8 +269,9 @@ payload == null
 : (typeof payload === "string"? payload: JSON.stringify(payload)).slice(0, 4000),
 };
 const prompt = renderTemplate(h.prompt, ctx);
-const record = { at: new Date().toISOString(), hook: n, source, path: ctx.path, prompt};
+const record = { id: randomUUID(), at: new Date().toISOString(), hook: n, source, path: ctx.path, prompt};
 this._delivered.push(record);
+if (this._delivered.length > this.maxDeliveredTasks) this._delivered.shift();
 try {
 mkdirSync(this.dataDir, { recursive: true});
 appendFileSync(this.fireLogFile, JSON.stringify(record) + "\n", "utf-8");
@@ -228,12 +280,8 @@ this.warn(`fire log 写入失败: ${err?.message}`);
 }
 // 有界自动调度：fire 只负责入队，_maybeDispatch 决定是否立即执行。
 // 调度失败不影响 fire 本身（已记 fires.jsonl 审计）。
-if (this.autoDispatch && h.auto !== false) {
-try {
+if (this.autoDispatch && this.list()[n]?.auto !== false && this.list()[n]) {
 this._enqueuePending(n, record);
-} catch (err) {
-this.warn(`pending 入队失败: ${err?.message}`);
-}
 try {
 this._maybeDispatch(n);
 } catch (err) {
@@ -243,31 +291,34 @@ this.warn(`调度触发失败: ${err?.message}`);
 return prompt;
 } finally {
 release();
-if (this._locks.get(n) === gate) this._locks.delete(n);
+if (this._locks.get(n) === lock) this._locks.delete(n);
 }
 }
 
 /** pending 入队；spawn 事件确认启动后，只消费当前批次的前缀。 */
 _enqueuePending(hook, record) {
 mkdirSync(this._pendingDir, { recursive: true});
-appendFileSync(join(this._pendingDir, `${hook}.jsonl`), JSON.stringify(record) + "\n", "utf-8");
+const file = join(this._pendingDir, `${hook}.jsonl`);
+const text = JSON.stringify(record) + "\n";
+if ((existsSync(file) ? statSync(file).size : 0) + Buffer.byteLength(text) > this.maxPendingBytes) {
+throw new Error(`pending 已达字节上限（${this.maxPendingBytes}），触发已审计但未入队，请释放积压后重试`);
+}
+if (Buffer.byteLength(this._buildBatchPrompt(hook, [record])) > this.maxBatchBytes) {
+throw new Error(`任务已达批次字节上限（${this.maxBatchBytes}），未入队，请缩短任务后重试`);
+}
+appendFileSync(file, text, "utf-8");
 }
 
 /** 读某 hook 的全部 pending 记录。 */
 _readPending(hook) {
 const f = join(this._pendingDir, `${hook}.jsonl`);
 if (!existsSync(f)) return [];
-try {
+if (statSync(f).size > this.maxPendingBytes) throw new Error(`pending 超过字节上限：${hook}，请先核对积压`);
 return readFileSync(f, "utf-8").split("\n").filter((l) => l.trim()).map((l) => {
-try {
-return JSON.parse(l);
-} catch {
-return null;
-}
-}).filter(Boolean);
-} catch {
-return [];
-}
+const record = JSON.parse(l);
+if (!record || typeof record.prompt !== "string" || record.hook !== hook) throw new Error(`pending 记录无效：${hook}`);
+return record;
+});
 }
 
 /** 消费某 hook 的 pending 前缀，保留等待 spawn 期间的新事件。 */
@@ -283,9 +334,10 @@ const runs = {};
 for (const file of readdirSync(this._runsDir)) {
 if (!file.endsWith(".json")) continue;
 const hook = checkName(file.slice(0, -5));
-const run = JSON.parse(readFileSync(join(this._runsDir, file), "utf-8"));
-if (!run || run.hook !== hook || !RUN_STATUSES.has(run.status) ||
-typeof run.active !== "boolean" || !Array.isArray(run.records)) {
+const path = join(this._runsDir, file);
+if (statSync(path).size > this.maxPendingBytes * 3 + 65536) throw new Error(`dispatch journal 超限：${file}`);
+const run = JSON.parse(readFileSync(path, "utf-8"));
+if (!validRun(run, hook)) {
 throw new Error(`dispatch journal 无效：${file}，自动执行已阻止，请先核对`);
 }
 runs[hook] = run;
@@ -295,7 +347,60 @@ return runs;
 
 _writeRun(run) {
 mkdirSync(this._runsDir, { recursive: true, mode: 0o700 });
+if (!run.active) this._archiveRun(run);
 atomicWrite(join(this._runsDir, `${run.hook}.json`), JSON.stringify(run));
+}
+
+_archiveRun(run) {
+const historyDir = join(this.dataDir, "dispatch-history");
+mkdirSync(historyDir, { recursive: true, mode: 0o700 });
+const history = join(historyDir, `${run.job}${run.recovery ? ".recovery" : ""}.json`);
+if (!existsSync(history)) atomicWrite(history, JSON.stringify(run));
+}
+
+/**
+* PC 人工恢复：确认 Host 及该任务已停止，按匹配 job 释放或明确重试。
+* retry 需确认重复副作用风险；恢复只改持久记录，不执行任务。中断的恢复保留屏障。
+*/
+recoverDispatch(hook, { job, action, confirmStopped, acknowledgeDuplicateRisk } = {}) {
+const name = checkName(hook);
+if (!this._stopped || this._inFlight.has(name) || confirmStopped !== true) {
+throw new Error("请先停止 Host 和该任务并确认，再进行人工恢复");
+}
+const run = this._readRuns()[name];
+if (!run || run.job !== job) throw new Error("job 不匹配；请重新核对当前批次");
+if (!["retry", "release"].includes(action)) throw new Error("action 必须是 retry 或 release");
+if (action === "retry" && acknowledgeDuplicateRisk !== true) throw new Error("重试可能重复副作用，必须明确确认风险");
+if (!["failed", "uncertain", "starting", "started", "recovering"].includes(run.status)) {
+throw new Error("该批次不需要人工恢复");
+}
+if (run.pid) {
+let alive = false;
+try { process.kill(run.pid, 0); alive = true; }
+catch (err) {
+if (err.code !== "ESRCH") throw new Error("无法确认原任务已停止");
+}
+// PID 存活（含复用）时拒绝；绝不按旧 PID 杀进程。
+if (alive) throw new Error("原任务 PID 仍存在，请先核对停止状态");
+}
+const current = this._readPending(name);
+if (run.status !== "recovering") {
+const after = recoveredPending(run, current, action);
+if (Buffer.byteLength(recordsText(after)) > this.maxPendingBytes) throw new Error("恢复后 pending 超过上限，请先处理积压");
+// 保存原始结果，随后持久化恢复意图；任何中断都继续阻止自动执行。
+this._archiveRun(run);
+run.recovery = { action, originalStatus: run.status, at: new Date().toISOString(), before: current, after };
+run.status = "recovering";
+run.active = true;
+this._writeRun(run);
+} else if (run.recovery?.action !== action ||
+![recordsText(run.recovery.before), recordsText(run.recovery.after)].includes(recordsText(current))) {
+throw new Error("恢复期间 pending 已改变，请人工核对，未释放屏障");
+}
+mkdirSync(this._pendingDir, { recursive: true });
+atomicWrite(join(this._pendingDir, `${name}.jsonl`), recordsText(run.recovery.after));
+this._writeRun({ ...run, status: "resolved", active: false });
+return { hook: name, job, action, pending: run.recovery.after.length };
 }
 
 /** 返回最近批次、退出结果及当前积压；starting/started 在重载后仍占并发位，不能自动重放。 */
@@ -366,7 +471,13 @@ this._cooldownTimers.set(hook, t);
 }
 return;
 }
-this._doDispatch(hook, pending);
+const batch = [];
+for (const record of pending.slice(0, this.maxBatchRecords)) {
+if (Buffer.byteLength(this._buildBatchPrompt(hook, [...batch, record])) > this.maxBatchBytes) break;
+batch.push(record);
+}
+if (!batch.length) throw new Error(`pending 首条超过批次字节上限：${hook}，请先核对`);
+this._doDispatch(hook, batch);
 }
 
 /** 把一批 pending 记录渲染成单个任务 prompt。 */
@@ -392,7 +503,7 @@ let child = null;
 let started = false;
 let finished = false;
 let storageError = false;
-const run = { hook, job: jobId, records: pending, attemptedAt: Date.now(), status: "starting", active: true };
+const run = { hook, job: jobId, records: pending, attemptedAt: Date.now(), status: "starting", active: true, consumed: false };
 // 先持久化批次和并发位；进程退出或插件重载都不能把不明结果当成可重试任务。
 this._writeRun(run);
 const saveRun = (status, detail = {}) => {
@@ -443,7 +554,10 @@ this._inFlight.set(hook, child);
 child.on("spawn", () => {
 started = true;
 saveRun("started", { pid: child.pid, startedAt: new Date().toISOString() });
-try { this._clearPending(hook, pending.length); }
+try {
+this._clearPending(hook, pending.length);
+saveRun("started", { consumed: true });
+}
 catch (err) {
 storageError = true;
 this.warn(`pending 消费失败 ${hook}: ${err?.message}，批次不能自动重放`);
@@ -452,6 +566,7 @@ log("started");
 });
 child.on("error", err => {
 this.warn(`hook 子进程错误 ${hook}: ${err?.message}`);
+run.errorCode = err?.code || "CHILD_ERROR";
 // 启动后的 error 也可能是 kill/send 失败；只有 close 才释放并发位。
 if (!started) log("start_failed", { error: err?.message });
 });
@@ -507,10 +622,10 @@ if (!st.isFile()) continue;
 const key = `${n}:${fn}`;
 const mtime = st.mtimeMs;
 if (state[key] === mtime) continue;
-state[key] = mtime;
-changed = true;
 try {
 await this.fire(n, { source: "file", path: relative(this.dataDir, full) || fn});
+state[key] = mtime;
+changed = true;
 } catch (err) {
 this.warn(`hook触发失败: ${err?.message}`);
 }

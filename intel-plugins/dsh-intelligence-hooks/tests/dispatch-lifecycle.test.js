@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { HookManager } from "../src/manager.js";
 import { HookStore } from "../src/store.js";
+import { hookListTool } from "../src/tools.js";
 
 async function until(check) {
   const deadline = Date.now() + 10000;
@@ -41,6 +42,8 @@ const timer = setInterval(() => {
     spawnFn: (bin, args, opts) => {
       const child = missing ? spawn(join(dir, "missing-executable"), args, opts)
         : spawn(process.execPath, [script, ...args], { ...opts, detached: false });
+      // Tests own and await this process; keep its real handle referenced through close.
+      child.unref = () => {};
       children.push(child);
       exits.push(new Promise(r => child.once("close", r)));
       return child;
@@ -60,7 +63,8 @@ const timer = setInterval(() => {
     const file = join(dir, "started.jsonl");
     return existsSync(file) ? readFileSync(file, "utf8").trim().split("\n").map(JSON.parse) : [];
   }
-  return { manager, dir, children, warnings, register, starts, exits };
+  return { manager, dir, children, warnings, register, starts, exits,
+    executableAvailable() { missing = false; } };
 }
 
 function requireSeparator() { return process.platform === "win32" ? "\\" : "/"; }
@@ -181,3 +185,178 @@ test("pending consumption failure after spawn never replays the already started 
   assert.equal(f.manager.dispatchStatus("a").status, "uncertain");
   assert.equal(f.manager._readPending("a").length, 1);
 });
+
+test("pending byte limit reports rejection and keeps the previous event intact", async t => {
+  const f = fixture(t, { maxPendingBytes: 500 });
+  f.register("a");
+  f.manager.stop();
+  await f.manager.fire("a", { payload: "first" });
+  await assert.rejects(f.manager.fire("a", { payload: "x".repeat(600) }), /pending.*上限/);
+  assert.equal(f.manager._readPending("a").length, 1);
+  assert.match(f.manager._readPending("a")[0].prompt, /first/);
+});
+
+test("batch record limit leaves excess events queued and memory history remains bounded", async t => {
+  const f = fixture(t, { maxBatchRecords: 2, maxDeliveredTasks: 3 });
+  f.register("a");
+  f.manager.stop();
+  for (let i = 0; i < 5; i++) await f.manager.fire("a", { payload: String(i) });
+  f.manager.start();
+  await until(() => f.starts().length === 1);
+  assert.match(f.starts()[0][1], /共触发 2 次/);
+  assert.equal(f.manager._readPending("a").length, 3);
+  assert.equal(f.manager.deliveredTasks().length, 3);
+});
+
+test("malformed durable pending fails closed instead of discarding records", async t => {
+  const f = fixture(t);
+  f.register("a");
+  mkdirSync(f.manager._pendingDir, { recursive: true });
+  const file = join(f.manager._pendingDir, "a.jsonl");
+  const original = '{"hook":"a","prompt":"valid"}\n{broken\n';
+  writeFileSync(file, original);
+  f.manager.start();
+  await f.manager.tick();
+  assert.equal(f.children.length, 0);
+  assert.equal(readFileSync(file, "utf8"), original);
+  assert.ok(f.warnings.some(message => /pending/.test(message)));
+});
+
+test("hook_list identifies the hook, backlog, failed job and exit result without exposing its prompt", async t => {
+  const f = fixture(t);
+  f.register("a");
+  await f.manager.fire("a", { payload: "private prompt marker" });
+  await until(() => f.starts().length === 1);
+  writeFileSync(join(f.dir, "release"), "7");
+  await f.exits[0];
+  const result = await hookListTool(f.manager).execute({});
+  assert.equal(result.ok, true);
+  assert.match(result.text, /a.*failed.*退出码=7/);
+  assert.match(result.text, /hook_a_/);
+  assert.ok(!result.text.includes("private prompt marker"));
+});
+
+test("real ENOENT recovery retries only after cooldown and executes the retained batch once", async t => {
+  const f = fixture(t, { cooldownMs: 150 }, true);
+  f.register("a");
+  await f.manager.fire("a", { payload: "retained" });
+  await f.exits[0];
+  f.executableAvailable();
+  f.manager.start();
+  assert.equal(f.children.length, 1, "cooldown must still apply to ENOENT");
+  await until(() => f.starts().length === 1);
+  assert.match(f.starts()[0][1], /retained/);
+  assert.equal(f.children.length, 2);
+  writeFileSync(join(f.dir, "release"), "0");
+  await f.exits[1];
+  assert.equal(f.manager.dispatchStatus("a").status, "succeeded");
+  assert.equal(f.manager._readPending("a").length, 0);
+});
+
+test("manual recovery requires the stopped host, matching job and explicit duplicate risk acknowledgement", async t => {
+  const f = fixture(t, { cooldownMs: 1 });
+  f.register("a");
+  await f.manager.fire("a", { payload: "review before retry" });
+  await until(() => f.starts().length === 1);
+  const job = f.manager.dispatchStatus("a").job;
+  assert.throws(() => f.manager.recoverDispatch("a", { job, action: "retry", confirmStopped: true, acknowledgeDuplicateRisk: true }), /停止/);
+  writeFileSync(join(f.dir, "release"), "7");
+  await f.exits[0];
+  f.manager.stop();
+  assert.throws(() => f.manager.recoverDispatch("a", { job: "wrong", action: "retry", confirmStopped: true, acknowledgeDuplicateRisk: true }), /job/);
+  assert.throws(() => f.manager.recoverDispatch("a", { job, action: "retry", confirmStopped: true }), /副作用/);
+  f.manager.recoverDispatch("a", { job, action: "retry", confirmStopped: true, acknowledgeDuplicateRisk: true });
+  assert.equal(f.children.length, 1, "recovery itself must not execute tasks");
+  assert.equal(f.manager._readPending("a").length, 1);
+  writeFileSync(join(f.dir, "release"), "0");
+  f.manager.start();
+  await until(() => f.starts().length === 2);
+  await f.exits[1];
+  assert.equal(f.manager.dispatchStatus("a").status, "succeeded");
+  const history = JSON.parse(readFileSync(join(f.manager.dataDir, "dispatch-history", job + ".json"), "utf8"));
+  assert.equal(history.status, "failed");
+  assert.equal(history.code, 7);
+});
+
+test("an overridden built-in inbox cannot be removed into an enabled default", async t => {
+  const f = fixture(t);
+  f.register("inbox");
+  f.manager.stop();
+  await f.manager.fire("inbox", { payload: "old override" });
+  assert.throws(() => f.manager.remove("inbox"), /内置 hook/);
+  f.register("inbox", false);
+  f.manager.start();
+  assert.equal(f.children.length, 0);
+  assert.equal(f.manager._readPending("inbox").length, 1);
+});
+
+test("inconsistent active journal cannot release the concurrency barrier", async t => {
+  const f = fixture(t);
+  f.register("a");
+  await f.manager.fire("a");
+  await until(() => f.starts().length === 1);
+  f.manager.stop();
+  const file = join(f.manager.dataDir, "dispatch-runs", "a.json");
+  const run = JSON.parse(readFileSync(file, "utf8"));
+  writeFileSync(file, JSON.stringify({ ...run, active: false }));
+  f.manager._enqueuePending("a", run.records[0]);
+  f.manager.start();
+  assert.equal(f.children.length, 1);
+  assert.throws(() => f.manager.dispatchStatus("a"), /journal 无效/);
+});
+
+test("interrupted manual recovery keeps a barrier and resumes without doubling the batch", async t => {
+  const f = fixture(t);
+  f.register("a");
+  await f.manager.fire("a");
+  await until(() => f.starts().length === 1);
+  writeFileSync(join(f.dir, "release"), "7");
+  await f.exits[0];
+  f.manager.stop();
+  const job = f.manager.dispatchStatus("a").job;
+  const write = f.manager._writeRun.bind(f.manager);
+  f.manager._writeRun = run => {
+    if (run.status === "resolved") throw new Error("injected final write failure");
+    write(run);
+  };
+  const options = { job, action: "retry", confirmStopped: true, acknowledgeDuplicateRisk: true };
+  assert.throws(() => f.manager.recoverDispatch("a", options), /injected/);
+  assert.equal(f.manager.dispatchStatus("a").status, "recovering");
+  f.manager._writeRun = write;
+  f.manager.recoverDispatch("a", options);
+  assert.equal(f.manager._readPending("a").length, 1);
+  assert.equal(f.children.length, 1);
+});
+
+for (const corruption of ["recovery-after", "started-as-start-failed", "recovery-downgrade"]) {
+  test(`durable lifecycle validation rejects ${corruption} without changing pending`, async t => {
+    const f = fixture(t, { cooldownMs: 1 });
+    f.register("a");
+    await f.manager.fire("a", { payload: "original" });
+    await until(() => f.starts().length === 1);
+    await f.manager.fire("a", { payload: "other queued event" });
+    writeFileSync(join(f.dir, "release"), "7");
+    await f.exits[0];
+    f.manager.stop();
+    const file = join(f.manager.dataDir, "dispatch-runs", "a.json");
+    const run = JSON.parse(readFileSync(file, "utf8"));
+    const pendingFile = join(f.manager._pendingDir, "a.jsonl");
+    const before = readFileSync(pendingFile, "utf8");
+    if (corruption === "recovery-after") {
+      Object.assign(run, { status: "recovering", active: true,
+        recovery: { action: "retry", originalStatus: "failed", before: f.manager._readPending("a"), after: [] } });
+    } else if (corruption === "recovery-downgrade") {
+      Object.assign(run, { status: "start_failed", active: false, consumed: false,
+        pid: undefined, startedAt: undefined,
+        recovery: { action: "release", originalStatus: "starting", before: run.records, after: [] } });
+    } else Object.assign(run, { status: "start_failed", active: false });
+    writeFileSync(file, JSON.stringify(run));
+    assert.throws(() => f.manager.dispatchStatus("a"), /journal 无效/);
+    if (corruption === "recovery-after") assert.throws(() => f.manager.recoverDispatch("a", {
+      job: run.job, action: "retry", confirmStopped: true, acknowledgeDuplicateRisk: true,
+    }), /journal 无效/);
+    f.manager.start();
+    assert.equal(f.children.length, 1);
+    assert.equal(readFileSync(pendingFile, "utf8"), before);
+  });
+}

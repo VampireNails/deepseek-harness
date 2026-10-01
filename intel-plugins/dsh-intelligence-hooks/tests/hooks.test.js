@@ -31,6 +31,7 @@ dispatch: { enabled: true, cooldownMs: 50, taskBin: "/bin/echo-stub", maxConcurr
 spawnFn: (bin, args, opts) => {
 calls.push({ bin, args, opts });
 const child = new EventEmitter();
+child.pid = process.pid;
 child.unref = () => {};
 queueMicrotask(() => child.emit("spawn"));
 return child;
