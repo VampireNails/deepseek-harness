@@ -49,6 +49,10 @@ export const coverageExemptHeavySuites: readonly CoverageExemptSuite[] = [
   { filter: 'scripts/oxlint-contract.spec.ts', exclude: 'scripts/oxlint-contract.spec.ts' },
   { filter: 'scripts/change-scope.spec.ts', exclude: 'scripts/change-scope.spec.ts' },
   { filter: 'scripts/translation-pairing-merge.spec.ts', exclude: 'scripts/translation-pairing-merge.spec.ts' },
+  // Full-manifest Markdown projection executes scripts/ and website/ sources,
+  // not coverage-measured package code. Keep its complete link walk in the
+  // uninstrumented gate with the fixture's existing 60s setup budget.
+  { filter: 'scripts/project-doc-site.spec.ts', exclude: 'scripts/project-doc-site.spec.ts' },
   // This compiler inventory reads package source as text without executing
   // it; the suite adds no coverage-measured package execution. Keep every
   // assertion in the uninstrumented lane:
