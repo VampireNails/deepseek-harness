@@ -13,9 +13,10 @@ interface Step {
   uses?: string
   run?: string
   with?: Record<string, unknown>
+  env?: Record<string, string>
 }
 interface Workflow {
-  jobs: Record<string, { if?: string; env?: Record<string, string>; 'runs-on': string; steps: Step[] }>
+  jobs: Record<string, { if?: string; env?: Record<string, string>; with?: Record<string, string>; needs?: string[]; 'runs-on': string; steps: Step[] }>
 }
 
 function workflow(file: string): Workflow {
@@ -41,6 +42,48 @@ const upstream = 'deepseek-harness/deepseek-harness'
 const fork = 'VampireNails/deepseek-harness'
 
 describe('fork workflows', () => {
+  it('limits Muse PR execution to Linux without changing other repositories', () => {
+    const jobs = workflow('ci.yml').jobs
+    for (const id of ['windows-build', 'windows-coverage', 'windows-native-tests']) {
+      expect(evaluate(jobs[id]!.if, fork), id).toBeFalsy()
+      expect(evaluate(jobs[id]!.if, upstream), id).toBeTruthy()
+      expect(evaluate(jobs[id]!.if, 'another/fork'), id).toBeTruthy()
+    }
+    const targets = jobs['python-runtime']!.with!.targets
+    expect(evaluate(targets, fork)).toBe('node24-linux-x64')
+    expect(evaluate(targets, upstream)).toBe('node24-linux-x64,node24-win-x64')
+    for (const id of ['node-24', 'node-24-coverage', 'node-24-bench', 'node-24-consumers', 'node-compat', 'python-sdk', 'python-runtime']) {
+      expect(evaluate(jobs[id]!.if, fork), id).toBeTruthy()
+    }
+  })
+
+  it('permits only deliberately skipped Windows needs in the Muse verdict', () => {
+    const job = workflow('ci.yml').jobs['all-checks-passed']!
+    const step = job.steps.find(item => item.name === 'Check Muse Linux job results')!
+    expect(step).toBeDefined()
+    expect(evaluate(step.if, fork)).toBeTruthy()
+    expect(evaluate(step.if, upstream)).toBeFalsy()
+    const windows = ['windows-build', 'windows-native-tests']
+    const results = Object.fromEntries(job.needs!.map(id => [id, { result: windows.includes(id) ? 'skipped' : 'success' }]))
+    const execute = (needs: typeof results) => runInNewContext(String(step.with!.script), {
+      process: { env: { CI_JOB_RESULTS: JSON.stringify(needs) } },
+      core: { setFailed(message: string) { throw new Error(message) }, info() {} },
+    }, { timeout: 1000 })
+    expect(() => execute(results)).not.toThrow()
+    for (const id of job.needs!) {
+      for (const result of ['failure', 'cancelled', ...(windows.includes(id) ? [] : ['skipped'])]) {
+        expect(() => execute({ ...results, [id]: { result } }), `${id}: ${result}`).toThrow()
+      }
+    }
+    expect(() => execute({ ...results, 'node-24': { result: 'unknown' } })).toThrow()
+    for (const id of job.needs!) {
+      const incomplete = Object.fromEntries(Object.entries(results).filter(([name]) => name !== id))
+      expect(() => execute(incomplete), `${id}: missing`).toThrow()
+    }
+    expect(() => execute({})).toThrow()
+    expect(() => execute({ ...results, 'windows-build': { result: 'success' } })).toThrow()
+  })
+
   for (const [id, publicRunner, enterpriseRunner] of [
     ['node-24', 'ubuntu-24.04', 'dsh-ubuntu-24-04-16core'],
     ['node-24-coverage', 'ubuntu-24.04', 'dsh-ubuntu-24-04-16core'],
