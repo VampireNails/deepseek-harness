@@ -71,19 +71,19 @@ describe('fork workflows', () => {
         core: { setFailed(message: string) { throw new Error(message) }, info() {} },
       }, { timeout: 1000 })
     }
-    expect(() => execute(results)).not.toThrow()
+    expect(() => { execute(results) }).not.toThrow()
     for (const id of job.needs!) {
       for (const result of ['failure', 'cancelled', ...(windows.includes(id) ? [] : ['skipped'])]) {
-        expect(() => execute({ ...results, [id]: { result } }), `${id}: ${result}`).toThrow()
+        expect(() => { execute({ ...results, [id]: { result } }) }, `${id}: ${result}`).toThrow()
       }
     }
-    expect(() => execute({ ...results, 'node-24': { result: 'unknown' } })).toThrow()
+    expect(() => { execute({ ...results, 'node-24': { result: 'unknown' } }) }).toThrow()
     for (const id of job.needs!) {
       const incomplete = Object.fromEntries(Object.entries(results).filter(([name]) => name !== id))
-      expect(() => execute(incomplete), `${id}: missing`).toThrow()
+      expect(() => { execute(incomplete) }, `${id}: missing`).toThrow()
     }
-    expect(() => execute({})).toThrow()
-    expect(() => execute({ ...results, 'windows-build': { result: 'success' } })).toThrow()
+    expect(() => { execute({}) }).toThrow()
+    expect(() => { execute({ ...results, 'windows-build': { result: 'success' } }) }).toThrow()
   })
 
   for (const [id, publicRunner, enterpriseRunner] of [
