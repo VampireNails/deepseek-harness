@@ -1,10 +1,12 @@
 /** An explicit file-card request exercises SVG delivery without naming the present tool. */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { Server, type IncomingMessage } from 'node:http'
+import type { Duplex } from 'node:stream'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type {} from '@deepseek-ai/dsh-tool-present/types'
 import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import {
@@ -28,6 +30,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
   let cwd: string
   let replayRoot: string | undefined
   const connectionDiagnostics: string[] = []
+  const restoreSocketObservers: Array<() => void> = []
 
   beforeAll(async () => {
     let replayOverride: string | undefined
@@ -44,6 +47,20 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
       extraOverlayPath: fileURLToPath(new URL('./present-svg.overlay.yml', import.meta.url)),
       ...(replayOverride === undefined ? {} : { replayFixture: FIXTURE, replayOverride }),
     })
+    // Observe the built Host's socket owner: browser close events alone cannot
+    // distinguish a heartbeat termination from a protocol or transport error.
+    const server: unknown = Reflect.get(scaffold.ctx.webServer, 'server')
+    if (!(server instanceof Server)) throw new Error('SVG scaffold has no HTTP server')
+    const observeUpgrade = (_request: IncomingMessage, socket: Duplex): void => {
+      const destroy = socket.destroy.bind(socket)
+      const observer = vi.spyOn(socket, 'destroy').mockImplementation((error) => {
+        connectionDiagnostics.push(`Host socket destroyed: ${error?.message ?? 'no transport error'}\n${new Error('socket destroy caller').stack}`)
+        return destroy(error)
+      })
+      restoreSocketObservers.push(() => { observer.mockRestore() })
+    }
+    server.prependListener('upgrade', observeUpgrade)
+    restoreSocketObservers.push(() => { server.off('upgrade', observeUpgrade) })
     browser = await chromium.launch()
     page = await browser.newPage({
       viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE, timezoneId: 'Asia/Shanghai',
@@ -67,6 +84,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
   })
 
   afterAll(async () => {
+    for (const restore of restoreSocketObservers.splice(0)) restore()
     try {
       await browser?.close()
     } finally {
