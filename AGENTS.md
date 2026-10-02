@@ -1,5 +1,7 @@
 # AGENTS.md
 
+Current Muse fork delivery targets Linux only. HMC targets Android; the user's Windows machine only compiles APKs. Apply repository rules to the current platform and feature scope; upstream cross-platform documentation does not add delivery requirements.
+
 DeepSeek Harness is an all-plugin Cordis agent harness. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.
 
 ## Pre-stable APIs and released Session data
