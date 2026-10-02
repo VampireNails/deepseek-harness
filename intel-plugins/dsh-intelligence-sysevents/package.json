@@ -1,0 +1,17 @@
+{
+  "name": "dsh-intelligence-sysevents",
+  "version": "0.1.0",
+  "description": "系统事件总线：sysevents_emit 写 events.jsonl，供 HMC muse/system-events/list 推送到手机。只做发射与落盘，不做推送通道。",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.1",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
