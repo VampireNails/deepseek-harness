@@ -1,0 +1,13 @@
+{
+  "name": "dsh-intelligence-execguard",
+  "version": "0.1.0",
+  "description": "无头执行守卫：复用 dsh-intelligence-approvals 的 classify.js（纯函数，不复制正则），只在 tools/pre-execute 硬拦截 BLOCKED 高危命令；其余一律放行。evolve profile 专用。",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
