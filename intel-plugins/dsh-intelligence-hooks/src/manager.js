@@ -99,7 +99,7 @@ trigger: { type: "file", dir: "inbox"},
 prompt:
 "inbox got a new file: {path}. Read it, " +
 "figure out what to do and act; " +
-"log the result to the daily note.",
+"record what you did via memory_write (kind: fact).",
 desc: "auto-process new files in inbox",
 auto: true,
 },
@@ -487,7 +487,7 @@ const meta = [r.at || "", r.source ? `source=${r.source}` : "", r.path ? `path=$
 return `--- 任务 ${i + 1}/${records.length}${meta ? `（${meta}）` : ""} ---\n${r.prompt || ""}`;
 });
 return `[hook 自动任务] hook "${hook}" 共触发 ${records.length} 次，以下是待处理任务。` +
-`请逐个执行，保持简洁；结果写入今日笔记（daily note）。不要向用户发送消息，除非任务明确要求。\n\n` +
+`请逐个执行，保持简洁；用 memory_write 记录处理结果（kind: fact）。不要向用户发送消息，除非任务明确要求。\n\n` +
 parts.join("\n\n");
 }
 
