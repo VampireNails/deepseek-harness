@@ -4,10 +4,15 @@
 export const TASKS = {
   memory_upkeep: {
     schedule: "hourly",
-    prompt: `你是记忆整理助手。检查今天是否有新的对话记录或笔记值得整理：
-1. 用 memory_search 搜索今天可能新增的重要内容；
+    prompt: `你是记忆整理助手。每小时检查一次，只做以下三步：
+1. 用 memory_search 搜索今天可能新增的重要内容（最多 3 次，每次换关键词）；
 2. 把值得长期记住的事实、偏好、承诺用 memory_write 保存（text 简明中文，kind 选最贴切的）；
-3. 如果没有新信号，直接回复"无新信号，跳过"，不要写任何东西。`,
+3. 如果 3 次搜索都没有新信号，直接回复"无新信号，跳过"并结束。
+
+硬约束：
+- 只用 memory_search 和 memory_write，不要用 bash，不要直接读文件、数据库、session 日志；
+- 不要翻历史、不要查 joblog、不要做取证式调查；
+- 整个任务控制在 6 次工具调用以内。`,
   },
   studying: {
     schedule: "daily 07:30",
