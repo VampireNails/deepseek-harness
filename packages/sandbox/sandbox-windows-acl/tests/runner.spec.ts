@@ -528,6 +528,43 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     }
   }, 30_000)
 
+  it('both modes preserve files below another granted root with explicit descendant FullControl', () => {
+    const other = mkdtempSync(join(scratchRoot, 'explicit-descendant-'))
+    const child = join(other, 'child')
+    const grant = AclWriteGrant.create(workspaceWriteSid(other))
+    try {
+      mkdirSync(child)
+      const identity = spawnSync('whoami', [], { encoding: 'utf8', timeout: 10_000 })
+      expect(identity.error).toBeUndefined()
+      expect(identity.status, identity.stderr).toBe(0)
+      const permission = spawnSync('icacls', [child, '/grant', `${identity.stdout.trim()}:(OI)(CI)(F)`], { encoding: 'utf8', timeout: 10_000 })
+      expect(permission.error).toBeUndefined()
+      expect(permission.status, permission.stdout + permission.stderr).toBe(0)
+      grant.add(other, true)
+      for (const mode of ['read-only', 'workspace-write'] as const) {
+        const direct = join(other, `${mode}-direct.txt`)
+        const nested = join(child, `${mode}-nested.txt`)
+        const own = join(writableDir, `${mode}-own.txt`)
+        for (const path of [direct, nested, own]) writeFileSync(path, 'keep me')
+        const result = runRunner([
+          '--workspace', writableDir, '--temp', isolatedTemp, '--mode', mode,
+          '--', process.execPath, '-e',
+          "const fs=require('node:fs');for(const path of process.argv.slice(1)){try{fs.unlinkSync(path);console.log('DELETED',path)}catch(e){console.log('DENIED',e.code,path)}}",
+          direct, nested, own,
+        ])
+        expect(result.error).toBeUndefined()
+        expect(result.signal).toBeNull()
+        expect(result.status, result.stderr).toBe(0)
+        expect(existsSync(direct), `${mode}: direct file`).toBe(true)
+        expect(existsSync(own), `${mode}: own workspace control\n${result.stdout}`).toBe(mode === 'read-only')
+        expect(existsSync(nested), `${mode}: explicit descendant file\n${result.stdout}`).toBe(true)
+      }
+    } finally {
+      grant.dispose()
+      rmSync(other, { recursive: true, force: true })
+    }
+  })
+
   it('a FullControl open inside a granted root still works for files (the deny inherits to containers only)', () => {
     // The ambient-delete deny is 0x40, a member of FILE_ALL_ACCESS: inheriting
     // it onto files would deny every GENERIC_ALL/FullControl open by the user,
