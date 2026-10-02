@@ -483,3 +483,9 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - 待 Tomas 定的两个产品决策：常驻 vs 2 小时上限；推送阈值与去重策略
 
 **路线排除**：FCM（国内走不通 + 新外部依赖）；真流式推送（需改 dsh core 的 wireStream，禁区）。轮询是务实选择。
+
+### 8.3 Token 用量可见性（2026-10-02）
+
+**dsh-intelligence-tokenlog**（intel 分支，直接 push；evolve profile）：`token_usage_summary(days)` 扫描 `~/.dsh/sessions/--root--/*/session.v4.jsonl.zstd`（`zstd -dc` 解压），聚合 `assistant/message` 的 `data.usage`（DeepSeek API 返回原样落盘），按任务（首条 user/message 关键词识别：记忆整理/Heartbeat/晨间简报/学习/想法整理/深夜复盘/技能审查/目标进展审查/目标自主执行）+ 按天汇总，附 deepseek-flash 成本估算（输入 ¥1/百万、输出 ¥4/百万，空闲时段价；明确标注估算值）。损坏 session 记数跳过不抛错。只读日志，不调 API，不烧 token。单测 8/8。
+
+实测（近 7 天）：102 会话 / 2016K tokens（输入 1550K / 输出 466K），估算 ¥3.41；记忆整理是最大头（43 会话，102 万输入）。
