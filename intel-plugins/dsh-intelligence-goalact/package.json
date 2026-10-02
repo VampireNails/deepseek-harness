@@ -1,0 +1,17 @@
+{
+  "name": "dsh-intelligence-goalact",
+  "version": "0.1.0",
+  "description": "自主目标执行引擎护栏：会话+预算+熔断+提议升级通道（evolve profile）。规划与执行由 LLM 按任务 prompt 完成，本插件只做护栏。",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.1",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

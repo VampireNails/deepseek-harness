@@ -56,6 +56,14 @@ export const TASKS = {
 - 否则逐项执行清单（优先只读方式），每项给一句话结论（正常/异常），异常项标出。
 不要执行审批类操作。`,
   },
+  goal_act: {
+    schedule: "weekly mon 09:30",
+    prompt: `你是目标自主执行助手（goal act）。每周一次，在 goal_review（08:45）之后运行：
+1. 用 goal_list 查看 active 目标，挑一个最值得推进的，用 goal_act_begin(goalId) 开会话（一次只做一个目标；熔断则停并如实报告）；
+2. 读该目标 progress 历史 + memory_search 相关上下文，定 1-3 个具体步骤，用 todo_add 建计划；
+3. 执行（预算约 20 个工具调用，整任务 10 分钟硬上限）：允许读代码文档、跑只读检查与测试、workspace 内写草稿；敏感或不可逆（删文件、改服务或 cron 配置、git push、对外发送）一律用 goal_act_propose 记录为提议，不执行；需人拍板的事项不代批；
+4. 用 goal_act_finish 收尾（progressMade=true 必须给 evidence），无进展如实写无实质推进，不编造。`,
+  },
 };
 
 // 把清单切成每块 ≤3 项（复刻 Python 版 _chunk）
