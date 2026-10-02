@@ -1,0 +1,17 @@
+{
+  "name": "dsh-intelligence-tokenlog",
+  "version": "0.1.0",
+  "description": "Token 用量可见性：扫描 session 日志聚合 usage（inputTokens/outputTokens），按任务+按天汇总，附 deepseek-flash 成本估算。只读日志，不调 API。",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.1",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
