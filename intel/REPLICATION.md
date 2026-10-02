@@ -452,3 +452,34 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 - 干跑验证：goal_list + goal_progress 在 evolve 下可用；agent 正确补记 g1 本周进展，未凭空创建未落库的 g2
 
 **未同步**：proactive 推送通知——heartbeat 异常只躺日志，无推送通道（HMC App 推送需走 PR）；Ideas 交互卡片需 HMC UI。记为已知缺口，不硬造半个功能。
+
+---
+
+## 八、自主目标执行 + Proactive 推送（2026-10-02）
+
+**背景**：Tomas 追问第七节里"没同步"的两项是什么、是否批过。确认两项都没做过也没报批过之后，他拍板：1）Proactive 推送可以提 PR；2）自主执行目标按 Muse 本体标准复刻执行。
+
+### 8.1 自主目标执行引擎 dsh-intelligence-goalact
+
+**前置安全**（先补再开工）：`dsh-intelligence-execguard`——evolve 无头任务此前对高危 shell 命令无拦截（approvals 只挂 web；无头下挂全量会把 cron 的 ask 全转拒绝）。做法是**复用不复制**：直接 import approvals 的 `src/classify.js`（纯函数），在 `tools/pre-execute` 只硬拦截 BLOCKED，其余一律放行。现有 cron 行为零变化。单测 5/5。Tomas 中途点出"定策略"（policy.js buildPolicy）早已存在，纠正了"port"的重复实现思路。
+
+**护栏插件**（evolve profile，只做护栏不做智能；规划执行由 LLM 按 prompt 完成）：
+- `goal_act_begin(goalId)`：开会话，查熔断器（连续 3 次无实质进展停跑，防烧 token），返回预算（~20 工具调用 / 10 分钟硬上限）与行为红线
+- `goal_act_propose(goalId, action, reason)`：升级通道——敏感/不可逆（删文件、改服务或 cron 配置、git push、对外发送）只记 `proposals.jsonl`，不执行、不代批
+- `goal_act_finish(goalId, summary, evidence, progressMade)`：关会话，更新熔断计数；`progressMade=true` 时 evidence 必填（防编造进展）；经 `intelGoals` 原子写 `goal_progress`
+- 单测 6/6；`tasks.js` 加 `goal_act` 模板；crontab 新增周一 09:30 `evolve_goal_act`（在 08:45 goal_review 之后）。现共 9 个 cron 任务。
+
+**安全线**（与 Soul 一致）：高危硬拦截；无头 ask 转拒绝（无"等审批"状态）；不可逆只提议；熔断停跑；不编造进展。
+
+### 8.2 Proactive 推送
+
+**dsh-muse 侧**（intel 分支，直接 push）：`dsh-intelligence-sysevents`——`sysevents_emit(type/severity/title/detail)` 写 `~/.dsh/intel-system-events/events.jsonl`；`sysevents_list` 调试查询；游标语义 `>=`（同毫秒不丢，App 按 id 去重）。heartbeat cron prompt 已加异常发射（`heartbeat.anomaly` / high）。单测 6/6。
+
+**HMC 侧**（走 PR，分支 `intel-proactive-push` 已 push，待 Tomas 建 PR）：
+- `service/server.mjs`：新增 `muse/system-events/list` 端点（读 events.jsonl，支持 since/limit）
+- App `MonitorEvents.systemEvent()`：只推 high severity（保守默认防打扰），按事件 id 去重
+- App `BackgroundMonitorService`：加第三路 worker，每 60s 轮询；通知标题用事件自带 title；与会话监控共用 2 小时上限
+- 未在服务器编译验证（无 Android SDK），PR 说明已标注，合并前请本地构建确认
+- 待 Tomas 定的两个产品决策：常驻 vs 2 小时上限；推送阈值与去重策略
+
+**路线排除**：FCM（国内走不通 + 新外部依赖）；真流式推送（需改 dsh core 的 wireStream，禁区）。轮询是务实选择。
