@@ -39,6 +39,16 @@ export const TASKS = {
 3. 只提议，不自动修改任何东西。用 memory_write 保存提议（kind: fact，注明"技能提议"）。
    没有则回复"本周无技能改进提议"。`,
   },
+  goal_review: {
+    schedule: "weekly mon 08:45",
+    prompt: `你是目标进展审查助手（goal review）。每周一次：
+1. 用 goal_list 查看所有 active 目标；
+2. 对每个目标，用 memory_search 回顾本周与该目标相关的工作和进展；
+3. 有实质进展的，用 goal_progress 写一条进展（中文一句话，注明日期）；
+4. 连续两周无进展的目标，在进展里标注"停滞"，但不要关闭它；
+5. 没有 active 目标则直接回复"本周无目标"。
+只记录进展，不执行目标本身的任务；不要做审批类操作。`,
+  },
   heartbeat: {
     schedule: "hourly",
     prompt: `你是 Heartbeat 巡检助手。先调用 heartbeat_check 工具获取检查清单：

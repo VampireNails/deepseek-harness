@@ -435,3 +435,20 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 **验证**：单测 21/21（含 7 个调度单测：参数/冷却/auto=false/失败保留/在途重入/批量合并/全局关闭）；生产冒烟：inbox 丢测试文件 → tick 触发 → `dispatch.log` 落 job `hook_inbox_20260930155004` → `intel-task.sh` 真实执行 → joblog 记录；测试文件已清理。
 
 **Stage-2**：Tomas 2026-09-30 23:4x 明确批准修复"stage-2 未启用"。执行 `crontab /root/intel/cron/intel-cron.txt`，新增 `0 * * * *` evolve_upkeep 与 `15 * * * *` heartbeat；同时清掉一次性 `verify-0730.sh` cron。Soul 规则"持续烧 token 须先批准"已满足（本次即批准）。
+
+---
+
+## 七、Muse 更新同步：目标进展主动推进（2026-10-02）
+
+**背景**：Tomas 问"我自己（Muse）最近有没有更新，评估并同步到 dsh-muse"。查到的更新：
+- 模型：Muse Spark 1.3（09-02 发布，当前最新，本体即跑此版本；Watermelon 未发布）——dsh-muse 用 DeepSeek API，换不了模型，无可同步
+- 产品：Muse for Small Business（09-29）—— connectors 明确在复刻范围外（Tomas 09-27）；"不经批准不发布/发送/花钱"已有四级审批覆盖；可同步的是 **Goals tab 的主动推进** 与 **proactive  surfacing**
+
+**缺口实测**：dsh-muse 的 goals 有 `goal_create/list/progress/close` 四工具 + `progress[]` 数据模型，但从没有任何机制调用 `goal_progress`——g1 进展停在 09-27，5 天零更新；晨报的"推进建议"从不写回 goal。属被动记录。
+
+**同步内容**（只做"记录进展"，不做"自主执行目标"——后者与 Soul"持续烧 token 须先批准"冲突）：
+- `dsh-intelligence-goals` 接入 `evolve` profile（`link:` + pnpm），任务侧可调 goal_* 工具
+- `tasks.js` 新增 `goal_review` 模板；crontab 新增周一 08:45 `evolve_goal_review`（排在 09:15 周报前，供周报读新鲜进展）
+- 干跑验证：goal_list + goal_progress 在 evolve 下可用；agent 正确补记 g1 本周进展，未凭空创建未落库的 g2
+
+**未同步**：proactive 推送通知——heartbeat 异常只躺日志，无推送通道（HMC App 推送需走 PR）；Ideas 交互卡片需 HMC UI。记为已知缺口，不硬造半个功能。
