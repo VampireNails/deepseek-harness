@@ -420,14 +420,14 @@ export class ModelAccessController extends TypertRemoteService {
         if (chunk.type === 'finish') {
           if (chunk.reason.kind === 'stop' || chunk.reason.kind === 'max-tokens') return { ok: true }
           if (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted') {
-            this.ctx.logger.warn(`model-access verification failed: ${verificationDiagnostic(chunk.reason.failure)}`)
+            console.warn(`model-access verification failed: ${verificationDiagnostic(chunk.reason.failure)}`)
           }
           return { ok: false, errorCode: lifetime.aborted ? 'cancelled' : 'verification-failed' }
         }
       }
       return { ok: false, errorCode: 'verification-failed' }
     } catch (error) {
-      if (!lifetime.aborted) this.ctx.logger.warn(`model-access verification failed: ${verificationDiagnostic(error)}`)
+      if (!lifetime.aborted) console.warn(`model-access verification failed: ${verificationDiagnostic(error)}`)
       return { ok: false, errorCode: lifetime.aborted ? 'cancelled' : 'verification-failed' }
     }
   }

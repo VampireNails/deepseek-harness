@@ -107,7 +107,7 @@ it('keeps logout and API key removal separate and reports remaining sources', as
 
 it('verifies a fixed small request and returns no model text or unsafe failure message', async () => {
   const { controller, ctx } = await boot()
-  const diagnostic = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+  const diagnostic = vi.spyOn(console, 'warn').mockImplementation(() => {})
   const stream = vi.spyOn(ctx.llm, 'stream').mockImplementation(async function* (request) {
     expect(request).toMatchObject({ provider: 'openai', model: 'test', maxTokens: 16, messages: [{ role: 'user', content: [{ type: 'text', text: 'Reply OK.' }] }] })
     yield { type: 'finish', reason: { kind: 'stop' } }
