@@ -489,3 +489,28 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 **dsh-intelligence-tokenlog**（intel 分支，直接 push；evolve profile）：`token_usage_summary(days)` 扫描 `~/.dsh/sessions/--root--/*/session.v4.jsonl.zstd`（`zstd -dc` 解压），聚合 `assistant/message` 的 `data.usage`（DeepSeek API 返回原样落盘），按任务（首条 user/message 关键词识别：记忆整理/Heartbeat/晨间简报/学习/想法整理/深夜复盘/技能审查/目标进展审查/目标自主执行）+ 按天汇总，附 deepseek-flash 成本估算（输入 ¥1/百万、输出 ¥4/百万，空闲时段价；明确标注估算值）。损坏 session 记数跳过不抛错。只读日志，不调 API，不烧 token。单测 8/8。
 
 实测（近 7 天）：102 会话 / 2016K tokens（输入 1550K / 输出 466K），估算 ¥3.41；记忆整理是最大头（43 会话，102 万输入）。
+
+## 九、多模型路由（2026-10-03，Tomas 决策：永不绑定单一模型）
+
+### 9.1 原则
+六个角度评估确认（可靠性/成本/能力/战略/进化/实证）：dsh-muse 不绑定任何单一模型。
+"复刻 Muse"重定义为复刻可观察能力；Tomas 进一步明确最高指导原则："一切都为了让复刻的 dsh-muse 比 Muse 更智能"。
+
+### 9.2 现状与 Blocker（诚实报告）
+- ChatGPT Plus 已授权（2026-10-03 10:42，OAuth，`llm-pi-ai/openai-codex`），但未上线；生产仍跑 deepseek-flash
+- **Blocker**：dsh 0.1.7-rc.1 的 headless 模式无外部 provider 选择机制。`GenerateOptions.provider` 由内部设置，无 CLI flag、env var 或配置文件可控制。Tomas 正在自建该基础设施（2026-10-03 提交：Host-owned model access）。
+- 已验证：provider 可通过 profile YAML 注册；credential 可存；但"选中"动作无外部接口。
+
+### 9.3 已落地的可插拔部分（等切换机制就绪即插即用）
+1. **路由表** `/root/intel/model-router.yaml`：task → primary + fallback。新模型只改配置不动代码。
+   - 高频便宜（upkeep/heartbeat）→ deepseek-flash
+   - 低频高脑力（简报/学习/想法/复盘/目标）→ chatgpt-plus（enabled: false，待机制），fallback 到 flash
+2. **resolver** `/root/intel/bin/model-router.js`：解析路由表，处理 enabled/fallback/降级。单测 6/6。
+3. **intel-task.sh 接入**：按 JOB_ID 查路由表，设置 DEEPSEEK_MODEL。解析失败默认 flash。
+4. **guard 通用化**：`dsh-intelligence-guard` 从"DEEPSEEK_API_KEY 必须存在"改为"任一 provider 凭证有效"（DeepSeek env 或 codex OAuth）。单测 7/7。
+5. **tokenlog 多价格表**：按 session 的 `request/header.config.model` 分模型计价。chatgpt-plus 按边际成本 0（包月）。单测 9/9。
+
+### 9.4 待 Tomas 的 provider 切换机制落地后
+- 把 `chatgpt-plus.enabled` 改 true，填实际 model_id
+- 用 heartbeat（最便宜）验证一次切换有效
+- 跑 tokenlog 对比验证成本变化

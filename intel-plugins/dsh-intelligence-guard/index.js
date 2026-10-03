@@ -16,7 +16,7 @@
 // ambient env，.env 文件设不了），故必须在进程启动层拦截。
 
 import z from "@deepseek-ai/schemastery";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 export const name = "dsh-intelligence-guard";
 export const inject = [];
@@ -27,7 +27,7 @@ export const Config = z.object({
 }).default({});
 
 // 生产环境不变式：返回 [{ ok, name, detail }]
-export function checkInvariants(env = process.env) {
+export function checkInvariants(env = process.env, credPath = "/root/.dsh/.credentials.yaml") {
   const results = [];
 
   // 1. DEEPSEEK_BASE_URL 必须未设置（mock 泄漏主向量）
@@ -43,12 +43,22 @@ export function checkInvariants(env = process.env) {
       : "ok",
   });
 
-  // 2. DEEPSEEK_API_KEY 必须存在且非空
-  const key = env.DEEPSEEK_API_KEY;
+  // 2. 至少一个 LLM provider 凭证有效（不绑定单一模型）
+  //    - DeepSeek: DEEPSEEK_API_KEY 环境变量
+  //    - OpenAI Codex: /root/.dsh/.credentials.yaml 中的 llm-pi-ai/openai-codex
+  const dsKey = env.DEEPSEEK_API_KEY;
+  const hasDeepSeek = !!dsKey && dsKey.length >= 8;
+  let hasCodex = false;
+  try {
+    const credText = readFileSync(credPath, "utf8");
+    hasCodex = credText.includes("llm-pi-ai/openai-codex");
+  } catch {}
   results.push({
-    ok: !!key && key.length >= 8,
-    name: "DEEPSEEK_API_KEY 已设置",
-    detail: key && key.length >= 8 ? "ok" : "生产 profile 必须有真 key。检查 /etc/deepseek-harness/.env。",
+    ok: hasDeepSeek || hasCodex,
+    name: "至少一个 LLM provider 凭证有效",
+    detail: (hasDeepSeek || hasCodex)
+      ? `ok (${[hasDeepSeek && "deepseek", hasCodex && "openai-codex"].filter(Boolean).join("+")})`
+      : "生产 profile 必须有 LLM 凭证。检查 /etc/deepseek-harness/.env（DeepSeek）或 dsh OAuth 授权（ChatGPT）。",
   });
 
   // 3. HMC_CONFIG 指向的文件必须存在（HMC 生产依赖它）

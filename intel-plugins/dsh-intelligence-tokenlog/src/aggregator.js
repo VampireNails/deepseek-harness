@@ -13,9 +13,20 @@ import { join } from "node:path";
 
 export const SESSIONS_ROOT = "/root/.dsh/sessions/--root--";
 
-// deepseek-flash 官方价格（2026-10-02）：空闲时段、未命中缓存
-export const PRICE_INPUT_PER_M = 1; // ¥ / 百万 input tokens
-export const PRICE_OUTPUT_PER_M = 4; // ¥ / 百万 output tokens
+// 多模型价格表（元/百万 tokens，空闲时段、未命中缓存）
+// deepseek-flash：官方价格（2026-10-02）；chatgpt-plus：包月制，边际成本约 0
+export const MODEL_PRICES = {
+  "deepseek-flash": { input: 1, output: 4, note: "DeepSeek 官方空闲价" },
+  "deepseek-chat": { input: 1, output: 4, note: "同 flash（历史数据）" },
+  "chatgpt-plus": { input: 0, output: 0, note: "包月制，边际成本约 0" },
+};
+// 向后兼容：保留旧常量
+export const PRICE_INPUT_PER_M = MODEL_PRICES["deepseek-flash"].input;
+export const PRICE_OUTPUT_PER_M = MODEL_PRICES["deepseek-flash"].output;
+
+function priceFor(model) {
+  return MODEL_PRICES[model] || MODEL_PRICES["deepseek-flash"];
+}
 
 // 关键词 → 任务 id。顺序重要：更具体的放前面（"目标自主执行" 先于 "目标" 类）。
 const TASK_KEYWORDS = [
@@ -59,6 +70,7 @@ export function parseSessionText(jsonlText) {
   let output = 0;
   let messages = 0;
   let task = "other";
+      let sessionModel = "deepseek-flash";
   let taskLocked = false;
   for (const line of jsonlText.split("\n")) {
     const s = line.trim();
@@ -135,6 +147,7 @@ export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decomp
     let input = 0;
     let output = 0;
     let task = "other";
+      let sessionModel = "deepseek-flash";
     let taskLocked = false;
     let hit = false;
     for (const line of text.split("\n")) {
@@ -145,6 +158,10 @@ export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decomp
         ev = JSON.parse(s);
       } catch {
         continue;
+      }
+      if (ev.type === "request/header" && ev.data && ev.data.header && ev.data.header.config) {
+        const m = ev.data.header.config.model;
+        if (m) sessionModel = m;
       }
       if (!taskLocked && ev.type === "user/message") {
         const c = ev.data && ev.data.content;
@@ -169,6 +186,12 @@ export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decomp
     if (!hit) continue; // 该 session 在窗口内无消息：不计入
     result.sessions++;
     bump(result.byTask, task, input, output);
+    // 记录该 session 的模型（用于分模型计价）
+    if (!result.byModel) result.byModel = {};
+    if (!result.byModel[sessionModel]) result.byModel[sessionModel] = { input: 0, output: 0, sessions: 0 };
+    result.byModel[sessionModel].input += input;
+    result.byModel[sessionModel].output += output;
+    result.byModel[sessionModel].sessions += 1;
   }
   return result;
 }
@@ -177,8 +200,17 @@ function fmt(n) {
   return n.toLocaleString("en-US");
 }
 
-function fmtCost(input, output) {
-  return ((input / 1e6) * PRICE_INPUT_PER_M + (output / 1e6) * PRICE_OUTPUT_PER_M).toFixed(2);
+function fmtCost(input, output, model) {
+  const p = priceFor(model);
+  return ((input / 1e6) * p.input + (output / 1e6) * p.output).toFixed(2);
+}
+function fmtCostTotal(byModel) {
+  let total = 0;
+  for (const [model, v] of Object.entries(byModel || {})) {
+    const p = priceFor(model);
+    total += (v.input / 1e6) * p.input + (v.output / 1e6) * p.output;
+  }
+  return total.toFixed(2);
 }
 
 // 中文输出：一句话总结 + 按任务表 + 按天表 + 成本估算
@@ -214,9 +246,16 @@ export function formatSummary(agg, days) {
   }
   if (!dayKeys.length) lines.push("|（无）| | |");
   lines.push("");
-  lines.push(
-    `成本估算：约 ¥${fmtCost(totalIn, totalOut)}（deepseek-flash 空闲时段价：输入 ¥${PRICE_INPUT_PER_M}/百万、输出 ¥${PRICE_OUTPUT_PER_M}/百万。估算值，实际按高峰/空闲时段和缓存命中情况计费。）`
-  );
+  const byModel = agg.byModel || {};
+  const modelLines = Object.entries(byModel).map(([m, v]) => {
+    const p = priceFor(m);
+    const cost = fmtCost(v.input, v.output, m);
+    const priceNote = p.note ? `（${p.note}）` : "";
+    return `  - ${m}：${(v.input/1000).toFixed(1)}K in / ${(v.output/1000).toFixed(1)}K out，约 ¥${cost}${priceNote}`;
+  });
+  lines.push(`成本估算：约 ¥${fmtCostTotal(byModel)}（分模型）`);
+  for (const ml of modelLines) lines.push(ml);
+  lines.push(`（估算值，实际按高峰/空闲时段和缓存命中情况计费）`);
   if (agg.skipped) lines.push(`（另有 ${agg.skipped} 个 session 跳过：损坏或解压失败）`);
   return lines.join("\n");
 }

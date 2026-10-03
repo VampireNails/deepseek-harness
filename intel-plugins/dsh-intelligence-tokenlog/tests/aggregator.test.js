@@ -116,3 +116,25 @@ test("formatSummary：中文输出含三段式+成本估算", () => {
   assert.ok(out.includes("估算值"), "标注估算值");
   assert.ok(out.includes("1 个 session 跳过"), "跳过计数");
 });
+
+test("多模型计价：按 model 分组并分别计价", () => {
+  const agg = {
+    days: 1,
+    sessions: 3,
+    skipped: 0,
+    byTask: { heartbeat: { input: 3000, output: 600, sessions: 3 } },
+    byDay: { "2026-10-03": { input: 3000, output: 600, sessions: 3 } },
+    byModel: {
+      "deepseek-flash": { input: 2000, output: 400, sessions: 2 },
+      "chatgpt-plus": { input: 1000, output: 200, sessions: 1 },
+    },
+  };
+  const out = formatSummary(agg, 1);
+  assert.ok(out.includes("deepseek-flash"), "显示 flash 分组");
+  assert.ok(out.includes("chatgpt-plus"), "显示 chatgpt 分组");
+  assert.ok(out.includes("包月制"), "chatgpt 标注包月");
+  // flash: 2000/1e6*1 + 400/1e6*4 = 0.002 + 0.0016 = 0.0036 → 0.00
+  // chatgpt: 0（包月）
+  // 总计约 ¥0.00
+  assert.ok(out.includes("分模型"), "标注分模型计价");
+});
