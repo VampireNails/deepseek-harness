@@ -247,7 +247,7 @@ export class ModelAccessController extends TypertRemoteService {
    * @returns current configuration.
    */
   @Remote
-  async remove(request: ModelAccessRemoveRequest): Promise<ModelAccessConfiguration> {
+  async removeProvider(request: ModelAccessRemoveRequest): Promise<ModelAccessConfiguration> {
     const parsed = parse(z.object({ provider: providerId, expectedRevision: z.number().int().nonnegative() }).strict(), request)
     const ns = await this.namespaceFor(parsed.provider)
     return this.write(ns, async () => {

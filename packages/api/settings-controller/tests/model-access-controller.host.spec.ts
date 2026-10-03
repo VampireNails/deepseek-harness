@@ -19,7 +19,7 @@ it('saves and removes a custom provider using revision checks while keeping its 
   expect(row).toMatchObject({ configured: true, credential: { configured: true }, profile: { baseURL: request.baseURL } })
   expect(JSON.stringify(saved)).not.toContain('private-api-key')
   await expect(controller.save(request)).rejects.toMatchObject({ code: 'model-access/rejected', details: { reason: 'conflict' } })
-  const removed = await controller.remove({ provider: 'acme', expectedRevision: row.revision })
+  const removed = await controller.removeProvider({ provider: 'acme', expectedRevision: row.revision })
   expect(removed.providers.find(provider => provider.id === 'acme')).toBeUndefined()
 })
 

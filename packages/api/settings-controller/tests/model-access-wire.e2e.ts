@@ -1,12 +1,31 @@
-/** Built wire acceptance; requires the settings-controller Host Typert artifact. */
+/** Built wire acceptance; requires the settings-controller Host and Remote Typert artifacts. */
 import { expect, it, vi } from 'vitest'
 import { z } from 'zod'
+import { Context } from '@deepseek-ai/cordis'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import { apply as applyConnection } from '../../../client/connection/src/index.ts'
 import TypertRegistry from '../../../typert/registry/src/index.ts'
 import TypertGateway from '../../gateway/src/index.ts'
+import * as ClientGateway from '../../gateway/src/client/index.ts'
+import modelAccessRemote from '../lib/typert.remote-client.js'
 import { validateTypertManifest } from '../../../typert/loader/src/index.ts'
 import { boot } from './model-access-fixture.ts'
+
+it('mounts the complete generated model access contribution in the real Client gateway', async () => {
+  const client = new Context()
+  await client.plugin(TypertRegistry)
+  client.reflect.provide('connection', {
+    rpc: { call: async () => ({ ok: true, value: null }), open: async function *() {} },
+    registerGenerationSource: () => () => {},
+    start: () => ({ stop: () => {} }),
+  })
+  await client.plugin(ClientGateway)
+  const dispose = await client.remote.$mount(modelAccessRemote)
+  expect(client.get('remote.modelAccess')).toBeDefined()
+  await dispose()
+  expect(client.get('remote.modelAccess')).toBeUndefined()
+  await client.fiber.dispose()
+})
 
 it('dispatches model access through the real Connection fetch handler and generated strict gateway contract', async () => {
   const { ctx } = await boot()

@@ -1510,7 +1510,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'committed public configuration.',
       },
       {
-        signature: '@Remote async remove(request: ModelAccessRemoveRequest): Promise<ModelAccessConfiguration>',
+        signature: '@Remote async removeProvider(request: ModelAccessRemoveRequest): Promise<ModelAccessConfiguration>',
         description: 'Remove a provider from the writable configuration layer.',
         parameters: [{ name: 'request', description: 'revision-checked removal; credentials are retained.' }],
         returns: 'current configuration.',

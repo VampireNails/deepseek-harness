@@ -182,7 +182,7 @@ Model account Remote namespace; authentication answers and tokens remain on Host
  * @param request - revision-checked removal; credentials are retained.
  * @returns current configuration.
  */
-@Remote async remove(request: ModelAccessRemoveRequest): Promise<ModelAccessConfiguration>
+@Remote async removeProvider(request: ModelAccessRemoveRequest): Promise<ModelAccessConfiguration>
 
 /**
  * Delete page-managed API keys while preserving other credential sources.
