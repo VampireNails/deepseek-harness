@@ -107,6 +107,7 @@ it('keeps logout and API key removal separate and reports remaining sources', as
 
 it('verifies a fixed small request and returns no model text or unsafe failure message', async () => {
   const { controller, ctx } = await boot()
+  const diagnostic = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
   const stream = vi.spyOn(ctx.llm, 'stream').mockImplementation(async function* (request) {
     expect(request).toMatchObject({ provider: 'openai', model: 'test', maxTokens: 16, messages: [{ role: 'user', content: [{ type: 'text', text: 'Reply OK.' }] }] })
     yield { type: 'finish', reason: { kind: 'stop' } }
@@ -114,6 +115,21 @@ it('verifies a fixed small request and returns no model text or unsafe failure m
   expect(await controller.verify({ provider: 'openai', model: 'test' }, new AbortController().signal)).toEqual({ ok: true })
   stream.mockImplementation(async function* () { throw new Error('private-credential') })
   expect(await controller.verify({ provider: 'openai', model: 'test' }, new AbortController().signal)).toEqual({ ok: false, errorCode: 'verification-failed' })
+  expect(diagnostic).toHaveBeenLastCalledWith('model-access verification failed: UNKNOWN')
+  stream.mockImplementation(async function* () {
+    yield { type: 'finish', reason: { kind: 'error', failure: { code: 'AUTH', message: 'private-token' } } }
+  })
+  expect(await controller.verify({ provider: 'openai', model: 'test' }, new AbortController().signal)).toEqual({ ok: false, errorCode: 'verification-failed' })
+  expect(diagnostic).toHaveBeenLastCalledWith('model-access verification failed: AUTH')
+  stream.mockImplementation(async function* () {
+    yield { type: 'finish', reason: { kind: 'error', failure: { code: 'private-code', message: 'private-message' } } }
+  })
+  await controller.verify({ provider: 'openai', model: 'test' }, new AbortController().signal)
+  expect(diagnostic).toHaveBeenLastCalledWith('model-access verification failed: UNKNOWN')
+  expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('private-token')
+  expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('private-credential')
+  expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('private-code')
+  expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('private-message')
 })
 
 it('reports a partially committed profile without exposing credential refusal text', async () => {

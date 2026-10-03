@@ -98,6 +98,24 @@ function requestError(error: unknown): never {
   reject('operation-failed')
 }
 
+/** Log only a fixed failure category: provider messages and arbitrary codes can contain credentials. */
+function verificationDiagnostic(error: unknown): string {
+  const code = object(error).code
+  const safeCodes = ['AUTH', 'MISSING_CREDENTIAL', 'NO_CREDENTIAL_STORE', 'NO_ADAPTER', 'UNKNOWN_MODEL', 'INVALID_CONFIG',
+    'OAUTH_ROUTE_CHANGED', 'UNSUPPORTED_OPTION', 'UNSUPPORTED_REASONING_EFFORT', 'RATE_LIMIT', 'QUOTA_EXCEEDED',
+    'TIMEOUT', 'TRANSPORT', 'INVALID_REQUEST', 'SERVER', 'EMPTY_RESPONSE', 'ABORTED']
+  if (typeof code === 'string' && safeCodes.includes(code)) return code
+  const message = error instanceof Error ? error.message : object(error).message
+  if (typeof message !== 'string') return 'UNKNOWN'
+  if (/provider is not configured|no credential/i.test(message)) return 'MISSING_CREDENTIAL'
+  if (/model[^\n]*(?:not supported|does not exist|not available|not allowed)/i.test(message)) return 'MODEL_UNAVAILABLE'
+  if (/unsupported country|region[^\n]*not supported/i.test(message)) return 'REGION_UNAVAILABLE'
+  if (/\b401\b|\b403\b/.test(message)) return 'AUTH'
+  if (/\b429\b|rate.?limit/i.test(message)) return 'RATE_LIMIT'
+  if (/\bfetch\b|\bnetwork\b|\bconnection\b|\bECONN[A-Z]+\b/i.test(message)) return 'TRANSPORT'
+  return 'UNKNOWN'
+}
+
 /** Model account Remote namespace; authentication answers and tokens remain on Host. */
 export class ModelAccessController extends TypertRemoteService {
   static Config = Schema.object({
@@ -399,10 +417,19 @@ export class ModelAccessController extends TypertRemoteService {
     const lifetime = AbortSignal.any([signal, AbortSignal.timeout(this.options.verificationTimeoutMs)])
     try {
       for await (const chunk of this.llm().stream({ ...parsed, messages: [{ role: 'user', content: [{ type: 'text', text: 'Reply OK.' }] }], maxTokens: 16, signal: lifetime })) {
-        if (chunk.type === 'finish') return chunk.reason.kind === 'stop' || chunk.reason.kind === 'max-tokens' ? { ok: true } : { ok: false, errorCode: lifetime.aborted ? 'cancelled' : 'verification-failed' }
+        if (chunk.type === 'finish') {
+          if (chunk.reason.kind === 'stop' || chunk.reason.kind === 'max-tokens') return { ok: true }
+          if (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted') {
+            this.ctx.logger.warn(`model-access verification failed: ${verificationDiagnostic(chunk.reason.failure)}`)
+          }
+          return { ok: false, errorCode: lifetime.aborted ? 'cancelled' : 'verification-failed' }
+        }
       }
       return { ok: false, errorCode: 'verification-failed' }
-    } catch { return { ok: false, errorCode: lifetime.aborted ? 'cancelled' : 'verification-failed' } }
+    } catch (error) {
+      if (!lifetime.aborted) this.ctx.logger.warn(`model-access verification failed: ${verificationDiagnostic(error)}`)
+      return { ok: false, errorCode: lifetime.aborted ? 'cancelled' : 'verification-failed' }
+    }
   }
 
   /**
