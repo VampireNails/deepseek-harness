@@ -434,7 +434,7 @@ export class ModelAccessController extends TypertRemoteService {
 
   /**
    * Discover model names through the installed Host adapter.
-   * @param request - draft endpoint inputs.
+   * @param request - provider or draft endpoint inputs; read-only providers reject overrides.
    * @param signal - caller lifetime.
    * @returns discovered model names.
    */
@@ -445,6 +445,11 @@ export class ModelAccessController extends TypertRemoteService {
       apiKey: z.string().max(16384).optional(), api: z.string().max(100).optional(),
     }).strict(), request)
     try {
+      const row = (await this.configuration()).providers.find(provider => provider.id === parsed.provider)
+      if (row !== undefined && !row.editable) {
+        if (parsed.baseURL !== undefined || parsed.apiKey !== undefined || parsed.api !== undefined) reject('provider-not-editable')
+        return (await this.llm().listModels(row.id)).map(model => ({ id: model.id, name: model.name }))
+      }
       const ns = await this.namespaceFor(parsed.provider)
       const result = await this.llm().discoverModels(ns, {
         ...parsed.provider === undefined ? {} : { provider: parsed.provider },

@@ -236,7 +236,7 @@ Model account Remote namespace; authentication answers and tokens remain on Host
 
 /**
  * Discover model names through the installed Host adapter.
- * @param request - draft endpoint inputs.
+ * @param request - provider or draft endpoint inputs; read-only providers reject overrides.
  * @param signal - caller lifetime.
  * @returns discovered model names.
  */

@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
+import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { boot } from './model-access-fixture.ts'
 
 it('reads installed dormant providers from real Loader composition without exposing credential values', async () => {
@@ -223,4 +224,25 @@ it('delegates discovery and projects only IDs and names without returning provid
   const signal = new AbortController().signal
   expect(await controller.discover({ baseURL: 'https://example.com/v1', api: 'openai-completions' }, signal)).toEqual([{ id: 'model', name: 'Model' }])
   expect(discover).toHaveBeenCalledWith('first', { baseURL: 'https://example.com/v1', api: 'openai-completions' }, signal)
+})
+
+it('lists an installed read-only provider for verification without allowing draft overrides or writes', async () => {
+  const { controller, ctx } = await boot()
+  ctx.llm.registerConfigurableProviders([{ provider: 'readonly-models', displayName: 'Read-only', settingsNs: 'readonly-models', settingsPath: [] }])
+  ctx.effect(() => ctx.llm.registerAdapter(['readonly-models'], new class extends LlmAdapter {
+    async listModels() { return [{ provider: 'readonly-models', id: 'model', name: 'Model', description: 'private-metadata' }] }
+    async *stream() { yield { type: 'finish' as const, reason: { kind: 'stop' as const } } }
+  }()))
+  const row = (await controller.configuration()).providers.find(provider => provider.id === 'readonly-models')!
+  expect(row).toMatchObject({ configured: true, editable: false })
+  const signal = new AbortController().signal
+  expect(await controller.discover({ provider: row.id }, signal)).toEqual([{ id: 'model', name: 'Model' }])
+  for (const draft of [{ baseURL: 'https://example.com/v1' }, { apiKey: 'private-key' }, { api: 'openai-completions' }]) {
+    await expect(controller.discover({ provider: row.id, ...draft }, signal))
+      .rejects.toMatchObject({ details: { reason: 'provider-not-editable' } })
+  }
+  await expect(controller.save({ provider: row.id, authentication: 'ambient', expectedRevision: row.revision }))
+    .rejects.toMatchObject({ details: { reason: 'provider-not-editable' } })
+  await expect(controller.removeProvider({ provider: row.id, expectedRevision: row.revision }))
+    .rejects.toMatchObject({ details: { reason: 'provider-not-editable' } })
 })

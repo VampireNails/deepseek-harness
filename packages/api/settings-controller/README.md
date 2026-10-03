@@ -35,7 +35,7 @@ Mount this package as a Loader entry in a profile that serves browser configurat
 
 `start({ provider, method })` returns a random attempt ID and owner token immediately. `status`, `respond`, and `cancel` require both. Polling returns the current notice and prompt without retaining answers. A flow withdrawing its prompt invalidates that prompt ID. Same-provider concurrent attempts are refused; attempts expire and terminal results have bounded retention. Errors use safe reason codes without forwarding credential or provider error text.
 
-`verify({ provider, model })` performs a fixed request capped at 16 output tokens and returns only success or a safe failure code. `discover(request)` delegates model discovery to the installed Host adapter and returns IDs and names.
+`verify({ provider, model })` performs a fixed request capped at 16 output tokens and returns only success or a safe failure code. `discover(request)` delegates model discovery to the installed Host adapter and returns IDs and names. Read-only providers return their registered model catalog and reject draft endpoint, protocol, and key overrides; their configuration remains read-only.
 
 -----
 

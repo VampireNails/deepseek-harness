@@ -35,7 +35,7 @@ kind: "package-reference"
 
 `start({ provider, method })` 立即返回随机 attempt ID 和 owner token。`status`、`respond` 与 `cancel` 都要求这两项。轮询返回当前通知与问题，不保留用户答案。flow 撤销问题后，其 prompt ID 失效。同一提供商不允许并行授权；尝试会超时，终态只保留有限时间。错误使用安全 reason code，不转发凭据或提供商的错误原文。
 
-`verify({ provider, model })` 执行最多输出 16 token 的固定请求，只返回成功或安全错误码。`discover(request)` 委托已安装 Host adapter 查询模型，只返回 ID 与名称。
+`verify({ provider, model })` 执行最多输出 16 token 的固定请求，只返回成功或安全错误码。`discover(request)` 委托已安装 Host adapter 查询模型，只返回 ID 与名称。只读提供商返回其已注册的模型目录，并拒绝草稿端点、协议和 Key 覆盖；其配置仍为只读。
 
 -----
 
