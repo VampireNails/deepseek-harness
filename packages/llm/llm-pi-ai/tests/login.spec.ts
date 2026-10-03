@@ -7,16 +7,20 @@ import AuthorizationService from '@deepseek-ai/dsh-authorization'
 import type { AuthorizationInteraction, AuthorizationNotice, AuthorizationPrompt } from '@deepseek-ai/dsh-authorization'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import type { CredentialKey } from '@deepseek-ai/dsh-credentials'
-import type { AuthEvent, AuthInteraction, AuthPrompt, AuthType, Credential } from '@earendil-works/pi-ai'
+import type { AuthEvent, AuthInteraction, AuthPrompt, AuthType, Credential, CreateModelsOptions } from '@earendil-works/pi-ai'
 
 const login = vi.hoisted(() => vi.fn())
+const collection = vi.hoisted(() => ({ options: undefined as CreateModelsOptions | undefined }))
 
 // The whole of what this module does with pi-ai is run one provider's login
 // against a collection built with the harness store, so the collection is the
 // boundary worth observing; a real login would open a browser.
 vi.mock('../src/models.ts', async importOriginal => ({
   ...await importOriginal<typeof import('../src/models.ts')>(),
-  createModels: () => ({ setProvider: () => {}, login }),
+  createModels: (options: CreateModelsOptions) => {
+    collection.options = options
+    return { setProvider: () => {}, login }
+  },
 }))
 
 const { credentialStoreFrom, authContextFrom, recordKeyFor } = await import('../src/auth.ts')
@@ -64,7 +68,7 @@ async function attempt(
   login.mockImplementation(async (providerId: string, _type: AuthType, interaction: AuthInteraction) => {
     await converse(interaction)
     const granted: Credential = { type: 'oauth', access: 'at', refresh: 'rt', expires: 1 }
-    await credentialStoreFrom(ctx).modify(providerId, () => Promise.resolve(granted))
+    await collection.options!.credentials!.modify(providerId, () => Promise.resolve(granted))
     return granted
   })
   await expect(ctx.authorization.begin({
@@ -194,5 +198,66 @@ describe('pi-ai login flows', () => {
       signal: controller.signal,
     })).resolves.toEqual({ status: 'cancelled' })
     expect(seen?.aborted).toBe(true)
+  })
+
+  it('keeps an admitted login commit authoritative when cancellation arrives during persistence', async () => {
+    const ctx = await harness()
+    const controller = new AbortController()
+    let release!: () => void
+    let entered!: () => void
+    let persisted!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const writing = new Promise<void>((resolve) => { entered = resolve })
+    const written = new Promise<void>((resolve) => { persisted = resolve })
+    const modify = ctx.credentials.modifyRecord.bind(ctx.credentials)
+    vi.spyOn(ctx.credentials, 'modifyRecord').mockImplementation(async (...args) => {
+      entered()
+      await gate
+      try { return await modify(...args) } finally { persisted() }
+    })
+    let seen: AbortSignal | undefined
+    login.mockImplementation(async (id: string, _type: AuthType, interaction: AuthInteraction) => {
+      seen = interaction.signal
+      await collection.options!.credentials!.modify(id, () => Promise.resolve({
+        type: 'oauth', access: 'committed', refresh: 'r', expires: 42,
+      }))
+    })
+    const outcome = ctx.authorization.begin({ key: CODEX, interaction: surface(), signal: controller.signal })
+    await writing
+    controller.abort()
+    const aborted = seen?.aborted
+    release()
+    await written
+    expect(aborted).toBe(false)
+    await expect(outcome).resolves.toEqual({ status: 'authorized' })
+    await expect(ctx.credentials.readRecord(CODEX)).resolves.toMatchObject({
+      kind: 'grant', payload: { access: 'committed' },
+    })
+  })
+
+  it('refuses a late login write after its attempt has been cancelled', async () => {
+    const ctx = await harness()
+    let resume!: () => void
+    let entered!: () => void
+    let completed!: () => void
+    const gate = new Promise<void>((resolve) => { resume = resolve })
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    const finished = new Promise<void>((resolve) => { completed = resolve })
+    login.mockImplementation(async (id: string) => {
+      entered()
+      await gate
+      try {
+        await collection.options!.credentials!.modify(id, () => Promise.resolve({
+          type: 'oauth', access: 'late', refresh: 'r', expires: 42,
+        }))
+      } finally { completed() }
+    })
+    const outcome = ctx.authorization.begin({ key: CODEX, interaction: surface() })
+    await started
+    ctx.authorization.cancel(CODEX)
+    await expect(outcome).resolves.toEqual({ status: 'cancelled' })
+    resume()
+    await finished
+    await expect(ctx.credentials.readRecord(CODEX)).resolves.toBeUndefined()
   })
 })

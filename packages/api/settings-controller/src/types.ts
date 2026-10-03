@@ -7,6 +7,8 @@
  * @module @deepseek-ai/dsh-api-settings-controller/types
  */
 
+export type * from './model-access-types.ts'
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     /**

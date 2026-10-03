@@ -1493,6 +1493,79 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'modelAccessController',
+    summary: 'Model account Remote namespace; authentication answers and tokens remain on Host.',
+    description: 'Model account Remote namespace; authentication answers and tokens remain on Host.',
+    methods: [
+      {
+        signature: '@Remote async configuration(): Promise<ModelAccessConfiguration>',
+        description: 'Read installed provider profiles and credential metadata.',
+        parameters: [],
+        returns: 'provider profiles and metadata, including installed dormant routes.',
+      },
+      {
+        signature: '@Remote async save(request: ModelAccessSaveRequest): Promise<ModelAccessConfiguration>',
+        description: 'Commit an explicit authentication mode and provider profile.',
+        parameters: [{ name: 'request', description: 'revision and explicit authentication mode.' }],
+        returns: 'committed public configuration.',
+      },
+      {
+        signature: '@Remote async remove(request: ModelAccessRemoveRequest): Promise<ModelAccessConfiguration>',
+        description: 'Remove a provider from the writable configuration layer.',
+        parameters: [{ name: 'request', description: 'revision-checked removal; credentials are retained.' }],
+        returns: 'current configuration.',
+      },
+      {
+        signature: '@Remote async clearKey(request: ModelAccessProviderRequest): Promise<ModelAccessConfiguration>',
+        description: 'Delete page-managed API keys while preserving other credential sources.',
+        parameters: [{ name: 'request', description: 'provider whose page-managed key is cleared.' }],
+        returns: 'remaining effective sources.',
+      },
+      {
+        signature: '@Remote async logout(request: ModelAccessProviderRequest): Promise<ModelAccessConfiguration>',
+        description: 'Delete the stored subscription grant without changing other credential sources.',
+        parameters: [{ name: 'request', description: 'provider whose stored subscription grant is deleted.' }],
+        returns: 'remaining effective sources.',
+      },
+      {
+        signature: '@Remote start(request: ModelAccessStartRequest): ModelAccessAttemptOwner',
+        description: 'Start a private authorization attempt with bounded retention.',
+        parameters: [{ name: 'request', description: 'provider and its installed method.' }],
+        returns: 'a private owner capability immediately.',
+      },
+      {
+        signature: '@Remote status(request: ModelAccessAttemptOwner): ModelAccessAttemptStatus',
+        description: 'Read the current state of an owned authorization attempt.',
+        parameters: [{ name: 'request', description: 'private attempt capability.' }],
+        returns: 'latest prompt/notice and terminal result.',
+      },
+      {
+        signature: '@Remote respond(request: ModelAccessRespondRequest): ModelAccessAttemptStatus',
+        description: 'Consume one response to the currently owned prompt.',
+        parameters: [{ name: 'request', description: 'one answer to the current prompt.' }],
+        returns: 'state after consuming the answer.',
+      },
+      {
+        signature: '@Remote cancel(request: ModelAccessAttemptOwner): ModelAccessAttemptStatus',
+        description: 'Request withdrawal and report the current settlement state.',
+        parameters: [{ name: 'request', description: 'private attempt capability.' }],
+        returns: 'state while withdrawal settles.',
+      },
+      {
+        signature: '@Remote async verify(request: ModelAccessVerifyRequest, signal: AbortSignal): Promise<ModelAccessVerifyValue>',
+        description: 'Run the fixed small request through the active model adapter.',
+        parameters: [{ name: 'request', description: 'registered provider/model.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'actual fixed-request outcome.',
+      },
+      {
+        signature: '@Remote async discover(request: ModelAccessDiscoverRequest, signal: AbortSignal): Promise<{ id: string; name?: string }[]>',
+        description: 'Discover model names through the installed Host adapter.',
+        parameters: [{ name: 'request', description: 'draft endpoint inputs.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'discovered model names.',
+      },
+    ],
+  },
+  {
     key: 'officeToPdf',
     summary: 'A provider lifetime owns all converters, queued calls, and temporary files.',
     description: 'A provider lifetime owns all converters, queued calls, and temporary files.',
@@ -4463,7 +4536,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AuthorizationSession',
-    declaration: 'export interface AuthorizationSession {\n    readonly method: string;\n    readonly signal: AbortSignal;\n    commit(record: CredentialRecord): Promise<void>;\n    notify(notice: AuthorizationNotice): void;\n    prompt(prompt: AuthorizationPrompt): Promise<string>;\n}',
+    declaration: 'export interface AuthorizationSession {\n    readonly method: string;\n    readonly signal: AbortSignal;\n    commit(record: CredentialRecord): Promise<void>;\n    commit(mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>): Promise<CredentialRecord | undefined>;\n    notify(notice: AuthorizationNotice): void;\n    prompt(prompt: AuthorizationPrompt): Promise<string>;\n}',
   },
   {
     name: 'AuthorizationSettlement',
@@ -5331,7 +5404,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmConfigurableProvider',
-    declaration: 'export interface LlmConfigurableProvider {\n    provider: string;\n    displayName: string;\n    settingsNs: string;\n    settingsPath: readonly string[];\n    declared?: boolean;\n    error?: string;\n}',
+    declaration: 'export interface LlmConfigurableProvider {\n    credentialScope?: string;\n    provider: string;\n    displayName: string;\n    settingsNs: string;\n    settingsPath: readonly string[];\n    declared?: boolean;\n    error?: string;\n}',
   },
   {
     name: 'LlmDiscoveredModel',
@@ -5532,6 +5605,74 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MessageSourceMap',
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    \'system-prompt\': SystemPromptMessageSource;\n}',
+  },
+  {
+    name: 'ModelAccessAttemptId',
+    declaration: 'export type ModelAccessAttemptId = Branded<\'ModelAccessAttemptId\'>;',
+  },
+  {
+    name: 'ModelAccessAttemptOwner',
+    declaration: 'export interface ModelAccessAttemptOwner {\n    attemptId: ModelAccessAttemptId;\n    ownerToken: ModelAccessOwnerToken;\n}',
+  },
+  {
+    name: 'ModelAccessAttemptStatus',
+    declaration: 'export interface ModelAccessAttemptStatus {\n    attemptId: ModelAccessAttemptId;\n    provider: string;\n    status: \'pending\' | \'authorized\' | \'cancelled\' | \'failed\';\n    expiresAt: number;\n    notice?: AuthorizationNotice;\n    prompt?: ModelAccessPrompt;\n    errorCode?: string;\n}',
+  },
+  {
+    name: 'ModelAccessConfiguration',
+    declaration: 'export interface ModelAccessConfiguration {\n    writable: boolean;\n    providers: ModelAccessProvider[];\n    custom?: {\n        settingsNs: string;\n        revision: number;\n    };\n    apis: string[];\n}',
+  },
+  {
+    name: 'ModelAccessDiscoverRequest',
+    declaration: 'export interface ModelAccessDiscoverRequest {\n    provider?: string;\n    baseURL?: string;\n    apiKey?: string;\n    api?: string;\n}',
+  },
+  {
+    name: 'ModelAccessOwnerToken',
+    declaration: 'export type ModelAccessOwnerToken = Branded<\'ModelAccessOwnerToken\'>;',
+  },
+  {
+    name: 'ModelAccessProfile',
+    declaration: 'export interface ModelAccessProfile {\n    apiKeyEnv?: string;\n    displayName?: string;\n    api?: string;\n    baseURL?: string;\n    models?: {\n        id: string;\n        name?: string;\n    }[];\n}',
+  },
+  {
+    name: 'ModelAccessPrompt',
+    declaration: 'export type ModelAccessPrompt = {\n    promptId: ModelAccessPromptId;\n    message: string;\n} & ({\n    kind: \'text\' | \'secret\';\n    placeholder?: string;\n} | {\n    kind: \'select\';\n    options: {\n        id: string;\n        label: string;\n        description?: string;\n    }[];\n});',
+  },
+  {
+    name: 'ModelAccessPromptId',
+    declaration: 'export type ModelAccessPromptId = Branded<\'ModelAccessPromptId\'>;',
+  },
+  {
+    name: 'ModelAccessProvider',
+    declaration: 'export interface ModelAccessProvider {\n    id: string;\n    name: string;\n    settingsNs: string;\n    revision: number;\n    configured: boolean;\n    declared: boolean;\n    editable: boolean;\n    authentication: \'api-key\' | \'oauth\' | \'ambient\';\n    profile: ModelAccessProfile;\n    methods: AuthorizationMethod[];\n    inFlight: boolean;\n    credential?: CredentialInfo & {\n        ref: string;\n        managed: boolean;\n    };\n    record: {\n        configured: boolean;\n        writable: boolean;\n        kind?: \'api-key\' | \'grant\';\n    };\n}',
+  },
+  {
+    name: 'ModelAccessProviderRequest',
+    declaration: 'export interface ModelAccessProviderRequest {\n    provider: string;\n}',
+  },
+  {
+    name: 'ModelAccessRemoveRequest',
+    declaration: 'export interface ModelAccessRemoveRequest {\n    provider: string;\n    expectedRevision: number;\n}',
+  },
+  {
+    name: 'ModelAccessRespondRequest',
+    declaration: 'export interface ModelAccessRespondRequest extends ModelAccessAttemptOwner {\n    promptId: ModelAccessPromptId;\n    value: string;\n}',
+  },
+  {
+    name: 'ModelAccessSaveRequest',
+    declaration: 'export interface ModelAccessSaveRequest {\n    provider: string;\n    expectedRevision: number;\n    authentication: \'api-key\' | \'oauth\' | \'ambient\';\n    apiKey?: string;\n    baseURL?: string;\n    api?: string;\n    displayName?: string;\n    models?: {\n        id: string;\n        name?: string;\n    }[];\n}',
+  },
+  {
+    name: 'ModelAccessStartRequest',
+    declaration: 'export interface ModelAccessStartRequest {\n    provider: string;\n    method: string;\n}',
+  },
+  {
+    name: 'ModelAccessVerifyRequest',
+    declaration: 'export interface ModelAccessVerifyRequest {\n    provider: string;\n    model: string;\n}',
+  },
+  {
+    name: 'ModelAccessVerifyValue',
+    declaration: 'export interface ModelAccessVerifyValue {\n    ok: boolean;\n    errorCode?: string;\n}',
   },
   {
     name: 'ModelCatalog',

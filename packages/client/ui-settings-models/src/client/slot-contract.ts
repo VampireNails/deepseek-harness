@@ -22,6 +22,8 @@ import type { ProviderDirectoryEntry } from './store.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    /** Optional Host-supported model subscription accounts above provider editors. */
+    'settings.models.accounts': { kind: 'single'; scope: 'root'; owner: { refreshKey: string } }
     /**
      * One provider card's adapter extension area, dispatched with
      * `entryKey = settingsNs` on every card that renders a directory row: a

@@ -99,6 +99,14 @@ export interface AuthorizationSession {
    */
   commit(record: CredentialRecord): Promise<void>
   /**
+   * Commit through the credential store's atomic read-modify-write lock. The
+   * mutation receives the current record; returning undefined preserves it.
+   * Admission and cancellation follow the same rules as a direct record commit.
+   * @param mutate - flow-owned mutation executed under the store lock.
+   * @returns the record present after the mutation commits.
+   */
+  commit(mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>): Promise<CredentialRecord | undefined>
+  /**
    * Report progress, or tell the human what to do next. Fire-and-forget: a
    * surface that cannot render a notice must not stall the flow.
    * @param notice - the message, and any page or code it refers to.
@@ -393,19 +401,30 @@ export class AuthorizationService extends Service {
     const unwatch = this.ctx.on('credentials/record-updated', (key: CredentialKey) => {
       if (key === flow.key) observed.committed = true
     })
+    const attempts = this.running
+    const credentials = this.ctx.credentials
+    async function commit(record: CredentialRecord): Promise<void>
+    async function commit(
+      mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>,
+    ): Promise<CredentialRecord | undefined>
+    async function commit(
+      input: CredentialRecord | ((current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>),
+    ): Promise<CredentialRecord | undefined | void> {
+      signal.throwIfAborted()
+      const attempt = attempts.get(flow.key)
+      if (attempt === undefined || attempt.controller.signal !== signal) {
+        throw new AuthorizationError('authorization attempt is no longer active', 'CANCELLED')
+      }
+      attempt.committing = true
+      const stored = await credentials.modifyRecord(flow.key,
+        typeof input === 'function' ? input : () => Promise.resolve(input))
+      if (typeof input === 'function') return stored
+    }
     try {
       const running = flow.run({
         method,
         signal,
-        commit: async (record) => {
-          signal.throwIfAborted()
-          const attempt = this.running.get(flow.key)
-          if (attempt === undefined || attempt.controller.signal !== signal) {
-            throw new AuthorizationError('authorization attempt is no longer active', 'CANCELLED')
-          }
-          attempt.committing = true
-          await this.ctx.credentials.modifyRecord(flow.key, () => Promise.resolve(record))
-        },
+        commit,
         notify: (notice) => {
           try {
             interaction.notify(notice)

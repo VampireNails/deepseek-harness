@@ -12,6 +12,8 @@ import LlmRuntime, { createMessage, createUserMessage, userAgent } from '@deepse
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { profileComposition } from '../../../settings/settings/tests/profile-composition.ts'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
+import { catalogProvider } from '../src/catalog.ts'
+import { recordKeyFor } from '../src/auth.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
@@ -34,6 +36,7 @@ afterEach(async () => {
   root = undefined
   await closeMockServers()
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
 /** Boot the dormant composition: a bare `llm-pi-ai` row with no config at all. */
@@ -83,6 +86,30 @@ async function loadComposition(): Promise<{ ctx: Context; settingsPath: string }
 }
 
 describe('llm-pi-ai real dormant composition', () => {
+  it('refuses a stored subscription grant after settings activate a custom endpoint', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const { ctx, settingsPath } = await loadComposition()
+    const provider = catalogProvider('anthropic')!
+    const derive = vi.spyOn(provider.auth.oauth!, 'toAuth').mockResolvedValue({ apiKey: 'subscription-token' })
+    await ctx.credentials.modifyRecord(recordKeyFor('anthropic'), () => Promise.resolve({
+      kind: 'grant', payload: {
+        type: 'oauth', access: 'subscription-token', refresh: 'refresh-token', expires: Date.now() + 3_600_000,
+      },
+    }))
+    await writeFile(settingsPath, [
+      '- id: llm-pi-ai', '  config:', '    providers:', '      anthropic:', `        baseURL: ${server.url}`, '',
+    ].join('\n'))
+    await vi.waitFor(() => {
+      expect(ctx.llm.listProviders().map(entry => entry.id)).toEqual(['anthropic'])
+    }, { timeout: 5000 })
+    const result = await assemble(ctx, { provider: 'anthropic', model: provider.getModels()[0]!.id, messages: [] })
+    expect(result.finish).toMatchObject({
+      kind: 'error', failure: { message: expect.stringMatching(/OAuth.*native.*route/) as string },
+    })
+    expect(server.headers).toHaveLength(0)
+    expect(derive).not.toHaveBeenCalled()
+  })
+
   it('boots with zero routes and registers one the moment settings supply a profile', async () => {
     vi.stubEnv('PI_COMPOSITION_KEY', '')
     const server = await mockServer([{ events: textEvents }])

@@ -15,6 +15,7 @@ import {
   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE, WELCOME_NOTICE_VERSION,
 } from '../src/onboarding-copy.ts'
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
+import { ModelAccessSection } from '../src/client/ModelAccessSection.tsx'
 import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
 import { WelcomeNotice } from '../src/client/WelcomeNotice.tsx'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
@@ -68,6 +69,23 @@ function declare(slots: SlotRegistry): () => void {
 }
 
 describe('ui-settings-models apply', () => {
+  it('keeps legacy Host key settings mounted and installs accounts when their optional namespace arrives', async () => {
+    const { ctx, slots, remote } = await bench()
+    declare(slots)
+    try {
+      const plugin = ctx.plugin({ inject: [...inject], apply })
+      await plugin.await()
+      expect(slots.entries('settings.section')[0]?.component).toBe(ModelsSection)
+      expect(slots.spec('settings.models.accounts')).toMatchObject({ kind: 'single', scope: 'root' })
+      expect(slots.entries('settings.models.accounts')).toEqual([])
+      remote.provideNamespaces({ modelAccess: {} })
+      await vi.waitFor(() => { expect(slots.entries('settings.models.accounts')[0]?.component).toBe(ModelAccessSection) })
+      await plugin.dispose()
+      expect(slots.entries('settings.models.accounts')).toEqual([])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
   it('keeps manual credential onboarding available when the native shell owns automatic onboarding', async () => {
     const { ctx, slots } = await bench()
     declare(slots)

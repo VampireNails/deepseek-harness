@@ -479,6 +479,8 @@ Adapter plugins additionally declare which routes *could* run through `registerC
  * provider alongside its live/dormant state.
  */
 interface LlmConfigurableProvider {
+  /** Owner of stored authentication records for this route, when its adapter supports account configuration. */
+  credentialScope?: string
   /** Provider route key this entry activates when configured. */
   provider: string
   /** Human-readable provider name for configuration surfaces. */

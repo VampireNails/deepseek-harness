@@ -53,7 +53,7 @@ const dispose = ctx.authorization.registerFlow({
     session.notify({ message: 'Continue in your browser', url: 'https://auth.example/start' })
     const code = await session.prompt({ kind: 'text', message: 'Paste the code' })
     const { token } = await exchangeCode(code, session.signal)
-    await ctx.credentials.modifyRecord(key, () => Promise.resolve({ kind: 'grant', payload: { token } }))
+    await session.commit({ kind: 'grant', payload: { token } })
   },
 })
 
@@ -63,6 +63,8 @@ dispose()                         // unregister; withdraws any running attempt
 ```
 
 A flow declares the credential record it writes, a user-facing label, and the sign-in methods it offers, most preferred first. `run()` talks to the human through the session — one-way notices and questions the flow cannot answer for itself — and must commit the record through `ctx.credentials` before resolving: the seam refuses a flow that resolved without committing. `list()` and `describe()` let a surface show what can be authorized and whether an attempt is running; `dispose()` unregisters the flow and withdraws any attempt still running.
+
+Use `session.commit(record)` for a cancellation-safe write. Its mutation overload, `session.commit(async current => next)`, runs under the credential store's atomic lock and returns the committed record; returning `undefined` preserves the current record. Cancellation refuses admission, while an admitted write finishes before the attempt settles.
 
 ### Running an attempt
 

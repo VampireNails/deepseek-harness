@@ -23,7 +23,9 @@ import type { Api, ApiKeyAuth, Model, Provider, ProviderStreams } from '@earendi
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
-import { catalogProvider, PiAiCatalogError } from './catalog.ts'
+import { LlmError } from '@deepseek-ai/dsh-llm'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
+import { catalogModels, catalogProvider, PiAiCatalogError } from './catalog.ts'
 import { createProvider } from './models.ts'
 
 /**
@@ -94,6 +96,8 @@ export interface ProviderSpec {
   api?: string
   /** Endpoint override already applied to {@link models}; kept for provider-level display. */
   baseURL?: string
+  /** Configured request headers; OAuth routes keep the catalog-owned headers only. */
+  headers?: Readonly<Record<string, string>>
   /** The route's materialized models, in configuration order. */
   models: readonly Model<Api>[]
   /**
@@ -130,8 +134,39 @@ export interface ProviderSpec {
  */
 function routeAuth(spec: ProviderSpec, catalog: Provider | undefined): Provider['auth'] {
   if (catalog === undefined) return { apiKey: harnessApiKeyAuth(spec.displayName) }
-  if (catalog.auth.apiKey !== undefined || !spec.namesCredential) return catalog.auth
-  return { ...catalog.auth, apiKey: harnessApiKeyAuth(spec.displayName) }
+  const auth = catalog.auth.apiKey !== undefined || !spec.namesCredential
+    ? catalog.auth
+    : { ...catalog.auth, apiKey: harnessApiKeyAuth(spec.displayName) }
+  const oauth = auth.oauth
+  if (oauth === undefined) return auth
+  const requireNativeRoute = (): void => {
+    const native = catalogModels(spec.provider)
+    const changed = Object.keys(spec.headers ?? {}).length > 0 || spec.models.some((model) => {
+      const original = native.get(model.id)
+      return original === undefined || model.api !== original.api || model.baseUrl !== original.baseUrl
+        || model.provider !== original.provider || !deepEqualJson(model.headers ?? {}, original.headers ?? {})
+    })
+    if (changed) {
+      throw new LlmError(
+        'OAuth credentials require the native catalog route; use an explicit API key for customized routes',
+        'OAUTH_ROUTE_CHANGED',
+      )
+    }
+  }
+  return {
+    ...auth,
+    oauth: {
+      ...oauth,
+      refresh(credential, signal) {
+        requireNativeRoute()
+        return oauth.refresh(credential, signal)
+      },
+      toAuth(credential) {
+        requireNativeRoute()
+        return oauth.toAuth(credential)
+      },
+    },
+  }
 }
 
 /**

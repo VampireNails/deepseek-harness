@@ -59,6 +59,50 @@ PlatformSession is a Host-only snapshot from getPlatformSession: origin names th
 
 AccountDetails.balance projects recharge wallets in value and promotional wallets in bonusWallets, with independent currency and decimal balance strings. Failed queries contain no wallet arrays.
 
+## Authorization session
+
+The flow commits through its attempt-scoped session. The atomic mutation overload shares the credential store lock; a commit already admitted finishes before cancellation settles.
+
+```ts type-equiv
+/**
+ * What a running flow is given to talk to the human. Every member is scoped to
+ * one attempt: the flow neither knows nor chooses which surface is listening.
+ */
+interface AuthorizationSession {
+  /** The method id the caller picked, always one this flow declared. */
+  readonly method: string
+  /** Aborted when the caller withdraws or `cancel()` is called for this key. */
+  readonly signal: AbortSignal
+  /**
+   * Commit a record while rejecting cancelled attempts. Once admitted, cancellation waits for completion.
+   * @param record - credential owned by this flow.
+   * @returns after the credential store commits the record.
+   */
+  commit(record: CredentialRecord): Promise<void>
+  /**
+   * Commit through the credential store's atomic read-modify-write lock. The
+   * mutation receives the current record; returning undefined preserves it.
+   * Admission and cancellation follow the same rules as a direct record commit.
+   * @param mutate - flow-owned mutation executed under the store lock.
+   * @returns the record present after the mutation commits.
+   */
+  commit(mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>): Promise<CredentialRecord | undefined>
+  /**
+   * Report progress, or tell the human what to do next. Fire-and-forget: a
+   * surface that cannot render a notice must not stall the flow.
+   * @param notice - the message, and any page or code it refers to.
+   */
+  notify(notice: AuthorizationNotice): void
+  /**
+   * Ask the human a question the flow cannot answer for itself.
+   * @param prompt - what to ask, and how it should be presented.
+   * @returns what the human typed, or the chosen option's id.
+   * @throws when the human declines, or the prompt's own signal withdraws it.
+   */
+  prompt(prompt: AuthorizationPrompt): Promise<string>
+}
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>

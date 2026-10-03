@@ -1,0 +1,3 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`model account configuration > keeps independent account facts in its owner-local rendered-output snapshot 1`] = `"Account subscriptionsSign in using a method installed on the Linux Host. Your subscription must permit the selected model.Refresh account statusChatGPT CodexProvider enabledHost credential record savedModel request not verifiedSelected authentication: API keyReferenced credential source: environmentSign-in methodBrowser loginSign inEnable account subscriptionRemove Host accountVerify connectionEnabling uses the provider’s official endpoint and removes API key reference and custom endpoint overrides."`;

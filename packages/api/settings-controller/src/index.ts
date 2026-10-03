@@ -8,6 +8,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import {
   openNativeTextFile,
 } from '@deepseek-ai/dsh-native-command'
@@ -19,9 +20,14 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { z } from 'zod'
 import { CredentialsController } from './credentials.ts'
+import { ModelAccessController } from './model-access.ts'
+import type { ModelAccessOptions } from './model-access.ts'
 import type { SettingsDocumentOpenValue } from './types.ts'
 
 export { CredentialsController } from './credentials.ts'
+export { ModelAccessController } from './model-access.ts'
+export type { ModelAccessOptions } from './model-access.ts'
+export type * from './model-access-types.ts'
 export type * from './types.ts'
 
 const settingsNamespaceRequestSchema = z.object({ ns: z.string().min(1) })
@@ -35,6 +41,8 @@ function isAborted(signal: AbortSignal): boolean {
 export interface SettingsControllerInternals {
   /** Host text-editor integration used to open the settings document. */
   readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
+  /** Authorization polling and verification bounds. */
+  readonly modelAccess?: ModelAccessOptions
 }
 
 /**
@@ -74,6 +82,7 @@ declare module '@deepseek-ai/cordis' {
  * `settings/conflict` or `settings/rejected` with the service's message.
  */
 export class SettingsController extends TypertRemoteService {
+  static Config = Schema.object({ modelAccess: ModelAccessController.Config })
   private readonly openTextFile: (path: string, signal: AbortSignal) => Promise<void>
 
   /**
@@ -86,6 +95,7 @@ export class SettingsController extends TypertRemoteService {
     super(ctx, 'settingsController', { namespace: 'settings' })
     this.openTextFile = internals.openTextFile ?? openNativeTextFile
     ctx.plugin(CredentialsController)
+    ctx.plugin(ModelAccessController, internals.modelAccess ?? {})
   }
 
   /**

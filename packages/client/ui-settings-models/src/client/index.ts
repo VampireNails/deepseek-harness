@@ -16,6 +16,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // (settings/credentials invalidations ride the allowlist) into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { ModelsSection } from './ModelsSection.tsx'
+import { ModelAccessSection } from './ModelAccessSection.tsx'
+import { createModelAccessOperations } from './model-access-operations.ts'
 import type { ModelsSectionInjected } from './ModelsSection.tsx'
 import { DeepSeekOnboardingDialog } from './DeepSeekOnboardingDialog.tsx'
 import type { DeepSeekOnboardingInjected } from './DeepSeekOnboardingDialog.tsx'
@@ -139,10 +141,24 @@ export function apply(ctx: ClientContext): void {
     label: () => t('nav'),
     inject: injected,
     children: {
+      'settings.models.accounts': { kind: 'single', scope: 'root' },
       'settings.models.provider-card': { kind: 'keyed', scope: 'root' },
       'settings.models.footer': { kind: 'list', scope: 'root' },
     },
   }, ModelsSection))
+  // Older Hosts advertise no account namespace, so their existing key editors
+  // remain usable while this contribution waits for its optional service.
+  ctx.inject(['remote.modelAccess'], (scope) => {
+    const accountOperations = createModelAccessOperations(scope)
+    scope.slots.inject('settings.models.accounts', () => scope.slots.register({
+      name: 'settings.models.accounts',
+      inject: () => ({
+        operations: accountOperations,
+        t,
+        onUpdated: () => { void controller.load() },
+      }),
+    }, ModelAccessSection))
+  })
   ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding',
     id: 'welcome-notice',

@@ -19,6 +19,7 @@ import {
 import type { CredentialKey, CredentialProvider, CredentialRecord } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { LlmError } from '@deepseek-ai/dsh-llm'
+import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
 
 /**
  * The record scope every credential this adapter family stores is written
@@ -97,6 +98,36 @@ function toRecord(credential: Credential): CredentialRecord {
     }
   }
   return { kind: 'grant', payload: jsonImage(credential) }
+}
+
+/**
+ * Scope a login collection's only write path to its authorization admission.
+ * The seam executes the mutation under the original record-store lock; normal
+ * request collections retain their own store for independently locked refreshes.
+ * @param store - shared store used for reads and provider metadata.
+ * @param session - attempt owning the login commit.
+ * @param providerId - the sole provider this login collection can write.
+ * @returns a store whose login mutation cannot outlive its authorization.
+ */
+export function authorizationCredentialStore(
+  store: CredentialStore,
+  session: AuthorizationSession,
+  providerId: string,
+): CredentialStore {
+  return {
+    ...store,
+    async modify(id, mutate, options) {
+      if (id !== providerId) {
+        throw new LlmError('llm-pi-ai: login cannot write another provider credential', 'UNAUTHORIZED_CREDENTIAL')
+      }
+      options?.signal?.throwIfAborted()
+      const saved = await session.commit(async (current) => {
+        const next = await mutate(toPiCredential(current))
+        return next === undefined ? undefined : toRecord(next)
+      })
+      return toPiCredential(saved)
+    },
+  }
 }
 
 /**

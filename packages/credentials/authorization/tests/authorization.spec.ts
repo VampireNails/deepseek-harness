@@ -546,3 +546,21 @@ it('rejects a settled session commit before and during the next attempt', async 
   }
   expect(await ctx.credentials.readRecord(KEY)).toMatchObject({ payload: { token: 'grant-2' } })
 })
+
+it('runs a commit mutation against the store current record and returns the single committed record', async () => {
+  const ctx = await harness()
+  await ctx.credentials.modifyRecord(KEY, () => Promise.resolve({ kind: 'grant', payload: { token: 'old' } }))
+  let saved: unknown
+  ctx.authorization.registerFlow({
+    key: KEY, label: 'Account', methods: [{ id: 'browser', label: 'Browser' }],
+    async run(session) {
+      saved = await session.commit((current) => {
+        expect(current).toEqual({ kind: 'grant', payload: { token: 'old' } })
+        return Promise.resolve({ kind: 'grant', payload: { token: 'new' } })
+      })
+    },
+  })
+  await expect(ctx.authorization.begin({ key: KEY, interaction: surface() })).resolves.toEqual({ status: 'authorized' })
+  expect(saved).toEqual({ kind: 'grant', payload: { token: 'new' } })
+  expect(await ctx.credentials.readRecord(KEY)).toEqual(saved)
+})

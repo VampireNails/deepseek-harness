@@ -53,7 +53,7 @@ const dispose = ctx.authorization.registerFlow({
     session.notify({ message: 'Continue in your browser', url: 'https://auth.example/start' })
     const code = await session.prompt({ kind: 'text', message: 'Paste the code' })
     const { token } = await exchangeCode(code, session.signal)
-    await ctx.credentials.modifyRecord(key, () => Promise.resolve({ kind: 'grant', payload: { token } }))
+    await session.commit({ kind: 'grant', payload: { token } })
   },
 })
 
@@ -63,6 +63,8 @@ dispose()                         // unregister; withdraws any running attempt
 ```
 
 flow 声明它写入的凭据记录、面向用户的标签以及它提供的登录方法，最优先者在前。`run()` 通过会话与人对话——单向 notice 与 flow 无法自行回答的问题——并且必须在返回前通过 `ctx.credentials` 提交记录：seam 会拒绝未提交就返回的 flow。`list()` 与 `describe()` 让界面展示可授权的内容以及是否有尝试在运行；`dispose()` 注销该 flow 并撤销仍在运行中的尝试。
+
+使用 `session.commit(record)` 进行能够正确处理取消的写入。其 mutation 重载 `session.commit(async current => next)` 在凭据存储的原子锁下执行，并返回提交后的记录；返回 `undefined` 会保留当前记录。取消会拒绝写入准入，已获准的写入则会在尝试结算前完成。
 
 ### 发起一次尝试
 

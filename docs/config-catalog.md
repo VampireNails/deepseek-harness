@@ -239,10 +239,24 @@ Source: [`packages/api/session-controller/src/index.ts:79`](../packages/api/sess
 export interface SettingsControllerInternals {
   /** Host text-editor integration used to open the settings document. */
   readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
+  /** Authorization polling and verification bounds. */
+  readonly modelAccess?: ModelAccessOptions
+}
+
+/** Authorization retention and verification bounds, configured on this plugin. */
+export interface ModelAccessOptions {
+  /** Maximum time for one login conversation, in milliseconds. */
+  attemptTtlMs?: number
+  /** Time completed conversations remain available to their owner, in milliseconds. */
+  retentionMs?: number
+  /** Maximum combined running and retained conversations. */
+  maxAttempts?: number
+  /** Connection check lifetime, in milliseconds. */
+  verificationTimeoutMs?: number
 }
 ```
 
-Source: [`packages/api/settings-controller/src/index.ts:35`](../packages/api/settings-controller/src/index.ts)
+Source: [`packages/api/settings-controller/src/index.ts:41`](../packages/api/settings-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-terminal-controller"></a>
 

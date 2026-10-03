@@ -14,6 +14,141 @@
 
 `settings/document-updated` 在 Loader 配置变化后使表单描述符失效。这是 UI 通知；消费者仅在需要刷新注册信息时使用 `loader/volatile-update`。
 
+## 模型账号传输合同
+
+`modelAccess` 命名空间投影 Host 配置及凭据元数据。授权尝试的所有权 token 属于发起页面；订阅 grant、API Key 和提示答案均不返回。
+
+```ts type-equiv
+/** Host-generated identity of one authorization conversation. */
+type ModelAccessAttemptId = Branded<'ModelAccessAttemptId'>
+```
+
+```ts type-equiv
+/** Capability required to observe or change an authorization conversation. */
+type ModelAccessOwnerToken = Branded<'ModelAccessOwnerToken'>
+```
+
+```ts type-equiv
+/** Host-generated identity of the currently pending question. */
+type ModelAccessPromptId = Branded<'ModelAccessPromptId'>
+```
+
+```ts type-equiv
+/** Curated, non-secret editable provider profile. */
+interface ModelAccessProfile {
+  apiKeyEnv?: string
+  displayName?: string
+  api?: string
+  baseURL?: string
+  models?: { id: string; name?: string }[]
+}
+```
+
+```ts type-equiv
+/** Public provider configuration; credentials contain metadata only. */
+interface ModelAccessProvider {
+  id: string
+  name: string
+  settingsNs: string
+  revision: number
+  configured: boolean
+  declared: boolean
+  editable: boolean
+  /** Selected configuration mode; presence and verification are separate facts. */
+  authentication: 'api-key' | 'oauth' | 'ambient'
+  profile: ModelAccessProfile
+  methods: AuthorizationMethod[]
+  inFlight: boolean
+  credential?: CredentialInfo & { ref: string; managed: boolean }
+  record: { configured: boolean; writable: boolean; kind?: 'api-key' | 'grant' }
+}
+```
+
+```ts type-equiv
+/** Configuration returned to the model accounts page. */
+interface ModelAccessConfiguration {
+  writable: boolean
+  providers: ModelAccessProvider[]
+  custom?: { settingsNs: string; revision: number }
+  apis: string[]
+}
+```
+
+```ts type-equiv
+/** Explicit save mode prevents subscription tokens reaching custom endpoints. */
+interface ModelAccessSaveRequest {
+  provider: string
+  expectedRevision: number
+  authentication: 'api-key' | 'oauth' | 'ambient'
+  apiKey?: string
+  baseURL?: string
+  api?: string
+  displayName?: string
+  models?: { id: string; name?: string }[]
+}
+```
+
+```ts type-equiv
+/** Revision-checked provider removal. Credentials are retained. */
+interface ModelAccessRemoveRequest { provider: string; expectedRevision: number }
+```
+
+```ts type-equiv
+/** Credential action addressed to one provider. */
+interface ModelAccessProviderRequest { provider: string }
+```
+
+```ts type-equiv
+/** Authorization request naming one installed login method. */
+interface ModelAccessStartRequest { provider: string; method: string }
+```
+
+```ts type-equiv
+/** Private handle returned only to the initiating page. */
+interface ModelAccessAttemptOwner { attemptId: ModelAccessAttemptId; ownerToken: ModelAccessOwnerToken }
+```
+
+```ts type-equiv
+/** Wire-safe pending prompt; its signal remains within the Host. */
+type ModelAccessPrompt = { promptId: ModelAccessPromptId; message: string } & (
+  { kind: 'text' | 'secret'; placeholder?: string }
+  | { kind: 'select'; options: { id: string; label: string; description?: string }[] }
+)
+```
+
+```ts type-equiv
+/** Current bounded authorization state; no answer or token is ever returned. */
+interface ModelAccessAttemptStatus {
+  attemptId: ModelAccessAttemptId
+  provider: string
+  status: 'pending' | 'authorized' | 'cancelled' | 'failed'
+  expiresAt: number
+  notice?: AuthorizationNotice
+  prompt?: ModelAccessPrompt
+  errorCode?: string
+}
+```
+
+```ts type-equiv
+/** Answer to the current question, consumed without being retained. */
+interface ModelAccessRespondRequest extends ModelAccessAttemptOwner { promptId: ModelAccessPromptId; value: string }
+```
+
+```ts type-equiv
+/** Explicit fixed-cost connection check. */
+interface ModelAccessVerifyRequest { provider: string; model: string }
+```
+
+```ts type-equiv
+/** Connection check outcome; provider response text is excluded. */
+interface ModelAccessVerifyValue { ok: boolean; errorCode?: string }
+```
+
+```ts type-equiv
+/** Draft discovery inputs delegated to the existing Host discovery seam. */
+interface ModelAccessDiscoverRequest { provider?: string; baseURL?: string; apiKey?: string; api?: string }
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -21,6 +156,94 @@
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxmodelaccesscontroller--modelaccesscontroller"></a>
+
+### `ctx.modelAccessController` — `ModelAccessController`
+
+Model account Remote namespace; authentication answers and tokens remain on Host.
+
+```ts cordis-catalog
+/**
+ * Read installed provider profiles and credential metadata.
+ * @returns provider profiles and metadata, including installed dormant routes.
+ */
+@Remote async configuration(): Promise<ModelAccessConfiguration>
+
+/**
+ * Commit an explicit authentication mode and provider profile.
+ * @param request - revision and explicit authentication mode.
+ * @returns committed public configuration.
+ */
+@Remote async save(request: ModelAccessSaveRequest): Promise<ModelAccessConfiguration>
+
+/**
+ * Remove a provider from the writable configuration layer.
+ * @param request - revision-checked removal; credentials are retained.
+ * @returns current configuration.
+ */
+@Remote async remove(request: ModelAccessRemoveRequest): Promise<ModelAccessConfiguration>
+
+/**
+ * Delete page-managed API keys while preserving other credential sources.
+ * @param request - provider whose page-managed key is cleared.
+ * @returns remaining effective sources.
+ */
+@Remote async clearKey(request: ModelAccessProviderRequest): Promise<ModelAccessConfiguration>
+
+/**
+ * Delete the stored subscription grant without changing other credential sources.
+ * @param request - provider whose stored subscription grant is deleted.
+ * @returns remaining effective sources.
+ */
+@Remote async logout(request: ModelAccessProviderRequest): Promise<ModelAccessConfiguration>
+
+/**
+ * Start a private authorization attempt with bounded retention.
+ * @param request - provider and its installed method.
+ * @returns a private owner capability immediately.
+ */
+@Remote start(request: ModelAccessStartRequest): ModelAccessAttemptOwner
+
+/**
+ * Read the current state of an owned authorization attempt.
+ * @param request - private attempt capability.
+ * @returns latest prompt/notice and terminal result.
+ */
+@Remote status(request: ModelAccessAttemptOwner): ModelAccessAttemptStatus
+
+/**
+ * Consume one response to the currently owned prompt.
+ * @param request - one answer to the current prompt.
+ * @returns state after consuming the answer.
+ */
+@Remote respond(request: ModelAccessRespondRequest): ModelAccessAttemptStatus
+
+/**
+ * Request withdrawal and report the current settlement state.
+ * @param request - private attempt capability.
+ * @returns state while withdrawal settles.
+ */
+@Remote cancel(request: ModelAccessAttemptOwner): ModelAccessAttemptStatus
+
+/**
+ * Run the fixed small request through the active model adapter.
+ * @param request - registered provider/model.
+ * @param signal - caller lifetime.
+ * @returns actual fixed-request outcome.
+ */
+@Remote async verify(request: ModelAccessVerifyRequest, signal: AbortSignal): Promise<ModelAccessVerifyValue>
+
+/**
+ * Discover model names through the installed Host adapter.
+ * @param request - draft endpoint inputs.
+ * @param signal - caller lifetime.
+ * @returns discovered model names.
+ */
+@Remote async discover(request: ModelAccessDiscoverRequest, signal: AbortSignal): Promise<{ id: string; name?: string }[]>
+```
+
+Source: [`packages/api/settings-controller/src/model-access.ts`](../../packages/api/settings-controller/src/model-access.ts)
 
 <a id="ctxsettings--settingsforms"></a>
 

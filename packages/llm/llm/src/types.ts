@@ -244,6 +244,8 @@ export type ModelModality = ModelModalityMap[keyof ModelModalityMap]
  * provider alongside its live/dormant state.
  */
 export interface LlmConfigurableProvider {
+  /** Owner of stored authentication records for this route, when its adapter supports account configuration. */
+  credentialScope?: string
   /** Provider route key this entry activates when configured. */
   provider: string
   /** Human-readable provider name for configuration surfaces. */
