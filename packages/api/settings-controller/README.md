@@ -56,11 +56,11 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 <a id="model-experience"></a>
 ## Model Experience
 
-Configuration and authorization register no prompt, tool, or session event. An explicit connection check sends the fixed user input `Reply OK.` to the selected model and caps output at 16 tokens; it consumes provider usage and returns no response text.
+None, as configuration and authorization register no prompt, tool, or session event.
 
 #### KV Cache effect
 
-No direct effect; reading or writing these configuration values does not alter model requests already in flight.
+Reading or writing configuration does not alter model requests already in flight. An explicit connection check sends the fixed user input `Reply OK.` to the selected model and caps output at 16 tokens; it consumes provider usage and returns no response text.
 
 ## Known Limitations and Deferred Work
 
