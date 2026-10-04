@@ -124,7 +124,7 @@ dsh-muse 的任务书只定义了 5 个阶段，目标是把 Python 栈里 **dsh
 | A1 | Gmail 等外部服务连接器 | Tomas 2026-09-27 明确决定不在复刻范围 |
 | A2 | 人物/群组档案 | 个人使用，Tomas 明确不要 |
 | A3 | onboarding 教学流程 | 一次性流程，无需复刻 |
-| A4 | 图片生成（ChatGPT 路线） | 未复刻，media.py 已删；ChatGPT 模型接入不提供 image_gen 工具，未发现生成插件挂载。当前范围及验收见 [能力复刻映射](MUSE-REPLICATION-MAP.md)。 |
+| A4 | 图片生成（ChatGPT 路线） | 未复刻，media.py 已删；web profile 声明第三方 dsh-image-gen Git 依赖和配置 patch，bundles 未列出该插件，尚无有效工具注册、真实生成及手机读取产物的验收证据。ChatGPT 模型接入本身不提供 image_gen 工具；当前范围及验收见 [能力复刻映射](MUSE-REPLICATION-MAP.md)。 |
 | A5 | TTS | 同上，占位代码已删 |
 | A6 | 预订/快递追踪 | 低频能力，未排期 |
 | A7 | Tailscale Serve 跨重启验收 | 运维事项，非能力复刻 |
