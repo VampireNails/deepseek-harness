@@ -1,0 +1,45 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {resolveTask,runTask,migrateCrontab} from '../runner.mjs';
+import {readFileSync} from 'node:fs';
+
+const config={defaultRoute:'flash',routes:{flash:{provider:'deepseek-official',model:'deepseek-flash'},
+  chat:{provider:'openai-codex',model:'gpt-5.5'}},tasks:{evolve_upkeep:{route:'chat',fallback:'flash',retrySafe:false}}};
+test('default task routing preserves the deployed nine-task provider assignments',()=>{
+  const deployed=JSON.parse(readFileSync(new URL('../routes.json',import.meta.url),'utf8'));
+  for(const id of ['evolve_upkeep','heartbeat'])assert.equal(resolveTask(deployed,id).provider,'deepseek-official');
+  for(const id of ['morning_briefing','evolve_studying','evolve_ideas','evolve_dreaming','evolve_skill_review','evolve_goal_review','evolve_goal_act'])
+    assert.equal(resolveTask(deployed,id,'brief').provider,'openai-codex');
+});
+test('known cron task IDs load the live template instead of stale crontab text',()=>{
+  const task=resolveTask(config,'evolve_upkeep','old prompt');
+  assert.equal(task.template,'memory_upkeep');assert.ok(task.prompt.includes('模板'));
+  assert.equal(task.provider,'openai-codex');
+  const custom=resolveTask(config,'custom','preserved prompt');
+  assert.equal(custom.prompt,'preserved prompt');assert.equal(custom.reason,'unconfigured-task');
+  assert.throws(()=>resolveTask(config,'custom'),/prompt/);
+  assert.throws(()=>resolveTask({...config,tasks:{custom:{route:'missing'}}},'custom','text'),/route/);
+  assert.throws(()=>resolveTask({...config,tasks:{custom:{route:'chat',fallback:'missing'}}},'custom','text'),/fallback/);
+});
+test('primary failure is recorded and side-effecting tasks are not retried',async()=>{
+  const seen=[],audit=[];
+  const exit=await runTask(config,'evolve_upkeep','old',async plan=>{seen.push(plan);return 1;},entry=>audit.push(entry));
+  assert.equal(exit,1);assert.equal(seen.length,1);
+  assert.equal(audit.at(-1).kind,'retry-refused');assert.equal(audit.at(-1).model,'gpt-5.5');
+});
+test('explicit read-only retry records both requested routes and exit reasons',async()=>{
+  const safe={...config,tasks:{custom:{route:'chat',fallback:'flash',retrySafe:true}}},audit=[],seen=[];
+  const exit=await runTask(safe,'custom','read only',async plan=>{seen.push(plan);return seen.length===1?1:0;},entry=>audit.push(entry));
+  assert.equal(exit,0);assert.equal(seen[1].provider,'deepseek-official');
+  assert.equal(audit.find(e=>e.kind==='fallback').primaryExit,1);
+  assert.equal(audit.at(-1).model,'deepseek-flash');
+  await assert.rejects(runTask(safe,'custom','read only',async()=>{throw Error('spawn failed');},()=>{}),/spawn failed/);
+});
+test('migration preview only replaces registered built-in invocations',()=>{
+  const input='0 3 * * * /root/intel/bin/intel-task.sh evolve_upkeep "old"\n0 4 * * * /root/intel/bin/intel-task.sh custom "stay"\n# keep\n';
+  const result=migrateCrontab(input,'/root/intel/dsh-fork/intel/task-runner/run.sh');
+  assert.equal(result.changed,1);assert.ok(result.text.includes('run.sh evolve_upkeep'));
+  assert.ok(result.text.includes('custom "stay"'));assert.ok(result.text.includes('# keep'));
+  assert.throws(()=>migrateCrontab(input,'/bad path'),/path/);
+  assert.equal(migrateCrontab('0 3 * * * /root/intel/bin/intel-task.sh evolve_upkeep "old" && echo chained\n','/safe/run.sh').changed,0);
+});
