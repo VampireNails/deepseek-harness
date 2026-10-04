@@ -17,6 +17,9 @@
 
 import z from "@deepseek-ai/schemastery";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { parseDocument } from "yaml";
 
 export const name = "dsh-intelligence-guard";
 export const inject = [];
@@ -27,7 +30,7 @@ export const Config = z.object({
 }).default({});
 
 // 生产环境不变式：返回 [{ ok, name, detail }]
-export function checkInvariants(env = process.env, credPath = "/root/.dsh/.credentials.yaml") {
+export function checkInvariants(env = process.env, credPath = join(env.DSH_HOME || join(homedir(), ".dsh"), ".credentials.yaml")) {
   const results = [];
 
   // 1. DEEPSEEK_BASE_URL 必须未设置（mock 泄漏主向量）
@@ -43,19 +46,29 @@ export function checkInvariants(env = process.env, credPath = "/root/.dsh/.crede
       : "ok",
   });
 
-  // 2. 至少一个 LLM provider 凭证有效（不绑定单一模型）
+  // 2. 至少一个 LLM provider 凭证已配置；实际可用性由调用验证确认。
   //    - DeepSeek: DEEPSEEK_API_KEY 环境变量
   //    - OpenAI Codex: /root/.dsh/.credentials.yaml 中的 llm-pi-ai/openai-codex
   const dsKey = env.DEEPSEEK_API_KEY;
   const hasDeepSeek = !!dsKey && dsKey.length >= 8;
   let hasCodex = false;
   try {
-    const credText = readFileSync(credPath, "utf8");
-    hasCodex = credText.includes("llm-pi-ai/openai-codex");
-  } catch {}
+    const document = parseDocument(readFileSync(credPath, "utf8"), { prettyErrors: false, uniqueKeys: true });
+    if (!document.errors.length) {
+      const store = document.toJS();
+      const record = store?.version === 1 ? store.records?.["llm-pi-ai/openai-codex"] : undefined;
+      const payload = record?.kind === "grant" ? record.payload : undefined;
+      hasCodex = payload?.type === "oauth" &&
+        typeof payload.access === "string" && payload.access.trim().length > 0 &&
+        typeof payload.refresh === "string" && payload.refresh.trim().length > 0 &&
+        Number.isFinite(payload.expires) && payload.expires > 0;
+    }
+  } catch (error) {
+    // Missing/unreadable/malformed credentials cannot satisfy startup; never expose parser source.
+  }
   results.push({
     ok: hasDeepSeek || hasCodex,
-    name: "至少一个 LLM provider 凭证有效",
+    name: "至少一个 LLM provider 凭证已配置",
     detail: (hasDeepSeek || hasCodex)
       ? `ok (${[hasDeepSeek && "deepseek", hasCodex && "openai-codex"].filter(Boolean).join("+")})`
       : "生产 profile 必须有 LLM 凭证。检查 /etc/deepseek-harness/.env（DeepSeek）或 dsh OAuth 授权（ChatGPT）。",
