@@ -7,9 +7,12 @@ const execFileAsync = promisify(execFile);
 const PROD_START = "/usr/local/bin/dsh-prod-start";
 
 // 启动级回归（第五轮审计 N2）：安全属性是"进程拒绝启动"，不是"apply() 抛异常"。
-// 只在生产机上跑（有 /etc/deepseek-harness/.env 才有意义），否则跳过。
+// 仅有权读取生产环境并执行启动器的账户才能验证；隔离 CI 不访问生产凭据。
 const isProd = await import("node:fs/promises").then((fs) =>
-  fs.access("/etc/deepseek-harness/.env").then(() => true).catch(() => false)
+  Promise.all([
+    fs.access("/etc/deepseek-harness/.env", fs.constants.R_OK),
+    fs.access(PROD_START, fs.constants.X_OK),
+  ]).then(() => true).catch(() => false)
 );
 
 test("污染 DEEPSEEK_BASE_URL → dsh-prod-start 拒绝启动（exit 1）", { skip: !isProd }, async () => {
