@@ -7,8 +7,8 @@
 // fork 炸弹、关机等）没有任何拦截，自主执行引擎上线前必须补上这条红线。
 //
 // 做法：复用，不复制。直接 import approvals 的 src/classify.js（纯函数，
-// 无副作用），在 tools/pre-execute 只拦 BLOCKED，其余一律 next() 放行。
-// 现有 cron 任务行为零变化，只补高危硬拦截。定策略的口（policy.js 的
+// 无副作用），在 tools/pre-execute 拦 BLOCKED 和分类异常，其余 next() 放行。
+// 分类失败只拒绝当前工具，不终止后续安全调用。定策略的口（policy.js 的
 // buildPolicy）仍在 approvals 侧，本插件只消费 DEFAULT_POLICY。
 //
 // 挂法：evolve profile bundles 中 dsh-headless 之后（尽早注册，deny 是终结性的，顺序不敏感）。
@@ -34,11 +34,15 @@ export function apply(ctx) {
         try {
           r = classify(exec.name, exec.arguments, DEFAULT_POLICY);
         } catch (err) {
-          // 分类器自身异常（理论上只可能是代码 bug）：fail-open 放行并大声记录。
-          // 理由：本层是纵深防御的加分项，主防线是 dsh 沙盒（workspace-write）；
-          // fail-closed 会把所有无头任务（含 cron）一次性打死，blast radius 更大。
-          warn(ctx, `classify 异常，fail-open 放行：${err?.message || err}`);
-          return next();
+          // 无法完成分类时只拒绝当前调用，保留后续安全工具和沙盒/审批边界。
+          // 异常可能携带参数或凭据；日志仅记录稳定错误码。
+          const reason = "安全分类失败，本次工具调用未执行；请检查守卫日志后重试。";
+          warn(ctx, "CLASSIFICATION_FAILED");
+          return {
+            kind: "deny",
+            reason,
+            info: { name: exec.name, code: "EXECGUARD_CLASSIFICATION_FAILED", reason },
+          };
         }
         if (r.level === LEVELS.BLOCKED) {
           warn(ctx, `BLOCKED ${exec.name}: ${r.reason}`);

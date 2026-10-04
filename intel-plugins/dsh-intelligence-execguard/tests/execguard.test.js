@@ -85,10 +85,16 @@ test("deny 会写 warn 日志", async () => {
   assert.ok(ctx.warnings.some((w) => w.includes("BLOCKED")), "应有 BLOCKED 日志");
 });
 
-test("classify 抛异常时 fail-open 放行（纵深防御定位）", async () => {
+test("classify 异常拒绝该调用，日志不包含命令或异常私有详情，后续安全调用可继续", async () => {
   const ctx = mockCtx();
   apply(ctx);
-  // arguments 传不可遍历的畸形值，classify 内部应自行容错；即使抛异常也要放行
-  const { nextCalled } = await runPreExecute(ctx, "bash", { command: "echo ok" });
-  assert.equal(nextCalled, true);
+  const args = { get command() { throw new Error('PRIVATE_ARGUMENT_CONTENT'); } };
+  const { out, nextCalled } = await runPreExecute(ctx, "bash", args);
+  assert.equal(nextCalled, false);
+  assert.equal(out.kind, 'deny');
+  assert.equal(out.info.code, 'EXECGUARD_CLASSIFICATION_FAILED');
+  assert.ok(ctx.warnings.some(w => w.includes('CLASSIFICATION_FAILED')));
+  assert.ok(ctx.warnings.every(w => !w.includes('PRIVATE_ARGUMENT_CONTENT')));
+  const safe = await runPreExecute(ctx, 'bash', { command: 'echo ok' });
+  assert.equal(safe.nextCalled, true);
 });
