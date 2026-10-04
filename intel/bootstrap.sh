@@ -43,20 +43,19 @@ fi
 
 # 2. 定义 profile 配置（bundles 必须与线上一致）
 declare -A PROFILE_BUNDLES
-PROFILE_BUNDLES[web-intel]='@deepseek-ai/dsh-base @deepseek-ai/dsh-web-app hello-intel dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile'
+PROFILE_BUNDLES[web-intel]='@deepseek-ai/dsh-base @deepseek-ai/dsh-web-app dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile'
 PROFILE_BUNDLES[evolve]='@deepseek-ai/dsh-base @deepseek-ai/dsh-headless dsh-intelligence-memory dsh-intelligence-joblog dsh-intelligence-evolution dsh-intelligence-feed dsh-intelligence-profile'
 PROFILE_BUNDLES[hmc-test]='@deepseek-ai/dsh-base @deepseek-ai/dsh-web-app dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile hmc-service-wrapper'
 
 # 树外插件 → 仓库内路径（file: 由 npm 拷贝，离线可装）
 declare -A PLUGIN_SRC
-PLUGIN_SRC[hello-intel]="$REPO_ROOT/intel-plugins/hello-intel"
 for p in dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile dsh-intelligence-joblog dsh-intelligence-evolution; do
   PLUGIN_SRC[$p]="$REPO_ROOT/intel-plugins/$p"
 done
 PLUGIN_SRC[hmc-service-wrapper]="$REPO_ROOT/intel/hmc-service-wrapper"
 
 declare -A PROFILE_PLUGINS
-PROFILE_PLUGINS[web-intel]='hello-intel dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile'
+PROFILE_PLUGINS[web-intel]='dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile'
 PROFILE_PLUGINS[evolve]='dsh-intelligence-memory dsh-intelligence-joblog dsh-intelligence-evolution dsh-intelligence-feed dsh-intelligence-profile'
 PROFILE_PLUGINS[hmc-test]='dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile hmc-service-wrapper'
 
