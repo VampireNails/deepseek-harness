@@ -12,6 +12,8 @@ ChatGPT cron 路由显式为每个一次性进程使用 SSE。否则，已安装
 
 带引用的产出保留配置的记忆目录，因此即使 memory 使用自定义 `dataDir`，产出检查也读取同一数据库。演进插件按 runner 身份，把新创建的根会话记入共享 DSH home 下的 `intel-joblog/automation-sessions.sqlite`。它排除标准子智能体和普通会话，保留会话 header，不根据工作区路径或提示词片段猜测自动任务。读取方以只读方式打开索引，缺少身份的历史会话保持未分类。
 
+[历史来源归类](legacy-session-origin.mjs) 是处理可信私有观测的离线维护。只有首条真实用户完整消息匹配确切历史任务模板、header 与消息时间均位于一个配对审计区间，且根会话与区间双向唯一时才可归类。`dry-run --index /absolute/index.sqlite` 从 stdin 读取观测，仅输出哈希；`apply` 还要求未占用的绝对 `--backup` 路径。合成的 `legacy-evidence:` 运行 ID 区分迁移证据与原生 runner ID。来源冲突会回滚整批写入。`rollback` 接收匿名 apply 回执，只删除本次新增且完整身份仍匹配的行，保留后续原生记录。调用方必须提取并核实原始日志；CLI 不验证任意输入观测的真实性，也不推测未知历史。
+
 `deduplicateDaily: true` 在执行前检查已持久化的同任务、同日期产出，并记录 `already-published` 及原运行 ID。Linux `flock` 将各任务从检查、执行到最终审计串行化，不同任务互不阻塞。Feed 与 Artifact 存储也串行写入，拒绝同一发布键对应冲突内容。Feed 展示最近 100 条，发布身份保存在 `.publication-history.sqlite`；Artifact 各版本保留各自的运行身份与记忆引用。
 
 停止写入后备份完整 `intel-feed` 与 `intel-artifacts` 目录，包含隐藏 SQLite 文件。恢复或切换版本时保留 `.publication-history.sqlite`：删除它会丢失展示窗口之外文章的重复保护。切换旧 writer 前停止 cron runner，因为旧版本不参与这些锁。失败运行可能已经保存了产出，手动重试前先检查审计与产出。

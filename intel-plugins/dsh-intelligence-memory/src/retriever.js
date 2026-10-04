@@ -13,7 +13,9 @@
 // 与 dsh web（144MB）同进程合计约 374MB，超过迁移期可用内存（约 355MB），故降级为 FTS5。
 // Python 退役、内存宽裕后，可实现同样接口的向量检索器直接替换，无需改插件主体.
 
-function spaceCjk(text) {
+import { randomUUID } from "node:crypto";
+
+export function spaceCjk(text) {
   return text.replace(/([\p{Script=Han}])/gu, " $1 ").replace(/\s+/g, " ").trim();
 }
 
@@ -61,10 +63,20 @@ export class FtsRetriever {
       throw new Error("memory text must be a non-empty string");
     }
     const clean = text.trim();
-    const r = this.insertStmt.run(clean, kind, Date.now(), sessionId);
-    const id = Number(r.lastInsertRowid);
-    this.ftsInsertStmt.run(id, spaceCjk(clean));
-    return { id };
+    // A savepoint also composes with a transaction owned by the caller.
+    const savepoint = "memory_add_" + randomUUID().replaceAll("-", "");
+    this.db.exec("SAVEPOINT " + savepoint);
+    try {
+      const r = this.insertStmt.run(clean, kind, Date.now(), sessionId);
+      const id = Number(r.lastInsertRowid);
+      this.ftsInsertStmt.run(id, spaceCjk(clean));
+      this.db.exec("RELEASE " + savepoint);
+      return { id };
+    } catch (error) {
+      try { this.db.exec("ROLLBACK TO " + savepoint + "; RELEASE " + savepoint); }
+      catch (rollbackError) { throw new AggregateError([error, rollbackError], "memory write rollback failed"); }
+      throw error;
+    }
   }
 
   get(id) {
