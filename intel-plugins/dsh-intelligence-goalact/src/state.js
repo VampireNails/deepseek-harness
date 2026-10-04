@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 export function goalActDir() {
-  const d = join(homedir(), ".dsh", "intel-goalact");
+  const d = join(process.env.DSH_HOME || join(homedir(), ".dsh"), "intel-goalact");
   mkdirSync(d, { recursive: true });
   return d;
 }
