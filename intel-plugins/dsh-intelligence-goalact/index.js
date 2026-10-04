@@ -78,7 +78,7 @@ export function apply(ctx, config) {
                 `会话已开：目标 ${goalId}（历史运行 ${g.totalRuns} 次，连续无进展 ${g.consecutiveFailures} 次，熔断阈值 ${CIRCUIT_BREAKER_THRESHOLD}）。`,
                 BUDGET,
                 RULES,
-                "流程：读目标 progress 历史 + memory_search 定 1-3 个具体步骤 → todo_add 建计划 → 执行 → 敏感事项 goal_act_propose → goal_act_finish 收尾（必须调，否则本次不记账）。",
+                "流程：读目标 progress 历史 + memory_search 定 1-3 个具体步骤 → todo_write 提交完整 todos 列表（每项 content、status=pending/in_progress/completed，同时最多一个 in_progress；更新也提交完整列表）→ 执行 → 敏感事项 goal_act_propose → goal_act_finish 收尾（必须调，否则本次不记账）。",
               ].join("\n"),
             };
           },
