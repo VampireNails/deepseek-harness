@@ -10,6 +10,7 @@ test('Linux CLI sends the live template with an explicit model patch and records
   {skip:process.platform!=='linux'},async t=>{
     const dir=await mkdtemp(join(tmpdir(),'intel-runner-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));
     const bin=join(dir,'bin'),home=join(dir,'home');await mkdir(bin);await mkdir(home);
+    await writeFile(join(bin,'flock'),'#!/bin/sh\nexec /usr/bin/flock "$@"\n',{mode:0o700});
     await writeFile(join(bin,'dsh'),`#!/usr/bin/env node
 import fs from 'node:fs';
 const patch=process.argv[process.argv.indexOf('--patch')+1];

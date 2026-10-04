@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { withStoreWriter, atomicJson, publicationMetadata } from '../../shared/persistence.js';
+import { DatabaseSync } from 'node:sqlite';
 
 export function feedDir() {
   return join(process.env.DSH_HOME || join(homedir(), ".dsh"), "intel-feed");
@@ -15,7 +17,7 @@ function ts() {
 }
 
 // Feed：个人简报流（复刻 Python 版 feed.py）。
-// feed.json 是唯一真相源（数组，新在前），上限 100 条，id 为 f1、f2……
+// feed.json 是当前展示记录（数组，新在前），上限100；独立history保留已发布幂等身份。
 export class FeedStore {
   constructor(dir = feedDir()) {
     this.dir = dir;
@@ -32,7 +34,7 @@ export class FeedStore {
   }
 
   _save(posts) {
-    writeFileSync(this.file, JSON.stringify(posts, null, 2));
+    atomicJson(this.file, posts);
   }
 
   _nextId(posts) {
@@ -46,13 +48,40 @@ export class FeedStore {
     return "f" + (mx + 1);
   }
 
-  addPost(title, body, source = "") {
+  addPost(title, body, source = "", metadata) {
+    const identity = publicationMetadata(metadata);
+    return withStoreWriter(this.dir, () => {
+    // A separately committed index survives a failed JSON write or a failed writer COMMIT.
+    // Reconcile the previous JSON before pruning its display window.
+    const database = new DatabaseSync(join(this.dir, '.publication-history.sqlite'));
+    try {
     const posts = this.load();
+    database.exec('CREATE TABLE IF NOT EXISTS publication_history (key TEXT PRIMARY KEY, payload TEXT NOT NULL)');
+    const remember = database.prepare('INSERT OR IGNORE INTO publication_history(key,payload) VALUES (?,?)');
+    database.exec('BEGIN IMMEDIATE');
+    try {
+      for (const post of posts) if (post.idempotencyKey) remember.run(post.idempotencyKey, JSON.stringify(post));
+      database.exec('COMMIT');
+    } catch (error) { database.exec('ROLLBACK'); throw error; }
+    if (identity.idempotencyKey) {
+      const saved = database.prepare('SELECT payload FROM publication_history WHERE key=?').get(identity.idempotencyKey);
+      const previous = saved && JSON.parse(saved.payload);
+      if (previous) {
+        if (previous.title !== title || previous.body !== body || previous.source !== source ||
+            ['taskId','runId','runDate','memoryDirectory'].some(field => previous[field] !== identity[field]) ||
+            JSON.stringify(previous.references ?? []) !== JSON.stringify(identity.references ?? [])) throw Error('publication idempotency conflict');
+        return previous.id;
+      }
+    }
     const pid = this._nextId(posts);
-    posts.unshift({ id: pid, ts: ts(), title, body, source });
+    posts.unshift({ id: pid, ts: ts(), title, body, source, ...identity });
+    const publication = posts[0];
     posts.length = Math.min(posts.length, MAX_POSTS);
     this._save(posts);
+    if (identity.idempotencyKey) remember.run(identity.idempotencyKey, JSON.stringify(publication));
     return pid;
+    } finally { database.close(); }
+    });
   }
 
   listPosts(n = 20) {

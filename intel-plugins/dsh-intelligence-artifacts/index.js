@@ -11,6 +11,7 @@
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { ArtifactStore, artifactsDir } from "./src/artifacts.js";
+import { publicationIdentity } from '../shared/publication.js';
 
 export const name = "dsh-intelligence-artifacts";
 export const inject = ["agents", "tools"];
@@ -36,10 +37,12 @@ export function apply(ctx, config) {
             title: { type: "string", required: true, description: "产物标题（同标题再次保存=追加新版本）" },
             content: { type: "string", required: true, description: "产物内容" },
             kind: { type: "string", description: "markdown | html | text，默认 markdown" },
+            references: { type: "array", items: { type: "number" }, description: "正文引用的现存记忆 ID" },
           },
           output: { schema: { type: "json" }, render: (args, value) => textBlock(value.text) },
           execute: async (args) => {
-            const m = store.save(args.title, args.content, args.kind || "markdown");
+            const identity = publicationIdentity('artifact', args.references, ctx.get?.('memoryReferences'));
+            const m = store.save(args.title, args.content, args.kind || "markdown", identity);
             const htmlNote =
               m.kind === "html" ? "\n（HTML 产物：渲染层由 HMC 端沙盒 iframe 实现）" : "";
             return { text: `产物已发布：${m.title}（v${m.version}）\n展示链接：${m.url}${htmlNote}` };

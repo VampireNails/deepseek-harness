@@ -2,18 +2,70 @@
   "timeoutMs": 600000,
   "defaultRoute": "flash",
   "routes": {
-    "flash": {"provider": "deepseek-official", "model": "deepseek-flash"},
-    "chatgpt": {"provider": "openai-codex", "model": "gpt-5.5", "transport": "sse"}
+    "flash": {
+      "provider": "deepseek-official",
+      "model": "deepseek-flash"
+    },
+    "chatgpt": {
+      "provider": "openai-codex",
+      "model": "gpt-5.5",
+      "transport": "sse"
+    }
   },
   "tasks": {
-    "morning_briefing": {"route": "chatgpt", "fallback": "flash", "retrySafe": false},
-    "evolve_upkeep": {"route": "flash", "retrySafe": false},
-    "evolve_studying": {"route": "chatgpt", "fallback": "flash", "retrySafe": false},
-    "evolve_ideas": {"route": "chatgpt", "fallback": "flash", "retrySafe": false},
-    "evolve_dreaming": {"route": "chatgpt", "fallback": "flash", "retrySafe": false},
-    "evolve_skill_review": {"route": "chatgpt", "fallback": "flash", "retrySafe": false},
-    "evolve_goal_review": {"route": "chatgpt", "fallback": "flash", "retrySafe": false},
-    "evolve_goal_act": {"route": "chatgpt", "fallback": "flash", "retrySafe": false},
-    "heartbeat": {"route": "flash", "retrySafe": false}
-  }
+    "morning_briefing": {
+      "route": "chatgpt",
+      "fallback": "flash",
+      "retrySafe": false,
+      "visibleOutput": "required",
+      "deduplicateDaily": true
+    },
+    "evolve_upkeep": {
+      "route": "flash",
+      "retrySafe": false
+    },
+    "evolve_studying": {
+      "route": "chatgpt",
+      "fallback": "flash",
+      "retrySafe": false,
+      "visibleOutput": "required",
+      "deduplicateDaily": true
+    },
+    "evolve_ideas": {
+      "route": "chatgpt",
+      "fallback": "flash",
+      "retrySafe": false,
+      "visibleOutput": "required",
+      "deduplicateDaily": true
+    },
+    "evolve_dreaming": {
+      "route": "chatgpt",
+      "fallback": "flash",
+      "retrySafe": false,
+      "visibleOutput": "required",
+      "deduplicateDaily": true
+    },
+    "evolve_skill_review": {
+      "route": "chatgpt",
+      "fallback": "flash",
+      "retrySafe": false,
+      "visibleOutput": "required",
+      "deduplicateDaily": true
+    },
+    "evolve_goal_review": {
+      "route": "chatgpt",
+      "fallback": "flash",
+      "retrySafe": false
+    },
+    "evolve_goal_act": {
+      "route": "chatgpt",
+      "fallback": "flash",
+      "retrySafe": false
+    },
+    "heartbeat": {
+      "route": "flash",
+      "retrySafe": false
+    }
+  },
+  "timeZone": "Asia/Shanghai"
 }

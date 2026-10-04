@@ -4,11 +4,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { TASKS, chunk } from "./src/tasks.js";
+import { AutomationSessionStore, runnerIdentity } from "./src/session-origin.js";
 
 export const name = "dsh-intelligence-evolution";
 export const inject = ["agents", "tools"];
 
-export const Config = z.object({}).default({});
+export const Config = z.object({
+  sessionIndexBusyTimeoutMs: z.number().min(1).max(30000).default(3000),
+}).default({});
 
 export function dataDir() {
   return join(process.env.DSH_HOME || join(homedir(), ".dsh"), "intel-evolution");
@@ -31,6 +34,21 @@ function readChecklist() {
 }
 
 export function apply(ctx, config) {
+  const identity = runnerIdentity();
+  if (identity) {
+    const directory = join(process.env.DSH_HOME || join(homedir(), ".dsh"), "intel-joblog");
+    ctx.effect(() => {
+      const store = new AutomationSessionStore(directory, { busyTimeoutMs: config?.sessionIndexBusyTimeoutMs ?? 3000 });
+      let dispose;
+      try {
+        dispose = ctx.on("session/created", session => {
+          if (session.header.origin === "subagent") return;
+          store.record(session.id, identity);
+        }, { global: true });
+      } catch (error) { store.close(); throw error; }
+      return () => { dispose(); store.close(); };
+    }, "intelEvolution.sessionOrigin");
+  }
   ctx.provide("evolution", { tasks: TASKS, heartbeatFile: heartbeatFile() });
 
   ctx.effect(

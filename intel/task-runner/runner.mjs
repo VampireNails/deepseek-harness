@@ -1,4 +1,5 @@
 import {TASKS} from '../../intel-plugins/dsh-intelligence-evolution/src/tasks.js';
+import {randomUUID} from 'node:crypto';
 
 /** Production cron aliases to the evolution module's template names. */
 export const TASK_ALIASES=Object.freeze({evolve_upkeep:'memory_upkeep',evolve_studying:'studying',
@@ -26,12 +27,14 @@ export function resolveTask(config,id,customPrompt){
   const route=config.tasks?.[id],routeId=route?.route??config.defaultRoute;
   const selected=resolveRoute(config,routeId);
   if(route?.fallback!==undefined)resolveRoute(config,route.fallback,'fallback route');
+  if(route?.visibleOutput!==undefined&&!['required','optional'].includes(route.visibleOutput))throw Error('invalid visible output policy');
+  if(route?.deduplicateDaily!==undefined&&typeof route.deduplicateDaily!=='boolean')throw Error('invalid daily deduplication policy');
   const template=TASK_ALIASES[id]??(Object.hasOwn(TASKS,id)?id:null);
   const prompt=template?TASKS[template].prompt:customPrompt;
   if(typeof prompt!=='string'||!prompt.trim())throw Error('custom task needs an explicit prompt');
   return {id,template,prompt,...selected,
     reason:route?'configured-task':'unconfigured-task',fallback:route?.fallback,
-    retrySafe:route?.retrySafe===true};
+    retrySafe:route?.retrySafe===true,visibleOutput:route?.visibleOutput??'optional',deduplicateDaily:route?.deduplicateDaily===true};
 }
 
 /**
@@ -43,19 +46,47 @@ export function resolveTask(config,id,customPrompt){
  * @param record - Persists a prompt-free route audit record.
  * @returns The final process exit code; launch and audit errors reject.
  */
-export async function runTask(config,id,customPrompt,execute,record){
+export async function runTask(config,id,customPrompt,execute,record,options={}){
   const plan=resolveTask(config,id,customPrompt);
-  const info={taskId:id,provider:plan.provider,model:plan.model,transport:plan.transport,template:plan.template,reason:plan.reason};
+  const timeZone=options.timeZone??config.timeZone??'Asia/Shanghai';
+  const runDate=options.runDate??new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const runId=options.runId??randomUUID();
+  if(typeof runId!=='string'||!runId||runId.length>256||!/^\d{4}-\d{2}-\d{2}$/.test(runDate))throw Error('invalid run identity');
+  Object.assign(plan,{runId,runDate,timeZone});
+  if(plan.visibleOutput==='required') plan.prompt += `\n\n可见交付要求：本轮任务 ${id}，日期 ${runDate}（${timeZone}）。结束前用 feed_post 发布具体结论和下一步；引用记忆时把 memory_search/memory_write 返回的实际 ID 放入 references。长报告可用 artifact_save，同时在 Feed 中写清结论。无资料时如实发布本次检查范围与未发现新信号，禁止编造来源。任务身份由 runner 注入，不要自行填入或猜测 ID。仅回复聊天或写记忆不算完成。`;
+  if(plan.visibleOutput==='required'&&typeof options.inspectVisibleOutputs!=='function')throw Error('visible output inspector required');
+  const info={taskId:id,runId,runDate,timeZone,provider:plan.provider,model:plan.model,transport:plan.transport,template:plan.template,reason:plan.reason};
   await record({kind:'start',...info});
-  const exit=await execute(plan);
-  await record({kind:'finish',...info,exit});
+  const hasContent=output=>typeof output?.body==='string'&&output.body.trim()||typeof output?.content==='string'&&output.content.trim();
+  if(plan.visibleOutput==='required'&&plan.deduplicateDaily){
+    const previous=(await options.inspectVisibleOutputs(plan)).find(output=>output?.taskId===id&&output?.runDate===runDate&&hasContent(output)&&
+      ['feed','artifact'].some(channel=>output.idempotencyKey===`${channel}:${id}:${runDate}`));
+    if(previous){
+      await record({kind:'already-published',...info,publishedRunId:previous.runId});
+      await record({kind:'finish',...info,exit:0,reused:true});
+      return 0;
+    }
+  }
+  async function finish(attempt,exit){
+    const identity={...info,provider:attempt.provider,model:attempt.model,transport:attempt.transport};
+    if(exit===0&&plan.visibleOutput==='required'){
+      const outputs=await options.inspectVisibleOutputs(attempt);
+      if(!Array.isArray(outputs)||!outputs.some(output=>output?.taskId===id&&output?.runId===runId&&output?.runDate===runDate&&hasContent(output))){
+        await record({kind:'no-visible-output',...identity});
+        await record({kind:'finish',...identity,exit:65,processExit:0});
+        return 65;
+      }
+    }
+    await record({kind:'finish',...identity,exit});
+    return exit;
+  }
+  const exit=await finish(plan,await execute(plan));
+  if(exit===65)return exit; // Never replay completed side effects to manufacture output.
   if(exit===0||!plan.fallback)return exit;
   if(!plan.retrySafe){await record({kind:'retry-refused',...info,primaryExit:exit});return exit;}
   const next={...plan,...resolveRoute(config,plan.fallback,'fallback route')};
-  await record({kind:'fallback',taskId:id,provider:next.provider,model:next.model,transport:next.transport,primaryExit:exit});
-  const fallbackExit=await execute(next);
-  await record({kind:'finish',taskId:id,provider:next.provider,model:next.model,transport:next.transport,exit:fallbackExit});
-  return fallbackExit;
+  await record({kind:'fallback',...info,provider:next.provider,model:next.model,transport:next.transport,primaryExit:exit});
+  return await finish(next,await execute(next));
 }
 
 /**

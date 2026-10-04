@@ -5,6 +5,7 @@ import {tmpdir,homedir} from 'node:os';
 import {spawn} from 'node:child_process';
 import {runTask,migrateCrontab} from './runner.mjs';
 import {JobLog} from '../../intel-plugins/dsh-intelligence-joblog/src/joblog.js';
+import {inspectVisibleOutputs} from './outputs.mjs';
 
 const here=dirname(fileURLToPath(import.meta.url));
 async function main(){
@@ -16,9 +17,28 @@ async function main(){
     process.stdout.write(preview.text);process.stderr.write(`Migratable built-in jobs: ${preview.changed}\n`);return;
   }
   if(typeof id!=='string'||!/^[a-z][a-z0-9_-]{0,79}$/.test(id))throw Error('invalid task id');
-  const root=join(process.env.DSH_HOME??join(homedir(),'.dsh'),'intel-joblog');
+  const home=process.env.DSH_HOME??join(homedir(),'.dsh');
+  const root=join(home,'intel-joblog');
   await mkdir(root,{recursive:true});
-  const log=new JobLog(root),dir=await mkdtemp(join(tmpdir(),'intel-task-'));
+  const log=new JobLog(root);
+  async function recordFailure(error){
+    const code=typeof error.code==='string'&&/^[A-Z0-9_]+$/.test(error.code)?error.code:'TASK_RUNNER_FAILED';
+    await appendFile(join(root,'route-runs.jsonl'),JSON.stringify({time:new Date().toISOString(),kind:'error',taskId:id,code})+'\n');
+    log._recordRun(id,'fail',code);log._alert(id,code);
+  }
+  const lockDirectory=join(root,'runner-locks');
+  await mkdir(lockDirectory,{recursive:true,mode:0o700});
+  const lock=join(lockDirectory,id+'.lock');
+  // Linux flock closes on process exit. Hold it across preflight, child execution and audit.
+  if(process.env.INTEL_RUNNER_LOCK!==lock){
+    try { process.exitCode=await new Promise((resolve,reject)=>{
+      const child=spawn('flock',['--exclusive','--timeout','610',lock,process.execPath,fileURLToPath(import.meta.url),id,...rest],
+        {stdio:'inherit',env:{...process.env,INTEL_RUNNER_LOCK:lock}});
+      child.once('error',reject);child.once('close',(code,signal)=>resolve(code??(signal?1:0)));
+    }); } catch(error) { await recordFailure(error); throw error; }
+    return;
+  }
+  const dir=await mkdtemp(join(tmpdir(),'intel-task-'));
   try{
     const config=JSON.parse(await readFile(process.env.INTEL_ROUTER_CONFIG??join(here,'routes.json'),'utf8'));
     const timeoutMs=config.timeoutMs;
@@ -29,7 +49,8 @@ async function main(){
       if(plan.transport!==undefined)patches.push({id:'llm-pi-ai',config:{providers:{[plan.provider]:{transport:plan.transport}}}});
       await writeFile(patch,JSON.stringify(patches));
       return await new Promise((resolve,reject)=>{
-        const child=spawn('dsh',['--profile','evolve','--patch',patch],{stdio:['pipe','inherit','inherit'],detached:true});
+        const child=spawn('dsh',['--profile','evolve','--patch',patch],{stdio:['pipe','inherit','inherit'],detached:true,
+          env:{...process.env,INTEL_TASK_ID:plan.id,INTEL_RUN_ID:plan.runId,INTEL_RUN_DATE:plan.runDate}});
         let timedOut=false,inputError;
         const timer=setTimeout(()=>{timedOut=true;try{process.kill(-child.pid,'SIGTERM');}catch(error){if(error.code!=='ESRCH')reject(error);}},timeoutMs);
         let killTimer;
@@ -53,14 +74,12 @@ async function main(){
       await appendFile(join(root,'route-runs.jsonl'),JSON.stringify(record)+'\n');
       // provider/model identify the requested patch; actual request identity comes from tokenlog.
       process.stderr.write(JSON.stringify(record)+'\n');
-    });
+    },{inspectVisibleOutputs:()=>inspectVisibleOutputs(home)});
     log._recordRun(id,exit===0?'ok':'fail',`exit ${exit}; route-runs.jsonl`);
     if(exit!==0)log._alert(id,`task exit ${exit}; inspect route-runs.jsonl`);
     process.exitCode=exit;
   }catch(error){
-    const code=typeof error.code==='string'&&/^[A-Z0-9_]+$/.test(error.code)?error.code:'TASK_RUNNER_FAILED';
-    await appendFile(join(root,'route-runs.jsonl'),JSON.stringify({time:new Date().toISOString(),kind:'error',taskId:id,code})+'\n');
-    log._recordRun(id,'fail',code);log._alert(id,code);
+    await recordFailure(error);
     throw error;
   }finally{await rm(dir,{recursive:true,force:true});}
 }

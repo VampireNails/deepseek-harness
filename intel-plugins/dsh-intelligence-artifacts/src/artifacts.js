@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSy
 import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
+import { withStoreWriter, atomicJson, publicationMetadata } from '../../shared/persistence.js';
 
 export const KINDS = { markdown: ".md", html: ".html", text: ".txt" };
 
@@ -57,7 +58,7 @@ export class ArtifactStore {
   }
 
   _saveMeta(d, meta) {
-    writeFileSync(join(d, "meta.json"), JSON.stringify(meta, null, 2), "utf8");
+    atomicJson(join(d, "meta.json"), meta);
   }
 
   // 同 title 再次 save 时复用旧 id（实现版本追加）。
@@ -90,8 +91,24 @@ export class ArtifactStore {
 
   // 保存产物；同 title 再次保存则复用旧 id、追加为新版本。
   // 返回 {id, title, kind, version, url, path, ...}。
-  save(title, content, kind = "markdown") {
+  save(title, content, kind = "markdown", metadata) {
+    const identity = publicationMetadata(metadata);
+    return withStoreWriter(this.dir, () => {
     kind = normalizeKind(kind);
+    if (identity.idempotencyKey) {
+      for (const name of readdirSync(this.dir)) {
+        const candidate = this._safeDir(name);
+        if (!candidate) continue;
+        const saved = this._loadMeta(candidate);
+        const previous = saved?.versions?.find(version => version.idempotencyKey === identity.idempotencyKey);
+        if (!previous) continue;
+        const existing = this.get(saved.id, previous.v);
+        if (!existing || existing.title !== title || existing.content !== (content || '') || existing.kind !== kind ||
+            ['taskId','runId','runDate','memoryDirectory'].some(field => existing[field] !== identity[field]) ||
+            JSON.stringify(existing.references ?? []) !== JSON.stringify(identity.references ?? [])) throw Error('publication idempotency conflict');
+        return existing;
+      }
+    }
     const ext = KINDS[kind];
     const aid = this._findByTitle(title) || slug(title || "artifact");
     const d = join(this.dir, aid);
@@ -107,7 +124,7 @@ export class ArtifactStore {
     const v = versions.length ? versions[versions.length - 1].v + 1 : 1;
     const fname = `v${v}${ext}`;
     writeFileSync(join(d, fname), content || "", "utf8");
-    versions.push({ v, ts: ts(), file: fname });
+    versions.push({ v, ts: ts(), file: fname, kind, ...identity });
 
     Object.assign(meta, {
       id: aid,
@@ -122,7 +139,8 @@ export class ArtifactStore {
       path: aid,
     });
     this._saveMeta(d, meta);
-    return meta;
+    return { ...meta, ...identity };
+    });
   }
 
   // 取产物；v 指定版本号（默认最新）。返回 meta + content + version。
@@ -136,7 +154,9 @@ export class ArtifactStore {
     if (v == null) v = versions.length ? versions[versions.length - 1].v : 1;
     const f = this._versionFile(d, m, v, ext);
     if (!f) return null;
-    return { ...m, content: readFileSync(f, "utf8"), version: v, url: `/artifacts/${aid}` };
+    const entry = versions.find(version => version.v === v);
+    const versionIdentity = entry?.idempotencyKey ? publicationMetadata(entry) : entry?.references ? publicationMetadata({ references: entry.references, memoryDirectory: entry.memoryDirectory }) : {};
+    return { ...m, ...versionIdentity, kind: entry?.kind ?? m.kind, content: readFileSync(f, "utf8"), version: v, url: `/artifacts/${aid}` };
   }
 
   // 最新版内容的便捷读取入口（= get(aid)）。

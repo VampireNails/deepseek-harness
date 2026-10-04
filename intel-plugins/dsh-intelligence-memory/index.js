@@ -8,7 +8,7 @@
 import z from "@deepseek-ai/schemastery";
 import { z as zod } from "zod";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { openStore } from "./src/store.js";
 import { FtsRetriever } from "./src/retriever.js";
@@ -62,6 +62,10 @@ export function apply(ctx, config) {
 
   const db = openStore(dataDir);
   const retriever = new FtsRetriever(db);
+  ctx.provide('memoryReferences', {
+    directory: resolve(dataDir),
+    validate(ids) { const find = db.prepare('SELECT id FROM memories WHERE id=?'); return ids.every(id => find.get(id)); },
+  });
 
   ctx.effect(() =>
     ctx.sessionProjections.register({

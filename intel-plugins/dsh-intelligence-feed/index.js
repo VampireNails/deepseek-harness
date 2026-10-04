@@ -4,6 +4,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { FeedStore, feedDir } from "./src/feed.js";
 import { renderFeedHtml } from "./src/render.js";
+import { publicationIdentity } from '../shared/publication.js';
 
 export const name = "dsh-intelligence-feed";
 export const inject = ["agents", "tools"];
@@ -26,10 +27,12 @@ export function apply(ctx, config) {
             title: { type: "string", required: true, description: "标题" },
             body: { type: "string", required: true, description: "正文（中文）" },
             source: { type: "string", description: "来源，如'晨间简报'" },
+            references: { type: "array", items: { type: "number" }, description: "正文引用的现存记忆 ID；不接受编造或不存在的 ID" },
           },
           output: { schema: { type: "json" }, render: (args, value) => textBlock(value.text) },
           execute: async (args) => {
-            const id = feed.addPost(args.title, args.body, args.source || "");
+            const identity = publicationIdentity('feed', args.references, ctx.get?.('memoryReferences'));
+            const id = feed.addPost(args.title, args.body, args.source || "", identity);
             return { text: `已发布 ${id}：${args.title}` };
           },
         })
