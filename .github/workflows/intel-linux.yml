@@ -2,8 +2,7 @@ name: Intel Linux
 on:
   push:
     branches: [intel]
-  pull_request:
-    paths: ['intel/**', 'intel-plugins/**', '.github/workflows/intel-linux.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -11,19 +10,19 @@ concurrency:
   cancel-in-progress: true
 jobs:
   plugins:
-    runs-on: ubuntu-24.04
+    # Reuse the existing Linux Host; never allocate GitHub-hosted build compute.
+    # Only trusted intel pushes/manual runs can execute on this private runner.
+    runs-on: [self-hosted, Linux, X64, dsh-local]
+    timeout-minutes: 15
     env:
       DSH_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-      - uses: pnpm/action-setup@v4
-        with:
-          version: '11.7.0'
-          dest: ${{ runner.temp }}/intel-pnpm
+      - name: Verify existing Linux toolchain
+        run: |
+          node --version
+          test "$(pnpm --version)" = "11.7.0"
       - name: Plugin syntax and regression
         run: bash intel/verify-linux.sh

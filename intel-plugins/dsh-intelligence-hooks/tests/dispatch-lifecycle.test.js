@@ -61,13 +61,31 @@ const timer = setInterval(() => {
   }
   function starts() {
     const file = join(dir, "started.jsonl");
-    return existsSync(file) ? readFileSync(file, "utf8").trim().split("\n").map(JSON.parse) : [];
+    if (!existsSync(file)) return [];
+    const text = readFileSync(file, "utf8");
+    // A child can create the append log before its first write becomes visible.
+    // Only newline-terminated records prove a complete start notification.
+    const completed = text.slice(0, text.lastIndexOf("\n") + 1);
+    return completed ? completed.trimEnd().split("\n").map(JSON.parse) : [];
   }
   return { manager, dir, children, warnings, register, starts, exits,
     executableAvailable() { missing = false; } };
 }
 
 function requireSeparator() { return process.platform === "win32" ? "\\" : "/"; }
+
+test("start observation waits for complete append records and still rejects corrupt records", t => {
+  const f = fixture(t);
+  const file = join(f.dir, "started.jsonl");
+  writeFileSync(file, "");
+  assert.deepEqual(f.starts(), []);
+  writeFileSync(file, '["pending"]');
+  assert.deepEqual(f.starts(), []);
+  writeFileSync(file, '["ready"]\n["pending"');
+  assert.deepEqual(f.starts(), [["ready"]]);
+  writeFileSync(file, 'broken\n');
+  assert.throws(() => f.starts(), SyntaxError);
+});
 
 test("real async ENOENT retains the original pending batch and never records successful dispatch", async t => {
   const f = fixture(t, {}, true);
