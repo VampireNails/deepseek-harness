@@ -13,21 +13,6 @@ import { join } from "node:path";
 
 export const SESSIONS_ROOT = "/root/.dsh/sessions/--root--";
 
-// 多模型价格表（元/百万 tokens，空闲时段、未命中缓存）
-// deepseek-flash：官方价格（2026-10-02）；chatgpt-plus：包月制，边际成本约 0
-export const MODEL_PRICES = {
-  "deepseek-flash": { input: 1, output: 4, note: "DeepSeek 官方空闲价" },
-  "deepseek-chat": { input: 1, output: 4, note: "同 flash（历史数据）" },
-  "chatgpt-plus": { input: 0, output: 0, note: "包月制，边际成本约 0" },
-};
-// 向后兼容：保留旧常量
-export const PRICE_INPUT_PER_M = MODEL_PRICES["deepseek-flash"].input;
-export const PRICE_OUTPUT_PER_M = MODEL_PRICES["deepseek-flash"].output;
-
-function priceFor(model) {
-  return MODEL_PRICES[model] || MODEL_PRICES["deepseek-flash"];
-}
-
 // 关键词 → 任务 id。顺序重要：更具体的放前面（"目标自主执行" 先于 "目标" 类）。
 const TASK_KEYWORDS = [
   ["目标自主执行", "goal_act"],
@@ -70,7 +55,6 @@ export function parseSessionText(jsonlText) {
   let output = 0;
   let messages = 0;
   let task = "other";
-      let sessionModel = "deepseek-flash";
   let taskLocked = false;
   for (const line of jsonlText.split("\n")) {
     const s = line.trim();
@@ -97,8 +81,14 @@ export function parseSessionText(jsonlText) {
   return { input, output, task, messages };
 }
 
-function defaultDecompress(file) {
-  return execFileSync("zstd", ["-dc", file], { maxBuffer: 64 * 1024 * 1024 }).toString("utf8");
+function defaultDecompress(file, { deadline, decompressTimeoutMs = 5000 } = {}) {
+  const remaining = deadline === undefined ? decompressTimeoutMs : deadline - Date.now();
+  if (remaining <= 0) throw new Error("TOKENLOG_TIMEOUT");
+  return execFileSync("zstd", ["-dc", file], {
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: Math.max(1, Math.floor(Math.min(remaining, decompressTimeoutMs))),
+    killSignal: "SIGKILL",
+  }).toString("utf8");
 }
 
 function dayKey(ms) {
@@ -109,7 +99,7 @@ function dayKey(ms) {
 
 // 扫描并聚合。decompress 可注入（单测用）。
 // 返回 { days, sessions, skipped, byTask: {task: {input, output, sessions}}, byDay: {day: {input, output}} }
-export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decompress = defaultDecompress) {
+export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decompress = defaultDecompress, options = {}) {
   const result = { days, sessions: 0, skipped: 0, byTask: {}, byDay: {} };
   if (!existsSync(sessionsRoot)) return result;
   const cutoff = Date.now() - days * 24 * 3600 * 1000;
@@ -131,6 +121,7 @@ export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decomp
   }
 
   for (const dir of dirs) {
+    if (options.deadline !== undefined && Date.now() >= options.deadline) throw new Error("TOKENLOG_TIMEOUT");
     const file = join(sessionsRoot, dir, "session.v4.jsonl.zstd");
     if (!existsSync(file)) {
       result.skipped++;
@@ -138,8 +129,9 @@ export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decomp
     }
     let text;
     try {
-      text = decompress(file);
+      text = decompress(file, options);
     } catch {
+      if (options.deadline !== undefined && Date.now() >= options.deadline) throw new Error("TOKENLOG_TIMEOUT");
       result.skipped++; // 解压失败：记数，不抛错
       continue;
     }
@@ -147,7 +139,8 @@ export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decomp
     let input = 0;
     let output = 0;
     let task = "other";
-      let sessionModel = "deepseek-flash";
+    let sessionModel = "unknown";
+    const sessionModels = {};
     let taskLocked = false;
     let hit = false;
     for (const line of text.split("\n")) {
@@ -160,8 +153,9 @@ export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decomp
         continue;
       }
       if (ev.type === "request/header" && ev.data && ev.data.header && ev.data.header.config) {
-        const m = ev.data.header.config.model;
-        if (m) sessionModel = m;
+        const { provider, model } = ev.data.header.config;
+        sessionModel = typeof provider === "string" && typeof model === "string"
+          ? `${provider}/${model}` : "unknown";
       }
       if (!taskLocked && ev.type === "user/message") {
         const c = ev.data && ev.data.content;
@@ -181,18 +175,19 @@ export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decomp
         if (typeof u.outputTokens === "number") output += u.outputTokens;
         hit = true;
         bump(result.byDay, dayKey(ev.time), u.inputTokens || 0, u.outputTokens || 0);
+        bump(sessionModels, sessionModel, u.inputTokens || 0, u.outputTokens || 0);
       }
     }
     if (!hit) continue; // 该 session 在窗口内无消息：不计入
     result.sessions++;
     bump(result.byTask, task, input, output);
-    // 记录该 session 的模型（用于分模型计价）
+    // 每个模型只计一个会话；用量按消息归属，保留会话内的切换。
     if (!result.byModel) result.byModel = {};
-    if (!result.byModel[sessionModel]) result.byModel[sessionModel] = { input: 0, output: 0, sessions: 0 };
-    result.byModel[sessionModel].input += input;
-    result.byModel[sessionModel].output += output;
-    result.byModel[sessionModel].sessions += 1;
+    for (const [model, usage] of Object.entries(sessionModels)) {
+      bump(result.byModel, model, usage.input, usage.output);
+    }
   }
+  if (options.deadline !== undefined && Date.now() >= options.deadline) throw new Error("TOKENLOG_TIMEOUT");
   return result;
 }
 
@@ -200,20 +195,7 @@ function fmt(n) {
   return n.toLocaleString("en-US");
 }
 
-function fmtCost(input, output, model) {
-  const p = priceFor(model);
-  return ((input / 1e6) * p.input + (output / 1e6) * p.output).toFixed(2);
-}
-function fmtCostTotal(byModel) {
-  let total = 0;
-  for (const [model, v] of Object.entries(byModel || {})) {
-    const p = priceFor(model);
-    total += (v.input / 1e6) * p.input + (v.output / 1e6) * p.output;
-  }
-  return total.toFixed(2);
-}
-
-// 中文输出：一句话总结 + 按任务表 + 按天表 + 成本估算
+// 中文输出：按任务、按天、按 provider/model 的用量；日志不能推断费用。
 export function formatSummary(agg, days) {
   const tasks = Object.entries(agg.byTask).sort((a, b) => b[1].input + b[1].output - (a[1].input + a[1].output));
   const dayKeys = Object.keys(agg.byDay).sort();
@@ -248,14 +230,11 @@ export function formatSummary(agg, days) {
   lines.push("");
   const byModel = agg.byModel || {};
   const modelLines = Object.entries(byModel).map(([m, v]) => {
-    const p = priceFor(m);
-    const cost = fmtCost(v.input, v.output, m);
-    const priceNote = p.note ? `（${p.note}）` : "";
-    return `  - ${m}：${(v.input/1000).toFixed(1)}K in / ${(v.output/1000).toFixed(1)}K out，约 ¥${cost}${priceNote}`;
+    return `  - ${m}：${(v.input/1000).toFixed(1)}K in / ${(v.output/1000).toFixed(1)}K out`;
   });
-  lines.push(`成本估算：约 ¥${fmtCostTotal(byModel)}（分模型）`);
+  lines.push("分模型用量：");
   for (const ml of modelLines) lines.push(ml);
-  lines.push(`（估算值，实际按高峰/空闲时段和缓存命中情况计费）`);
+  lines.push("成本估算：未提供计费数据，不输出估算值；以供应商账单为准。");
   if (agg.skipped) lines.push(`（另有 ${agg.skipped} 个 session 跳过：损坏或解压失败）`);
   return lines.join("\n");
 }

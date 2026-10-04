@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -117,7 +117,7 @@ test("formatSummary：中文输出含三段式+成本估算", () => {
   assert.ok(out.includes("1 个 session 跳过"), "跳过计数");
 });
 
-test("多模型计价：按 model 分组并分别计价", () => {
+test("多模型用量：未提供计费依据时不推断套餐或价格", () => {
   const agg = {
     days: 1,
     sessions: 3,
@@ -132,9 +132,30 @@ test("多模型计价：按 model 分组并分别计价", () => {
   const out = formatSummary(agg, 1);
   assert.ok(out.includes("deepseek-flash"), "显示 flash 分组");
   assert.ok(out.includes("chatgpt-plus"), "显示 chatgpt 分组");
-  assert.ok(out.includes("包月制"), "chatgpt 标注包月");
-  // flash: 2000/1e6*1 + 400/1e6*4 = 0.002 + 0.0016 = 0.0036 → 0.00
-  // chatgpt: 0（包月）
-  // 总计约 ¥0.00
-  assert.ok(out.includes("分模型"), "标注分模型计价");
+  assert.ok(out.includes("分模型"));
+  assert.ok(!out.includes("¥"));
+  assert.ok(!out.includes("包月制"));
+});
+
+test("同一会话切换模型时，每条 usage 归属当时的 provider/model", t => {
+  const root = mkdtempSync(join(tmpdir(), "toklog-switch-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = makeSessionDir(root, "switch");
+  const header = (provider, model) => ev("request/header", NOW, { header: { config: { provider, model } } });
+  const text = [header("deepseek-official", "deepseek-flash"), asstEv(100, 10, NOW),
+    header("openai-codex", "gpt-5.6-luna"), asstEv(200, 20, NOW),
+    header("deepseek-official", "deepseek-flash"), asstEv(300, 30, NOW)].join("\n");
+  const agg = aggregateSessions(root, 1, mockDecompress({ [file]: text }));
+  assert.deepEqual(agg.byModel, {
+    "deepseek-official/deepseek-flash": { input: 400, output: 40, sessions: 1 },
+    "openai-codex/gpt-5.6-luna": { input: 200, output: 20, sessions: 1 },
+  });
+});
+
+test("缺少 request/header 的用量不假设为 DeepSeek", t => {
+  const root = mkdtempSync(join(tmpdir(), "toklog-unknown-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = makeSessionDir(root, "unknown");
+  const agg = aggregateSessions(root, 1, mockDecompress({ [file]: asstEv(100, 10, NOW) }));
+  assert.deepEqual(agg.byModel, { unknown: { input: 100, output: 10, sessions: 1 } });
 });
