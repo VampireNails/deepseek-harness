@@ -3,7 +3,7 @@
   "defaultRoute": "flash",
   "routes": {
     "flash": {"provider": "deepseek-official", "model": "deepseek-flash"},
-    "chatgpt": {"provider": "openai-codex", "model": "gpt-5.5"}
+    "chatgpt": {"provider": "openai-codex", "model": "gpt-5.5", "transport": "sse"}
   },
   "tasks": {
     "morning_briefing": {"route": "chatgpt", "fallback": "flash", "retrySafe": false},

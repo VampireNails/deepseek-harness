@@ -25,7 +25,9 @@ async function main(){
     if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>600000)throw Error('invalid timeoutMs');
     const exit=await runTask(config,id,rest.join(' '),async plan=>{
       const patch=join(dir,'model.json');
-      await writeFile(patch,JSON.stringify([{id:'agent-default-model',config:{provider:plan.provider,model:plan.model}}]));
+      const patches=[{id:'agent-default-model',config:{provider:plan.provider,model:plan.model}}];
+      if(plan.transport!==undefined)patches.push({id:'llm-pi-ai',config:{providers:{[plan.provider]:{transport:plan.transport}}}});
+      await writeFile(patch,JSON.stringify(patches));
       return await new Promise((resolve,reject)=>{
         const child=spawn('dsh',['--profile','evolve','--patch',patch],{stdio:['pipe','inherit','inherit'],detached:true});
         let timedOut=false,inputError;

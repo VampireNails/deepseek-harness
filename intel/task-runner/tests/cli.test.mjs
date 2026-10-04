@@ -30,6 +30,13 @@ if(process.env.TEST_DESCENDANT==='1'){
     const sent=JSON.parse(await readFile(capture,'utf8'));
     assert.equal(sent.profile,'evolve');assert.ok(sent.prompt.includes('joblog'));assert.notEqual(sent.prompt.trim(),'stale');
     assert.deepEqual(sent.patch,[{id:'agent-default-model',config:{provider:'deepseek-official',model:'deepseek-flash'}}]);
+    await writeFile(config,JSON.stringify({timeoutMs:1000,defaultRoute:'chat',routes:{chat:{provider:'openai-codex',model:'gpt-5.5',transport:'sse'}}}));
+    const chat=spawnSync(process.execPath,[cli,'custom','read only'],{env,encoding:'utf8',timeout:10000});
+    assert.equal(chat.status,0,chat.stderr);
+    assert.deepEqual(JSON.parse(await readFile(capture,'utf8')).patch,[
+      {id:'agent-default-model',config:{provider:'openai-codex',model:'gpt-5.5'}},
+      {id:'llm-pi-ai',config:{providers:{'openai-codex':{transport:'sse'}}}},
+    ]);
     const records=await readFile(join(home,'intel-joblog','route-runs.jsonl'),'utf8');
     assert.equal(records.includes('stale'),false);assert.equal(records.includes('prompt'),false);
     const timeout=spawnSync(process.execPath,[cli,'custom','read only'],{env:{...env,TEST_HANG:'1'},encoding:'utf8',timeout:10000});

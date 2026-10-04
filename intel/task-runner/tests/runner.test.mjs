@@ -9,7 +9,7 @@ test('default task routing preserves the deployed nine-task provider assignments
   const deployed=JSON.parse(readFileSync(new URL('../routes.json',import.meta.url),'utf8'));
   for(const id of ['evolve_upkeep','heartbeat'])assert.equal(resolveTask(deployed,id).provider,'deepseek-official');
   for(const id of ['morning_briefing','evolve_studying','evolve_ideas','evolve_dreaming','evolve_skill_review','evolve_goal_review','evolve_goal_act'])
-    assert.equal(resolveTask(deployed,id,'brief').provider,'openai-codex');
+    {const plan=resolveTask(deployed,id,'brief');assert.equal(plan.provider,'openai-codex');assert.equal(plan.transport,'sse');}
 });
 test('known cron task IDs load the live template instead of stale crontab text',()=>{
   const task=resolveTask(config,'evolve_upkeep','old prompt');
@@ -20,6 +20,7 @@ test('known cron task IDs load the live template instead of stale crontab text',
   assert.throws(()=>resolveTask(config,'custom'),/prompt/);
   assert.throws(()=>resolveTask({...config,tasks:{custom:{route:'missing'}}},'custom','text'),/route/);
   assert.throws(()=>resolveTask({...config,tasks:{custom:{route:'chat',fallback:'missing'}}},'custom','text'),/fallback/);
+  assert.throws(()=>resolveTask({...config,routes:{flash:{...config.routes.flash,transport:'invalid'}}},'custom','text'),/route/);
 });
 test('primary failure is recorded and side-effecting tasks are not retried',async()=>{
   const seen=[],audit=[];
@@ -28,9 +29,10 @@ test('primary failure is recorded and side-effecting tasks are not retried',asyn
   assert.equal(audit.at(-1).kind,'retry-refused');assert.equal(audit.at(-1).model,'gpt-5.5');
 });
 test('explicit read-only retry records both requested routes and exit reasons',async()=>{
-  const safe={...config,tasks:{custom:{route:'chat',fallback:'flash',retrySafe:true}}},audit=[],seen=[];
+  const safe={...config,routes:{...config.routes,chat:{...config.routes.chat,transport:'sse'}},tasks:{custom:{route:'chat',fallback:'flash',retrySafe:true}}},audit=[],seen=[];
   const exit=await runTask(safe,'custom','read only',async plan=>{seen.push(plan);return seen.length===1?1:0;},entry=>audit.push(entry));
   assert.equal(exit,0);assert.equal(seen[1].provider,'deepseek-official');
+  assert.equal(seen[0].transport,'sse');assert.equal(seen[1].transport,undefined);
   assert.equal(audit.find(e=>e.kind==='fallback').primaryExit,1);
   assert.equal(audit.at(-1).model,'deepseek-flash');
   await assert.rejects(runTask(safe,'custom','read only',async()=>{throw Error('spawn failed');},()=>{}),/spawn failed/);
