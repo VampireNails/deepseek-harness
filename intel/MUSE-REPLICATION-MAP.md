@@ -36,9 +36,9 @@
 | Muse 能力 | 状态 | 重估结论 |
 |---|---|---|
 | 图片生成 | 未复刻 | 未发现插件、依赖或 profile 挂载；已有测试没有 image_gen 工具。维持 [REPLICATION.md](REPLICATION.md) A4 范围，不把手写 SVG/PNG 当作生成模型验收。 |
-| Gmail、Google Calendar 等外部连接器 | ❌ 维持不复刻 | ChatGPT 无 Google OAuth；Tomas 09-27 产品决策不变 |
-| 真实 MCP server | ❌ 维持不复刻 | ChatGPT 不提供 MCP；产品决策不变 |
-| Apple Healthkit、Spotify 等 | ❌ 维持不复刻 | 需各自 OAuth；ChatGPT 无帮助 |
+| Gmail、Google Calendar 等外部连接器 | ❌ 维持不复刻 | 本项目未部署相应 OAuth 连接器，不在当前交付范围；不据此判断其它产品能否接入。 |
+| 真实 MCP server | ❌ 维持不复刻 | 本项目不交付该集成；不把项目未实现写成其它产品不支持 MCP。 |
+| Apple Healthkit、Spotify 等 | ❌ 维持不复刻 | 各服务的授权和平台集成未纳入当前范围。 |
 
 ChatGPT 模型接入不自动提供图片生成工具，也不改变外部连接器的产品范围。未来若启用图片生成，须同时验证工具注册、profile 挂载、真实模型生成和手机展示，才可变更本表状态。
 

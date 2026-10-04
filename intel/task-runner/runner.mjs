@@ -1,10 +1,17 @@
 import {TASKS} from '../../intel-plugins/dsh-intelligence-evolution/src/tasks.js';
 
+/** Production cron aliases to the evolution module's template names. */
 export const TASK_ALIASES=Object.freeze({evolve_upkeep:'memory_upkeep',evolve_studying:'studying',
   evolve_ideas:'idea_curation',evolve_dreaming:'dreaming',evolve_skill_review:'skill_review',
   evolve_goal_review:'goal_review',heartbeat:'heartbeat',evolve_goal_act:'goal_act'});
 
-/** Resolve a runtime template and explicit provider/model; invalid routes fail loudly. */
+/**
+ * Resolve a runtime template and explicit provider/model; invalid routes fail loudly.
+ * @param config - Deployment routes and task assignments.
+ * @param id - Registered cron task ID or explicit custom task name.
+ * @param customPrompt - Required only for a custom task.
+ * @returns The resolved template and requested model.
+ */
 export function resolveTask(config,id,customPrompt){
   if(!/^[a-z][a-z0-9_-]{0,79}$/.test(id))throw Error('invalid task id');
   const route=config.tasks?.[id],routeId=route?.route??config.defaultRoute;
@@ -24,7 +31,15 @@ export function resolveTask(config,id,customPrompt){
     retrySafe:route?.retrySafe===true};
 }
 
-/** Record requested routes and process results; do not retry tasks that may have side effects. */
+/**
+ * Record requested routes and process results; do not retry tasks that may have side effects.
+ * @param config - Deployment routing configuration.
+ * @param id - Task identifier.
+ * @param customPrompt - Explicit custom task prompt, if needed.
+ * @param execute - Launches a resolved profile request and returns its exit code.
+ * @param record - Persists a prompt-free route audit record.
+ * @returns The final process exit code; launch and audit errors reject.
+ */
 export async function runTask(config,id,customPrompt,execute,record){
   const plan=resolveTask(config,id,customPrompt);
   const info={taskId:id,provider:plan.provider,model:plan.model,template:plan.template,reason:plan.reason};
@@ -43,7 +58,12 @@ export async function runTask(config,id,customPrompt,execute,record){
   return fallbackExit;
 }
 
-/** Preview a restricted migration; leave custom jobs and compound shell commands intact. */
+/**
+ * Preview a restricted migration; leave custom jobs and compound shell commands intact.
+ * @param text - Existing crontab text.
+ * @param runnerPath - Absolute executable path without shell metacharacters.
+ * @returns Replacement text and count; never writes crontab.
+ */
 export function migrateCrontab(text,runnerPath){
   if(!/^\/[a-zA-Z0-9_./-]+$/.test(runnerPath))throw Error('invalid runner path');
   let changed=0;
