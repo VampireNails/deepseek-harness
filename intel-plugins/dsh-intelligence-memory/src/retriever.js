@@ -14,6 +14,7 @@
 // Python 退役、内存宽裕后，可实现同样接口的向量检索器直接替换，无需改插件主体.
 
 import { randomUUID } from "node:crypto";
+import { MemoryValidity } from './validity.js';
 
 export function spaceCjk(text) {
   return text.replace(/([\p{Script=Han}])/gu, " $1 ").replace(/\s+/g, " ").trim();
@@ -46,15 +47,17 @@ function overlapOk(text, chars, words) {
 export class FtsRetriever {
   constructor(db) {
     this.db = db;
+    this.validity=new MemoryValidity(db,spaceCjk);
+    const active=this.validity.prepared?' AND NOT EXISTS (SELECT 1 FROM memory_state s WHERE s.memory_id=memories.id AND s.active=0)':'';
     this.insertStmt = db.prepare(
       "INSERT INTO memories (text, kind, created_at, session_id) VALUES (?, ?, ?, ?)"
     );
     this.ftsInsertStmt = db.prepare("INSERT INTO memories_fts(rowid, text) VALUES (?, ?)");
-    this.getStmt = db.prepare("SELECT id, text, kind, created_at FROM memories WHERE id = ?");
+    this.getStmt = db.prepare("SELECT id, text, kind, created_at FROM memories WHERE id = ?"+active);
     this.searchStmt = db.prepare(
       "SELECT m.id, m.text, m.kind, m.created_at " +
       "FROM memories_fts f JOIN memories m ON m.id = f.rowid " +
-      "WHERE memories_fts MATCH ? ORDER BY bm25(memories_fts) LIMIT ?"
+      "WHERE memories_fts MATCH ? "+(this.validity.prepared?'AND NOT EXISTS (SELECT 1 FROM memory_state s WHERE s.memory_id=m.id AND s.active=0) ':'')+"ORDER BY bm25(memories_fts) LIMIT ?"
     );
   }
 
@@ -98,4 +101,9 @@ export class FtsRetriever {
   close() {
     this.db.close();
   }
+
+  describe(id) { return this.validity.describe(id); }
+  history(id) { return this.validity.history(id); }
+  list(options) { return this.validity.list(options); }
+  change(args,actor) { return this.validity.change(args,actor); }
 }

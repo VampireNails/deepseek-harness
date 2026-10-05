@@ -6,6 +6,8 @@ import {join} from 'node:path';
 import {apply as applyFeed} from '../index.js';
 import {apply as applyArtifacts} from '../../dsh-intelligence-artifacts/index.js';
 import {openStore} from '../../dsh-intelligence-memory/src/store.js';
+import {FtsRetriever} from '../../dsh-intelligence-memory/src/retriever.js';
+import {inspectVisibleOutputs} from '../../../intel/task-runner/outputs.mjs';
 
 const environmentKeys=['DSH_HOME','INTEL_TASK_ID','INTEL_RUN_ID','INTEL_RUN_DATE'];
 const runner={INTEL_TASK_ID:'evolve_dreaming',INTEL_RUN_ID:'run-publication-test',INTEL_RUN_DATE:'2026-10-05'};
@@ -67,6 +69,25 @@ function args(name,references){
 }
 
 for(const name of ['feed_post','artifact_save']){
+  test(name+' without a Memory provider refuses invalidated references and reaccepts restored originals',async t=>{
+    const f=await fixture(t,true),r=new FtsRetriever(f.memory),id=f.ids[0];
+    r.change({id,action:'invalidate',expectedRevision:0,reason:'fixture correction',mutationId:'00000000-0000-4000-8000-000000000011'},{source:'paired-client'});
+    await assert.rejects(f.execute(name,args(name,[id])));
+    assert.equal(f.published(name).length,0);
+    r.change({id,action:'restore',expectedRevision:1,reason:'fixture restoration',mutationId:'00000000-0000-4000-8000-000000000012'},{source:'paired-client'});
+    await f.execute(name,args(name,[id]));assert.equal(f.published(name).length,1);
+    assert.equal(inspectVisibleOutputs(f.home).length,1);
+    r.change({id,action:'invalidate',expectedRevision:2,reason:'fixture later correction',mutationId:'00000000-0000-4000-8000-000000000013'},{source:'paired-client'});
+    assert.equal(inspectVisibleOutputs(f.home).length,0);
+    assert.equal(f.published(name).length,1,'historical publication remains readable');
+    f.memory.exec('UPDATE memory_validity_schema SET version=99');
+    await assert.rejects(f.execute(name,args(name,[f.ids[1]])));
+    assert.equal(f.published(name).length,1);
+    f.memory.exec('DROP TABLE memory_validity_schema');
+    await assert.rejects(f.execute(name,args(name,[f.ids[0]])));
+    assert.equal(inspectVisibleOutputs(f.home).length,0);
+    assert.equal(f.published(name).length,1);
+  });
   test(name+' manually publishes real content without inventing a runner identity',async t=>{
     const f=await fixture(t);
     await f.execute(name,args(name));

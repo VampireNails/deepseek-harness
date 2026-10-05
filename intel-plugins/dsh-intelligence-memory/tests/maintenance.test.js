@@ -10,8 +10,8 @@ import { fileURLToPath } from "node:url";
 import { openStore } from "../src/store.js";
 import { FtsRetriever } from "../src/retriever.js";
 
-const damagedCounts = { memoryRows: 3, ftsRows: 3, orphanFtsRows: 1, missingFtsRows: 1, mismatchedFtsRows: 1 };
-const healthyCounts = { memoryRows: 3, ftsRows: 3, orphanFtsRows: 0, missingFtsRows: 0, mismatchedFtsRows: 0 };
+const damagedCounts = { memoryRows: 3, ftsRows: 3, orphanFtsRows: 1, missingFtsRows: 1, mismatchedFtsRows: 1, inactiveMemoryRows:0, inactiveFtsRows:0 };
+const healthyCounts = { memoryRows: 3, ftsRows: 3, orphanFtsRows: 0, missingFtsRows: 0, mismatchedFtsRows: 0, inactiveMemoryRows:0, inactiveFtsRows:0 };
 const maintenanceScript = fileURLToPath(new URL("../src/maintenance.js", import.meta.url));
 const sha256 = value => createHash("sha256").update(value).digest("hex");
 

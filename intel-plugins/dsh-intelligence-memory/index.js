@@ -13,6 +13,7 @@ import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { openStore } from "./src/store.js";
 import { FtsRetriever } from "./src/retriever.js";
 import { memoryWriteTool, memoryReadTool, memorySearchTool } from "./src/tools.js";
+import { registerMemoryCorrection, memoryManagement } from "./src/correction.js";
 
 export const name = "dsh-intelligence-memory";
 
@@ -61,11 +62,14 @@ export function apply(ctx, config) {
   const minQueryChars = cfg.minQueryChars ?? 2;
 
   const db = openStore(dataDir);
+  ctx.effect(() => () => db.close());
   const retriever = new FtsRetriever(db);
   ctx.provide('memoryReferences', {
     directory: resolve(dataDir),
-    validate(ids) { const find = db.prepare('SELECT id FROM memories WHERE id=?'); return ids.every(id => find.get(id)); },
+    validate(ids) { return ids.every(id => retriever.get(id)); },
   });
+  ctx.provide('memoryManagement', memoryManagement(retriever));
+  registerMemoryCorrection(ctx,retriever);
 
   ctx.effect(() =>
     ctx.sessionProjections.register({
