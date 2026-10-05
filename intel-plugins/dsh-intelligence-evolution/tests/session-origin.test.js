@@ -37,7 +37,7 @@ function fixture(t,environment=runner){
     rmSync(home,{recursive:true,force:true});
   });
   return {home,ctx,registrations,dispose,
-    mount:async()=>{apply(ctx,{});await Promise.all(effects);},
+    mount:async()=>{await apply(ctx,{});await Promise.all(effects);},
     emit:session=>{for(const listener of listeners.get('session/created')??[])listener(session);}};
 }
 

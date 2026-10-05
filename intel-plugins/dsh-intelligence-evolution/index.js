@@ -4,13 +4,20 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { TASKS, chunk } from "./src/tasks.js";
-import { AutomationSessionStore, runnerIdentity } from "./src/session-origin.js";
+import { AutomationSessionStore, runnerIdentity, readAutomationSessions } from "./src/session-origin.js";
+import { createUpkeepQuery } from './src/upkeep-host-source.js';
+import { captureUpkeepSource, inspectUpkeepRun } from './src/upkeep-source.js';
+import { startUpkeepServer } from './src/upkeep-socket.js';
 
 export const name = "dsh-intelligence-evolution";
-export const inject = ["agents", "tools"];
+export const inject = ["agents", "tools", "sessions"];
 
 export const Config = z.object({
   sessionIndexBusyTimeoutMs: z.number().min(1).max(30000).default(3000),
+  upkeepToolBudget: z.number().min(1).max(20).default(6),
+  upkeepSourceSocket: z.string().default(''),
+  upkeepSourceTimeoutMs: z.number().min(1).max(300000).default(30000),
+  upkeepMaxSessionBytes: z.number().min(1).max(536870912).default(67108864),
 }).default({});
 
 export function dataDir() {
@@ -33,8 +40,53 @@ function readChecklist() {
     .map((l) => l.replace(/^[-*]\s+/, ""));
 }
 
-export function apply(ctx, config) {
+/**
+ * Mount evolution tools and await the optional Host source before reporting startup success.
+ * @param ctx - Cordis context owning all registrations and asynchronous cleanup.
+ * @param config - Resolved evolution configuration.
+ * @returns Startup completion; unavailable or invalid source configuration rejects.
+ */
+export async function apply(ctx, config) {
   const identity = runnerIdentity();
+  if (config?.upkeepSourceSocket) {
+    if (identity) throw Error('upkeep source socket belongs to the existing Host profile');
+    const directory = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'intel-joblog');
+    const maxSessionBytes = config.upkeepMaxSessionBytes ?? 67108864;
+    await ctx.effect(async () => {
+      // Resolve providers before accepting requests; an absent reader cannot become an empty cut.
+      createUpkeepQuery(ctx, { maxSessionBytes });
+      const server = await startUpkeepServer({ socketPath: config.upkeepSourceSocket,
+        timeoutMs: config.upkeepSourceTimeoutMs ?? 30000,
+        source: { async capture(request, { signal }) {
+          const query = createUpkeepQuery(ctx, { signal, maxSessionBytes });
+          const captured = await captureUpkeepSource(query, readAutomationSessions(directory), request);
+          const automatic = new Set(readAutomationSessions(directory).map(row => row.sessionId));
+          // A task root can be created after the initial index read and before the corpus read.
+          const retained = captured.messages.filter(message => !automatic.has(message.sessionId));
+          captured.counts.filteredEvents += captured.messages.length - retained.length;
+          captured.counts.newMessages = retained.length;
+          return { ...captured, messages: retained };
+        } },
+        inspect: (run, { signal }) => inspectUpkeepRun(createUpkeepQuery(ctx, { signal, maxSessionBytes }),
+          readAutomationSessions(directory), run),
+      });
+      return () => server.close();
+    }, 'intelEvolution.upkeepSource');
+  }
+  if (identity && ['evolve_upkeep', 'memory_upkeep'].includes(identity.taskId)) {
+    const budget = config?.upkeepToolBudget ?? 6;
+    if (!Number.isSafeInteger(budget) || budget < 1 || budget > 20) throw Error('invalid upkeep tool budget');
+    const calls = new WeakMap();
+    ctx.effect(() => ctx.on('tools/pre-execute', async (exec, next) => {
+      if (!exec.agent || exec.parent !== undefined || !['memory_search', 'memory_write'].includes(exec.name))
+        return { kind: 'deny', reason: '记忆维护只允许原生记忆搜索和写入。', info: { name: 'UpkeepToolError', code: 'UPKEEP_TOOL_NOT_ALLOWED' } };
+      const count = calls.get(exec.agent) ?? 0;
+      if (count >= budget)
+        return { kind: 'deny', reason: '本轮记忆维护已达到工具调用上限。', info: { name: 'UpkeepToolError', code: 'UPKEEP_TOOL_BUDGET' } };
+      calls.set(exec.agent, count + 1);
+      return await next();
+    }), 'intelEvolution.upkeepTools');
+  }
   if (identity) {
     const directory = join(process.env.DSH_HOME || join(homedir(), ".dsh"), "intel-joblog");
     ctx.effect(() => {

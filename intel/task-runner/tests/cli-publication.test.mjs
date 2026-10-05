@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { FeedStore } from '../../../intel-plugins/dsh-intelligence-feed/src/feed.js';
+import { startUpkeepServer } from '../../../intel-plugins/dsh-intelligence-evolution/src/upkeep-socket.js';
 
 const linux = { skip: process.platform !== 'linux' };
 const cli = fileURLToPath(new URL('../cli.mjs', import.meta.url));
@@ -186,7 +187,7 @@ try {
     assert.fail('Both CLI processes must attempt the real lock while the first execution awaits release');
   };
   const release = () => writeFile(barrierRelease, 'release', { mode: 0o600 });
-  return { home, run, runAsync, posts, executions, audit, memories, lockAttempts, waitForContention, release };
+  return { home, configFile, run, runAsync, posts, executions, audit, memories, lockAttempts, waitForContention, release };
 }
 
 function exited(result, code) {
@@ -232,12 +233,19 @@ test('Linux CLI memory-only exit zero becomes exit 65 without retrying completed
 
 test('Linux CLI optional upkeep stays successful without manufacturing Feed or Artifact', linux, async t => {
   const f = await fixture(t, 'quiet', 'evolve_upkeep', 'optional');
-  exited(f.run(), 0);
+  const socketPath=join(f.home,'upkeep-source','source.sock');
+  const server=await startUpkeepServer({socketPath,timeoutMs:1000,
+    source:{capture:async()=>({cursors:{},messages:[],counts:{newMessages:0}})},
+    inspect:async()=>{assert.fail('Empty bootstrap must not inspect a model run');},
+  });t.after(()=>server.close());
+  const config=JSON.parse(await readFile(f.configFile,'utf8'));
+  config.upkeep={socketPath,sourceTimeoutMs:1000,initialBackoffMs:100,maxBackoffMs:400,maxBatchMessages:3,maxBatchChars:1024};
+  await writeFile(f.configFile,JSON.stringify(config),{mode:0o600});
+  exited(await f.runAsync(), 0);
   const executions = await f.executions();
-  assert.equal(executions.length, 1);
-  assert.equal(executions[0].prompt.includes('可见交付要求'), false);
-  assert.deepEqual(f.posts(), []);
-  assert.deepEqual(f.memories(), [], 'quiet upkeep does not manufacture a new memory signal');
+  assert.equal(executions.length, 0,'Empty bootstrap never launches dsh or a model');
+  await assert.rejects(()=>access(join(f.home,'intel-feed')),{code:'ENOENT'});
+  await assert.rejects(()=>access(join(f.home,'intel-memory')),{code:'ENOENT'});
   const artifactEntries = await readdir(join(f.home, 'intel-artifacts')).catch(error => {
     if (error.code === 'ENOENT') return [];
     throw error;

@@ -26,9 +26,12 @@ export function memoryWriteTool(retriever) {
         description: "记忆类型：fact（事实）/ preference（偏好）/ event（事件）/ note（备注，默认）",
       },
     },
-    output: jsonOutput((args, value) =>
-      textBlock(value.ok ? `已记住 #${value.id}：${value.text}` : `记录失败：${value.error}`)
-    ),
+    output: {
+      ...jsonOutput((args, value) =>
+        textBlock(value.ok ? `已记住 #${value.id}：${value.text}` : `记录失败：${value.error}`)
+      ),
+      presentationMeta: (args, value) => ({ memoryWrite: value.ok ? { ok: true, id: value.id } : { ok: false } }),
+    },
     execute: async (args) => {
       try {
         const { id } = retriever.add({ text: args.text, kind: args.kind ?? "note" });

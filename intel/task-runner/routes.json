@@ -67,5 +67,13 @@
       "retrySafe": false
     }
   },
-  "timeZone": "Asia/Shanghai"
+  "timeZone": "Asia/Shanghai",
+  "upkeep": {
+    "socketPath": "/root/.dsh/intel-joblog/upkeep/source.sock",
+    "sourceTimeoutMs": 30000,
+    "initialBackoffMs": 3600000,
+    "maxBackoffMs": 14400000,
+    "maxBatchMessages": 12,
+    "maxBatchChars": 24000
+  }
 }
