@@ -9,9 +9,14 @@
 
 import { execFileSync } from "node:child_process";
 import { readdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { homedir } from "node:os";
 
-export const SESSIONS_ROOT = "/root/.dsh/sessions/--root--";
+/** @returns Retained root-session log directory for the configured DSH home. */
+export function defaultSessionsRoot() {
+  return resolve(process.env.DSH_HOME || join(homedir(), '.dsh'), 'sessions', '--root--');
+}
+export const SESSIONS_ROOT = defaultSessionsRoot();
 
 // 关键词 → 任务 id。顺序重要：更具体的放前面（"目标自主执行" 先于 "目标" 类）。
 const TASK_KEYWORDS = [
@@ -99,9 +104,8 @@ function dayKey(ms) {
 
 // 扫描并聚合。decompress 可注入（单测用）。
 // 返回 { days, sessions, skipped, byTask: {task: {input, output, sessions}}, byDay: {day: {input, output}} }
-export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decompress = defaultDecompress, options = {}) {
+export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7, decompress = defaultDecompress, options = {}) {
   const result = { days, sessions: 0, skipped: 0, byTask: {}, byDay: {} };
-  if (!existsSync(sessionsRoot)) return result;
   const cutoff = Date.now() - days * 24 * 3600 * 1000;
 
   const bump = (bucket, key, input, output) => {
@@ -116,8 +120,8 @@ export function aggregateSessions(sessionsRoot = SESSIONS_ROOT, days = 7, decomp
     dirs = readdirSync(sessionsRoot, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name);
-  } catch {
-    return result;
+  } catch (error) {
+    throw new Error('TOKENLOG_SOURCE_UNAVAILABLE');
   }
 
   for (const dir of dirs) {

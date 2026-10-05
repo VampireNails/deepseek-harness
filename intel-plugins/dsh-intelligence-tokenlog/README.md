@@ -23,9 +23,11 @@ This bundle adds a read-only token usage tool to Linux Host conversations. It at
 <a id="use-this-package"></a>
 ## Use this package
 
-To add this bundle to existing Linux `web` and `evolve` profiles and the sysevents bundle to `web`, run `node intel/hmc-observability.mjs <profiles-root> <new-backup-directory>` from the repository. The helper preserves the profile patches and backs up both manifests before changing them. Restart the production service to load the new bundles. To roll back, restore the backed-up manifests and remove only links marked `created` in `links.json`, then restart. HMC consumes system events from the shared log independently of which profile emitted them; this tool is available in conversations, not a dedicated Android usage screen.
+To add this bundle to existing Linux `web` and `evolve` profiles and the sysevents bundle to `web`, run `node intel/hmc-observability.mjs <profiles-root> <new-backup-directory>` from the repository. The helper preserves the profile patches and backs up both manifests before changing them. Restart the production service to load the new bundles. To roll back, restore the backed-up manifests and remove only links marked `created` in `links.json`, then restart. HMC consumes system events from the shared log independently of which profile emitted them. Its Android usage page reads this bundle's mounted aggregation service without creating a conversation or model request.
 
 `token_usage_summary(days)` reads the Linux Host's retained `session.v4.jsonl.zstd` logs for 1–30 days and reports input/output tokens by task, day and provider/model. Each assistant message uses its preceding request header, including changes within a session. Missing headers are reported as `unknown`; no provider is assumed. Session counts per model can overlap when a session switches models. The task bucket uses the first user message.
+
+The window covers the preceding `days × 24` hours and can cross more calendar dates. Both the tool and aggregation service use the optional `sessionsRoot` profile setting; without it, they read `sessions/--root--` under `DSH_HOME`, or `~/.dsh` when that variable is unset. A missing or unreadable root fails with `TOKENLOG_SOURCE_UNAVAILABLE`; an existing empty root reports zero. A service caller can explicitly override the root for its scan.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

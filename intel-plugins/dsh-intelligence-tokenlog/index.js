@@ -7,13 +7,14 @@
 
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { formatSummary } from "./src/aggregator.js";
+import { defaultSessionsRoot, formatSummary } from "./src/aggregator.js";
 import { aggregateInWorker } from "./src/runner.js";
 
 export const name = "dsh-intelligence-tokenlog";
 export const inject = ["agents", "tools"];
 
 export const Config = z.object({
+  sessionsRoot: z.string().min(1).max(4096),
   timeoutMs: z.number().min(1).max(300000).default(60000),
   decompressTimeoutMs: z.number().min(1).max(300000).default(5000),
 }).default({});
@@ -21,10 +22,11 @@ export const Config = z.object({
 const textBlock = (text) => [{ type: "text", text }];
 
 export function apply(ctx, config) {
+  const retainedRoot = config.sessionsRoot ?? defaultSessionsRoot();
   // 编程式入口：其他插件可直接 ctx.get("tokenlog").aggregate(...)
   ctx.provide("tokenlog", {
     aggregate: (sessionsRoot, days = 7, signal) => aggregateInWorker(days,
-      { sessionsRoot, signal, timeoutMs: config.timeoutMs, decompressTimeoutMs: config.decompressTimeoutMs }),
+      { sessionsRoot: sessionsRoot ?? retainedRoot, signal, timeoutMs: config.timeoutMs, decompressTimeoutMs: config.decompressTimeoutMs }),
     format: formatSummary,
   });
 
@@ -44,7 +46,7 @@ export function apply(ctx, config) {
             const days = Math.min(30, Math.max(1, Number.isFinite(raw) ? raw : 7));
             try {
               const agg = await aggregateInWorker(days,
-                { signal: exec.signal, timeoutMs: config.timeoutMs, decompressTimeoutMs: config.decompressTimeoutMs });
+                { sessionsRoot: retainedRoot, signal: exec.signal, timeoutMs: config.timeoutMs, decompressTimeoutMs: config.decompressTimeoutMs });
               return { text: formatSummary(agg, days) };
             } catch (e) {
               return { text: `汇总失败：${e.message}` };

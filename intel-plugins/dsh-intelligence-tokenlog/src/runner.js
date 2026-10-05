@@ -19,7 +19,8 @@ export async function aggregateInWorker(days,
     signal?.addEventListener("abort", abort, { once: true });
     worker.once("message", value => { result = value; });
     worker.once("error", error => {
-      failure ??= error.message === "TOKENLOG_TIMEOUT" ? "TOKENLOG_TIMEOUT" : "TOKENLOG_READ_FAILED";
+      failure ??= ["TOKENLOG_TIMEOUT", "TOKENLOG_SOURCE_UNAVAILABLE"].includes(error.message)
+        ? error.message : "TOKENLOG_READ_FAILED";
     });
     worker.once("exit", code => {
       clearTimeout(timer);

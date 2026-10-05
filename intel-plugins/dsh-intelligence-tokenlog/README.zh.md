@@ -23,9 +23,11 @@ kind: "package-bundle"
 <a id="use-this-package"></a>
 ## 使用本包
 
-要把此组合包加入既有的 Linux `web` 与 `evolve` profile，并把 sysevents 组合包加入 `web`，请在仓库中运行 `node intel/hmc-observability.mjs <profiles-root> <new-backup-directory>`。辅助脚本保留 profile patch，并在修改前备份两份 manifest（元数据清单）。重启生产服务后加载新组合包。回滚时恢复备份的 manifest，仅移除 `links.json` 标记为 `created` 的链接，然后重启。HMC 从共享日志读取系统事件，与事件由哪个 profile 发出无关；本工具在对话中使用，Android 没有独立的用量页面。
+要把此组合包加入既有的 Linux `web` 与 `evolve` profile，并把 sysevents 组合包加入 `web`，请在仓库中运行 `node intel/hmc-observability.mjs <profiles-root> <new-backup-directory>`。辅助脚本保留 profile patch，并在修改前备份两份 manifest（元数据清单）。重启生产服务后加载新组合包。回滚时恢复备份的 manifest，仅移除 `links.json` 标记为 `created` 的链接，然后重启。HMC 从共享日志读取系统事件，与事件由哪个 profile 发出无关。它的 Android 用量页读取本组合包挂载的聚合服务，不创建会话或发起模型请求。
 
 `token_usage_summary(days)` 读取 Linux Host 保留的 `session.v4.jsonl.zstd` 日志，范围为 1–30 天，按任务、日期及提供商和模型汇总输入与输出 token。每条助手消息归属其前面的请求头，同一会话内的模型切换也会计入。缺失请求头时报告 `unknown`，不推定提供商。一个会话切换模型后，可以计入多个模型的会话数。任务分组采用第一条用户消息。
+
+时间窗口覆盖此前 `days × 24` 小时，可以跨更多自然日期。工具与聚合服务均采用可选的 profile 配置 `sessionsRoot`；未设置时读取 `DSH_HOME` 下的 `sessions/--root--`，环境变量未设置时采用 `~/.dsh`。根目录缺失或无法读取时返回 `TOKENLOG_SOURCE_UNAVAILABLE`；既有空目录报告零用量。服务调用方可显式覆盖本次扫描的根目录。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
