@@ -15,7 +15,6 @@
   "tasks": {
     "morning_briefing": {
       "route": "chatgpt",
-      "fallback": "flash",
       "retrySafe": false,
       "visibleOutput": "required",
       "deduplicateDaily": true
@@ -26,40 +25,34 @@
     },
     "evolve_studying": {
       "route": "chatgpt",
-      "fallback": "flash",
       "retrySafe": false,
       "visibleOutput": "required",
       "deduplicateDaily": true
     },
     "evolve_ideas": {
       "route": "chatgpt",
-      "fallback": "flash",
       "retrySafe": false,
       "visibleOutput": "required",
       "deduplicateDaily": true
     },
     "evolve_dreaming": {
       "route": "chatgpt",
-      "fallback": "flash",
       "retrySafe": false,
       "visibleOutput": "required",
       "deduplicateDaily": true
     },
     "evolve_skill_review": {
       "route": "chatgpt",
-      "fallback": "flash",
       "retrySafe": false,
       "visibleOutput": "required",
       "deduplicateDaily": true
     },
     "evolve_goal_review": {
       "route": "chatgpt",
-      "fallback": "flash",
       "retrySafe": false
     },
     "evolve_goal_act": {
       "route": "chatgpt",
-      "fallback": "flash",
       "retrySafe": false
     },
     "heartbeat": {

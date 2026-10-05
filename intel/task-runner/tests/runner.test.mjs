@@ -11,6 +11,19 @@ test('default task routing preserves the deployed nine-task provider assignments
   for(const id of ['morning_briefing','evolve_studying','evolve_ideas','evolve_dreaming','evolve_skill_review','evolve_goal_review','evolve_goal_act'])
     {const plan=resolveTask(deployed,id,'brief');assert.equal(plan.provider,'openai-codex');assert.equal(plan.transport,'sse');}
 });
+test('deployed side-effecting tasks declare no fallback and retain the primary failure',async()=>{
+  const deployed=JSON.parse(readFileSync(new URL('../routes.json',import.meta.url),'utf8'));
+  for(const [id,assignment] of Object.entries(deployed.tasks)){
+    assert.equal(assignment.retrySafe,false,id);
+    assert.equal(Object.hasOwn(assignment,'fallback'),false,id);
+    const audit=[],attempts=[];
+    const exit=await runTask(deployed,id,'brief',async plan=>{attempts.push(plan);return 124;},
+      row=>audit.push(row),{inspectVisibleOutputs:async()=>[],runDate:'2026-10-05'});
+    assert.equal(exit,124,id);assert.equal(attempts.length,1,id);
+    assert.equal(audit.at(-1).kind,'finish',id);assert.equal(audit.at(-1).exit,124,id);
+    assert.equal(audit.some(row=>row.kind==='fallback'),false,id);
+  }
+});
 test('known cron task IDs load the live template instead of stale crontab text',()=>{
   const task=resolveTask(config,'evolve_upkeep','old prompt');
   assert.equal(task.template,'memory_upkeep');assert.ok(task.prompt.includes('模板'));

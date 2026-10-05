@@ -8,6 +8,8 @@ ChatGPT cron 路由显式为每个一次性进程使用 SSE。否则，已安装
 
 `route-runs.jsonl` 记录请求的提供方与模型、模板 ID、进程退出码和 fallback 原因，不记录提示词或凭据。请求的身份不能证明实际使用的模型：须将成功请求与 tokenlog 关联核对。重试非零退出的任务可能重复产生副作用，因此默认路由禁用重试。仅对经过审查的只读任务启用 `retrySafe`。超时会终止进程组；退出失败仍可能表示已经产生部分副作用，需要检查。
 
+九个生产任务配置省略 `fallback`：主路由失败即为最终失败，审计保留请求路由及退出码。明确通过只读审计的自定义任务可以同时配置 `fallback` 与 `retrySafe: true`；降级尝试记录自身 provider、model 和 transport。仅配置 `fallback` 不授权重试。
+
 配置 `visibleOutput: "required"` 的任务必须留下本次运行的 Feed 文章或 Artifact 版本。进程退出零但没有可读产出时改记退出码 65，fallback 也适用，并且不会因此重试。运行器按配置时区给发布工具注入任务 ID、唯一运行 ID 和日期。`references` 仅接受已有记忆的整数 ID，写入前核验。手动发布不虚构运行身份。upkeep 没有新信号时可安静成功，无需发布。
 
 带引用的产出保留配置的记忆目录，因此即使 memory 使用自定义 `dataDir`，产出检查也读取同一数据库。演进插件按 runner 身份，把新创建的根会话记入共享 DSH home 下的 `intel-joblog/automation-sessions.sqlite`。它排除标准子智能体和普通会话，保留会话 header，不根据工作区路径或提示词片段猜测自动任务。读取方以只读方式打开索引，缺少身份的历史会话保持未分类。
