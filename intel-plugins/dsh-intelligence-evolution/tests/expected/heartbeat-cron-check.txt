@@ -1,0 +1,1 @@
+cron 任务健康：先调用 joblog_status 和 joblog_alerts，核对 job_runs.json 最新状态与告警时间；需确认退出码或未结束运行时，只读 /root/.dsh/intel-joblog/route-runs.jsonl 最近一小时记录。无 finish 的 start 只能记为未确认完成；upkeep-backoff、upkeep-no-signal 是安静跳过，不是失败。历史失败告警须保留其日期，不把旧告警说成新故障。

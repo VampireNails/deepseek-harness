@@ -27,6 +27,8 @@ Configure `upkeepSourceSocket` only in the existing Host profile that supplies s
 
 `upkeepSourceTimeoutMs` defaults to 30,000 milliseconds. `upkeepMaxSessionBytes` defaults to 67,108,864 compressed bytes per cold session artifact.
 
+`heartbeat_check` reads the private `intel-evolution/HEARTBEAT.md` checklist in groups of three. The shipped cron check uses `joblog_status` and `joblog_alerts`; `route-runs.jsonl` supplies run/exit details when needed. Unfinished starts remain unconfirmed, quiet upkeep skips are expected, and historical alerts retain their dates. Updating this package does not overwrite a custom private checklist; back it up and compare the shipped cron entry before migrating it.
+
 The source waits for all three reader services, including providers registered later during Host startup. It publishes the socket only after they become available; eligible source setup failures reject startup. The source belongs to the evolution plugin's lifecycle and closes when that plugin is disposed.
 
 <a id="understand-the-implementation"></a>

@@ -27,6 +27,8 @@ kind: "package-bundle"
 
 `upkeepSourceTimeoutMs` 默认为 30,000 毫秒。`upkeepMaxSessionBytes` 默认为每个冷会话文件 67,108,864 压缩字节。
 
+`heartbeat_check` 按每组三项读取私有的 `intel-evolution/HEARTBEAT.md` 清单。附带的 cron 检查调用 `joblog_status` 和 `joblog_alerts`，需要时从 `route-runs.jsonl` 核对运行与退出信息。未结束的 start 保持未确认，安静 upkeep 跳过属于预期，历史告警保留日期。更新本插件不会覆盖自定义私有清单；迁移前先备份并比较附带的 cron 检查项。
+
 来源等待三个读取服务全部就绪，包含 Host 启动过程中稍后注册的提供方。服务就绪后才发布 socket；满足依赖后的来源初始化失败会使启动拒绝。来源归 evolution 插件生命周期管理，插件卸载时关闭。
 
 <a id="understand-the-implementation"></a>
