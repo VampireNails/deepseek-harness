@@ -41,10 +41,10 @@ function readChecklist() {
 }
 
 /**
- * Mount evolution tools and await the optional Host source before reporting startup success.
+ * Mount evolution tools; the optional Host source activates only while its readers are available.
  * @param ctx - Cordis context owning all registrations and asynchronous cleanup.
  * @param config - Resolved evolution configuration.
- * @returns Startup completion; unavailable or invalid source configuration rejects.
+ * @returns Startup completion; reader dependencies remain pending, and eligible source setup errors reject.
  */
 export async function apply(ctx, config) {
   const identity = runnerIdentity();
@@ -52,26 +52,28 @@ export async function apply(ctx, config) {
     if (identity) throw Error('upkeep source socket belongs to the existing Host profile');
     const directory = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'intel-joblog');
     const maxSessionBytes = config.upkeepMaxSessionBytes ?? 67108864;
-    await ctx.effect(async () => {
-      // Resolve providers before accepting requests; an absent reader cannot become an empty cut.
-      createUpkeepQuery(ctx, { maxSessionBytes });
-      const server = await startUpkeepServer({ socketPath: config.upkeepSourceSocket,
-        timeoutMs: config.upkeepSourceTimeoutMs ?? 30000,
-        source: { async capture(request, { signal }) {
-          const query = createUpkeepQuery(ctx, { signal, maxSessionBytes });
-          const captured = await captureUpkeepSource(query, readAutomationSessions(directory), request);
-          const automatic = new Set(readAutomationSessions(directory).map(row => row.sessionId));
-          // A task root can be created after the initial index read and before the corpus read.
-          const retained = captured.messages.filter(message => !automatic.has(message.sessionId));
-          captured.counts.filteredEvents += captured.messages.length - retained.length;
-          captured.counts.newMessages = retained.length;
-          return { ...captured, messages: retained };
-        } },
-        inspect: (run, { signal }) => inspectUpkeepRun(createUpkeepQuery(ctx, { signal, maxSessionBytes }),
-          readAutomationSessions(directory), run),
-      });
-      return () => server.close();
-    }, 'intelEvolution.upkeepSource');
+    await ctx.inject(['sessions', 'sessionQuery', 'sessionPersistence'], async function upkeepHostSource(sourceCtx) {
+      await sourceCtx.effect(async () => {
+        // Resolve providers before accepting requests; an absent reader cannot become an empty cut.
+        createUpkeepQuery(sourceCtx, { maxSessionBytes });
+        const server = await startUpkeepServer({ socketPath: config.upkeepSourceSocket,
+          timeoutMs: config.upkeepSourceTimeoutMs ?? 30000,
+          source: { async capture(request, { signal }) {
+            const query = createUpkeepQuery(sourceCtx, { signal, maxSessionBytes });
+            const captured = await captureUpkeepSource(query, readAutomationSessions(directory), request);
+            const automatic = new Set(readAutomationSessions(directory).map(row => row.sessionId));
+            // A task root can be created after the initial index read and before the corpus read.
+            const retained = captured.messages.filter(message => !automatic.has(message.sessionId));
+            captured.counts.filteredEvents += captured.messages.length - retained.length;
+            captured.counts.newMessages = retained.length;
+            return { ...captured, messages: retained };
+          } },
+          inspect: (run, { signal }) => inspectUpkeepRun(createUpkeepQuery(sourceCtx, { signal, maxSessionBytes }),
+            readAutomationSessions(directory), run),
+        });
+        return () => server.close();
+      }, 'intelEvolution.upkeepSource');
+    });
   }
   if (identity && ['evolve_upkeep', 'memory_upkeep'].includes(identity.taskId)) {
     const budget = config?.upkeepToolBudget ?? 6;

@@ -27,6 +27,8 @@ kind: "package-bundle"
 
 `upkeepSourceTimeoutMs` 默认为 30,000 毫秒。`upkeepMaxSessionBytes` 默认为每个冷会话文件 67,108,864 压缩字节。
 
+来源等待三个读取服务全部就绪，包含 Host 启动过程中稍后注册的提供方。服务就绪后才发布 socket；满足依赖后的来源初始化失败会使启动拒绝。来源归 evolution 插件生命周期管理，插件卸载时关闭。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 

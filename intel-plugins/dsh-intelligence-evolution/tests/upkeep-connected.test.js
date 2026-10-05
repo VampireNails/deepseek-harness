@@ -225,6 +225,79 @@ async function assertPersistedTaskInput(f, dispatch) {
 if (process.argv[2] === '--fixture-dsh') {
   await fixtureDsh();
 } else {
+  test('actual Cordis late providers activate the dependent source and parent disposal awaits socket cleanup',
+    { skip: process.platform !== 'linux', timeout: 20000 }, async t => {
+      const runtime = await officialRuntime();
+      const previous = new Map(envKeys.map(key => [key, process.env[key]]));
+      const directory = await mkdtemp(join(tmpdir(), 'upkeep-late-'));
+      const socketPath = join(directory, 'source.sock');
+      let ctx, sourceFiber, writer;
+      t.after(async () => {
+        try { if (ctx) await ctx.fiber.dispose(); }
+        finally {
+          for (const [key, value] of previous) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+          await rm(directory, { recursive: true, force: true });
+        }
+      });
+      for (const key of envKeys) delete process.env[key];
+      process.env.DSH_HOME = join(directory, 'home');
+      ctx = new runtime.Context();
+      await ctx.plugin(runtime.SessionStore);
+      await ctx.plugin(runtime.SystemPrompt);
+      await ctx.plugin(runtime.Tools, { mode: 'native' });
+      await ctx.plugin(runtime.Agents);
+      assert.equal(ctx.get('sessionPersistence'), undefined);
+      assert.equal(ctx.get('sessionQuery'), undefined);
+      // Observe Cordis's genuine dependency fiber, without replacing its source,
+      // service resolution, startup Promise or filesystem/network operations.
+      ctx.on('internal/plugin', fiber => {
+        if (Object.hasOwn(fiber.inject, 'sessionQuery') && Object.hasOwn(fiber.inject, 'sessionPersistence')) {
+          assert.equal(sourceFiber, undefined, 'One source dependency fiber must own startup');
+          sourceFiber = fiber;
+        }
+      });
+      const evolution = await import('../index.js');
+      const evolutionFiber = await ctx.plugin(evolution, { upkeepSourceSocket: socketPath, upkeepSourceTimeoutMs: 1000 });
+      assert.ok(sourceFiber, 'Configured source must formally depend on both late providers');
+      assert.ok(Object.hasOwn(sourceFiber.inject, 'sessions'), 'Source scope must explicitly require the Session service');
+      assert.equal(sourceFiber.parent.fiber.uid, evolutionFiber.uid, 'Evolution must own the dependency fiber');
+      await sourceFiber.await();
+      assert.equal(sourceFiber.store, undefined, 'Awaiting a stable pending fiber must not fabricate provider readiness');
+      await assert.rejects(() => stat(socketPath), { code: 'ENOENT' });
+
+      await ctx.plugin(runtime.Jsonl, { root: join(directory, 'sessions'), compression: 'none' });
+      await sourceFiber.await();
+      assert.equal(sourceFiber.store, undefined, 'Persistence alone must not start a source without Query');
+      await assert.rejects(() => stat(socketPath), { code: 'ENOENT' });
+      await ctx.plugin(runtime.Query, { path: ':memory:', openAt: 'never' });
+      await sourceFiber.await();
+      assert.ok(sourceFiber.store.sessionQuery);
+      assert.ok(sourceFiber.store.sessionPersistence);
+      assert.equal((await stat(socketPath)).mode & 0o777, 0o600);
+
+      const id = runtime.SessionId('owned-late-provider-human');
+      writer = await ctx.get('sessionPersistence').create({ id,
+        version: runtime.SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false });
+      await writer.append([
+        { type: 'turn/start', seq: runtime.SessionSeq(0), time: 1, data: { turn: 1 } },
+        { type: 'user/message', seq: runtime.SessionSeq(1), time: 2, surfaceOp: 'append',
+          data: runtime.createUserMessage({ content: [{ type: 'text', text: historicalText }], source: { kind: 'user' } }) },
+        { type: 'step/start', seq: runtime.SessionSeq(2), time: 3, data: { turn: 1, step: 1 } },
+      ]);
+      await writer.flush();
+      const { requestUpkeep } = await import('../src/upkeep-socket.js');
+      const captured = await requestUpkeep(socketPath, { version: 1, operation: 'capture', request: {
+        bootstrap: true, cursors: {}, maxBatchMessages: 1, maxBatchChars: 1024,
+      } }, 1000);
+      assert.deepEqual(captured.messages, []);
+      assert.deepEqual(captured.cursors, { [id]: 2 }, 'Late-bound source must read the real cold raw cut');
+      assert.equal(ctx.sessions.get(id), undefined);
+      await ctx.fiber.dispose();
+      await assert.rejects(() => stat(socketPath), { code: 'ENOENT' });
+      assert.deepEqual((await readdir(directory)).filter(name => name.startsWith('.u-')), []);
+      await assert.rejects(() => writer.read(), { name: 'SessionHandleClosedError' });
+    });
+
   test('actual plugin mount rejects source setup failure and preserves the occupied canonical path',
     { skip: process.platform !== 'linux', timeout: 20000 }, async t => {
       const runtime = await officialRuntime();
