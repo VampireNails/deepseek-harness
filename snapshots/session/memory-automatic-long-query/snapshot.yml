@@ -1,0 +1,9 @@
+version: 1
+scenario: memory-automatic-long-query
+profile: headless
+composition: memory-integration
+recording: authored
+header:
+  class: memory
+workspace:
+  setup: memory-recall

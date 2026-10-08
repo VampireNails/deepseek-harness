@@ -475,6 +475,17 @@ async function seedWorkspace(scenario: HeadlessScenario, cwd: string): Promise<v
 }
 
 const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
+  async 'memory-recall'(cwd) {
+    const { openStore } = await import('../../intel-plugins/dsh-intelligence-memory/src/store.js')
+    const { FtsRetriever } = await import('../../intel-plugins/dsh-intelligence-memory/src/retriever.js')
+    const retriever = new FtsRetriever(openStore(join(cwd, '.dsh', 'intel-memory')))
+    try {
+      retriever.add({ text: 'heliostat calibration handbook' })
+      retriever.add({ text: '青铜齿轮装配规范' })
+    } finally {
+      retriever.close()
+    }
+  },
   async 'office-skills'(cwd) {
     await cp(join(repoRoot, 'packages/skill/skill-office/assets'), join(cwd, 'office-skills'), { recursive: true })
     await symlink(process.execPath, join(cwd, 'office-node'))
@@ -1177,6 +1188,16 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (scenario.name === 'memory-automatic-long-query') {
+              const events = parseSessionLog(actualLogs[0]!.content)
+              const injections = events.filter(event => event.type === 'user/message'
+                && event.data.source?.kind === 'dsh-intelligence-memory')
+              expect(injections).toHaveLength(1)
+              const injection = injections[0]!
+              if (injection.type !== 'user/message') throw new Error('Expected a recorded memory injection')
+              expect(injection.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(''))
+                .toContain('heliostat calibration handbook')
+            }
             if (scenario.name === 'memory-long-query') {
               const events = parseSessionLog(actualLogs[0]!.content)
               const results = events.flatMap(event => event.type === 'tool/result' ? [event.data.message] : [])
