@@ -52,7 +52,14 @@ for (const query of fixture.queries) {
       assert.ok(ids.length <= limit);
       assert.equal(new Set(ids).size, ids.length);
       if (query.relevant.length === 0) assert.deepEqual(ids, []);
-      else assert.ok(query.relevant.includes(ids[0]), `First result must be acceptable: ${JSON.stringify(ids)}`);
+      else {
+        assert.ok(query.relevant.includes(ids[0]), `First result must be acceptable: ${JSON.stringify(ids)}`);
+        const relevant = ids.filter(id => query.relevant.includes(id)).length;
+        assert.ok(relevant / Math.min(limit, query.relevant.length) >= .8,
+          `Attainable recall@${limit} must reach 80% for every query: ${JSON.stringify(ids)}`);
+        if (query.id === 'q01') assert.ok(ids.every(id => query.relevant.includes(id)), 'Preference query must exclude logs and adjacent facts');
+        if (query.id === 'q15') assert.deepEqual(ids, ['p5'], 'Approval query must not pad with release records');
+      }
     }
   });
 }
@@ -60,10 +67,10 @@ for (const query of fixture.queries) {
 test('golden quality retains measured recall and precision at both result limits', t => {
   const memory = corpus(t);
   const positives = fixture.queries.filter(query => query.relevant.length);
-  // These floors preserve the measured baseline; they do not claim all returned rows are relevant.
+  // Frozen judgments measure improvements; unrelated lower-ranked rows remain visible in the report.
   for (const { limit, recallFloor, precisionFloor } of [
-    { limit: 3, recallFloor: 0.97, precisionFloor: 0.60 },
-    { limit: 5, recallFloor: 0.98, precisionFloor: 0.55 },
+    { limit: 3, recallFloor: 0.98, precisionFloor: 0.77 },
+    { limit: 5, recallFloor: 0.999, precisionFloor: 0.73 },
   ]) {
     let recall = 0, precision = 0;
     for (const query of positives) {

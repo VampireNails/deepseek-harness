@@ -47,6 +47,43 @@ test('mounted recall retains a late subject and reports bounded query rejection 
   assert.equal((await recall('heliostat calibration handbook')).messages.length, 2);
 });
 
+test('mounted recall and native search reject candidate byte overflow without private content and recover after invalidation', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'memory-candidate-bounds-')), ctx = new Context();
+  t.after(async () => { try { await ctx.fiber.dispose(); } finally { rmSync(directory, { recursive: true }); } });
+  const warnings = [];
+  ctx.logger.exporter({ levels: { default: 3 }, export(message) { if (message.name === Memory.name && message.type === 'warn') warnings.push(message); } });
+  await ctx.plugin(SessionStore); await ctx.plugin(SystemPrompt);
+  await ctx.plugin(ToolRuntime, { mode: 'native' }); await ctx.plugin(Agents); await ctx.plugin(Projections);
+  await ctx.plugin(Memory, { dataDir: directory, maxCandidateBytes: 64 });
+  const execute = (name, args) => ctx.tools.execute({ callId: name + JSON.stringify(args).length, name, arguments: args, signal: new AbortController().signal });
+  assert.equal((await execute('memory_write', { text: 'opal notebook' })).isError, false);
+  const privateText = 'opal private-candidate-fixture '.repeat(8);
+  assert.equal((await execute('memory_write', { text: privateText })).isError, false);
+  const session = Session.create(SessionId('mounted-candidate-bounds'));
+  session.append('turn/start', { turn: 1 }); const agent = { session };
+  const recall = () => ctx.waterfall(scopeTarget(agent, agent), 'agent/pre-step',
+    { agent, turn: 1, step: 1, signal: new AbortController().signal }, async () => ({ kind: 'allow', messages: [{ role: 'user', content: 'opal' }] }));
+  assert.equal((await recall()).messages.length, 1);
+  assert.equal(warnings.length, 1);
+  assert.match(JSON.stringify(warnings[0].args), /maxCandidateBytes=64/);
+  assert.doesNotMatch(JSON.stringify(warnings[0].args), /opal|private-candidate-fixture/);
+  const rejected = await execute('memory_search', { query: 'opal' });
+  assert.equal(rejected.isError, true);
+  assert.match(rejected.content[0].text, /maxCandidateBytes=64/);
+  assert.doesNotMatch(rejected.content[0].text, /private-candidate-fixture/);
+  const manager = ctx.get('memoryManagement');
+  const big = manager.list().items.find(row => row.preview.includes('private-candidate-fixture'));
+  assert.ok(big);
+  manager.change({ id: big.id, action: 'invalidate', expectedRevision: 0, reason: 'Synthetic candidate correction', mutationId: '00000000-0000-4000-8000-000000000019' });
+  const allowed = await recall();
+  assert.equal(allowed.messages.length, 2);
+  assert.match(allowed.messages[1].content[0].text, /opal notebook/);
+  const recovered = await execute('memory_search', { query: 'opal' });
+  assert.equal(recovered.isError, false);
+  assert.match(recovered.content[0].text, /opal notebook/);
+  assert.equal(manager.detail(big.id).record.text, privateText.trim());
+});
+
 test('mounted Memory service excludes invalidated originals from recall and new references, preserves explicit history and unloads',async()=>{
   const directory=mkdtempSync(join(tmpdir(),'memory-mounted-')),ctx=new Context();
   try {

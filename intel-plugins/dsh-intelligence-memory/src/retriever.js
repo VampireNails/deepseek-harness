@@ -5,16 +5,18 @@
 //   search(query, limit) -> [{ id, text, kind, createdAt }]
 //   close()
 //
-// 当前实现：SQLite FTS5（BM25 排序），零依赖、内存增量可忽略。
+// 当前实现：SQLite FTS5 候选及有界词法重排，无向量模型。
 // 中文处理：FTS5 默认 unicode61 分词器把连续汉字当一个 token，
-// 故入库前按字切分加空格（"我喜欢" -> "我 喜 欢"），查询同样按字 OR，BM25 排序，
-// 再加 JS 二次重叠过滤（至少共享 2 个不同汉字），压住单字误召回。
+// 故入库前按字切分加空格（"我喜欢" -> "我 喜 欢"），查询以文字面 OR 获取候选，
+// 再用汉字相邻双字、ASCII 整词及配置的同义概念评分，压住单字误召回。
 // 实测结论（2026-09-28）：transformers.js + bge-small-zh-v1.5（ONNX）峰值 RSS 约 271MB，
 // 与 dsh web（144MB）同进程合计约 374MB，超过迁移期可用内存（约 355MB），故降级为 FTS5。
 // Python 退役、内存宽裕后，可实现同样接口的向量检索器直接替换，无需改插件主体.
 
 import { randomUUID } from "node:crypto";
 import { MemoryValidity } from './validity.js';
+import { DEFAULT_SYNONYM_GROUPS, DEFAULT_RANKING_LIMITS, DEFAULT_RANKING_RATIOS, PERSONAL_PREFERENCE_PHRASES,
+  validateSynonyms, queryEvidence, rankCandidates } from './ranking.js';
 
 export function spaceCjk(text) {
   return text.replace(/([\p{Script=Han}])/gu, " $1 ").replace(/\s+/g, " ").trim();
@@ -28,7 +30,7 @@ function queryTooLarge(limit) {
   return error;
 }
 
-function buildFtsQuery(query, limits) {
+function buildFtsQuery(query, limits, groups) {
   const text = String(query ?? "");
   if (text.length > limits.maxQueryChars) throw queryTooLarge(`maxQueryChars=${limits.maxQueryChars}`);
   const spaced = spaceCjk(text);
@@ -41,27 +43,29 @@ function buildFtsQuery(query, limits) {
   if (uniqChars.length + uniqWords.length > limits.maxQueryTerms) {
     throw queryTooLarge(`maxQueryTerms=${limits.maxQueryTerms}`);
   }
-  if (uniqChars.length === 0 && uniqWords.length === 0) return null;
+  const evidence = queryEvidence(text, groups);
+  const expanded = spaceCjk(evidence.concepts.flat().join(' '));
+  const searchTerms = [...new Set([...uniqChars, ...evidence.words,
+    ...(expanded.match(/[\p{Script=Han}]|[A-Za-z0-9]{2,}/gu) ?? []).map(term => term.toLowerCase())])];
+  if (searchTerms.length > limits.maxQueryTerms) throw queryTooLarge(`maxQueryTerms=${limits.maxQueryTerms} including synonyms`);
+  if (searchTerms.length === 0) return null;
   const q = (t) => "\"" + t.replace(/"/g, "\"\"") + "\"";
-  return { fts: [...uniqChars, ...uniqWords].map(q).join(" OR "), chars: uniqChars, words: uniqWords };
-}
-
-function overlapOk(text, chars, words) {
-  if (words.length > 0) {
-    const low = text.toLowerCase();
-    if (words.some((w) => low.includes(w))) return true;
-  }
-  if (chars.length === 0) return false;
-  let n = 0;
-  for (const c of chars) if (text.includes(c)) n++;
-  return n >= Math.min(2, chars.length);
+  return { fts: searchTerms.map(q).join(" OR "), evidence };
 }
 
 export class FtsRetriever {
   constructor(db, limits = {}) {
     this.queryLimits = { ...DEFAULT_QUERY_LIMITS, ...limits };
-    for (const key of Object.keys(DEFAULT_QUERY_LIMITS)) {
-      if (!Number.isSafeInteger(this.queryLimits[key]) || this.queryLimits[key] < 1) {
+    this.rankingLimits = { ...DEFAULT_RANKING_LIMITS, ...limits };
+    this.rankingRatios = { ...DEFAULT_RANKING_RATIOS, ...limits };
+    this.synonyms = validateSynonyms(limits.synonymGroups ?? DEFAULT_SYNONYM_GROUPS);
+    for (const key of Object.keys(DEFAULT_RANKING_RATIOS)) {
+      const value = this.rankingRatios[key];
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) throw new RangeError(`${key} must be a finite ratio from 0 to 1`);
+    }
+    for (const key of [...Object.keys(DEFAULT_QUERY_LIMITS), ...Object.keys(DEFAULT_RANKING_LIMITS)]) {
+      const value = key in DEFAULT_QUERY_LIMITS ? this.queryLimits[key] : this.rankingLimits[key];
+      if (!Number.isSafeInteger(value) || value < 1) {
         throw new RangeError(`${key} must be a positive safe integer`);
       }
     }
@@ -73,11 +77,13 @@ export class FtsRetriever {
     );
     this.ftsInsertStmt = db.prepare("INSERT INTO memories_fts(rowid, text) VALUES (?, ?)");
     this.getStmt = db.prepare("SELECT id, text, kind, created_at FROM memories WHERE id = ?"+active);
-    this.searchStmt = db.prepare(
-      "SELECT m.id, m.text, m.kind, m.created_at " +
+    const searchSql = (
+      "SELECT m.id, length(CAST(m.text AS BLOB)) AS text_bytes " +
       "FROM memories_fts f JOIN memories m ON m.id = f.rowid " +
-      "WHERE memories_fts MATCH ? "+(this.validity.prepared?'AND NOT EXISTS (SELECT 1 FROM memory_state s WHERE s.memory_id=m.id AND s.active=0) ':'')+"ORDER BY bm25(memories_fts) LIMIT ?"
+      "WHERE memories_fts MATCH ? "+(this.validity.prepared?'AND NOT EXISTS (SELECT 1 FROM memory_state s WHERE s.memory_id=m.id AND s.active=0) ':'')
     );
+    this.searchStmt = db.prepare(searchSql + "ORDER BY bm25(memories_fts) LIMIT ?");
+    this.preferenceStmt = db.prepare(searchSql + 'AND (' + PERSONAL_PREFERENCE_PHRASES.map(() => 'instr(m.text, ?) > 0').join(' OR ') + ') ORDER BY bm25(memories_fts) LIMIT ?');
   }
 
   add({ text, kind = "note", sessionId = null }) {
@@ -107,21 +113,28 @@ export class FtsRetriever {
   }
 
   /**
-   * Search every distinct Han character and ASCII word within configured query bounds.
+   * Search literal subjects and configured synonyms within query and candidate bounds.
    * @param {string} query Keywords or a question; FTS operators are not interpreted.
    * @param {number} limit Result count, clamped to 1–20.
-   * @returns {Array<{id:number,text:string,kind:string,createdAt:number}>} Active matching originals in BM25 order.
+   * @returns {Array<{id:number,text:string,kind:string,createdAt:number}>} Active originals ranked by literal query evidence.
    * @throws {RangeError} MEMORY_QUERY_TOO_LARGE before SQLite when a query exceeds either bound.
+   * @throws {RangeError} MEMORY_RECALL_TOO_LARGE before text fetch when candidate bytes exceed the configured bound.
    */
   search(query, limit = 5) {
-    const parsed = buildFtsQuery(query, this.queryLimits);
+    const parsed = buildFtsQuery(query, this.queryLimits, this.synonyms);
     if (!parsed) return [];
     const want = Math.max(1, Math.min(20, limit | 0));
-    const rows = this.searchStmt.all(parsed.fts, want * 3 + 5);
-    return rows
-      .filter((r) => overlapOk(r.text, parsed.chars, parsed.words))
-      .slice(0, want)
-      .map((r) => ({ id: r.id, text: r.text, kind: r.kind, createdAt: r.created_at }));
+    const metadata = parsed.evidence.personal
+      ? this.preferenceStmt.all(parsed.fts, ...PERSONAL_PREFERENCE_PHRASES, this.rankingLimits.maxCandidates)
+      : this.searchStmt.all(parsed.fts, this.rankingLimits.maxCandidates);
+    if (metadata.reduce((sum, row) => sum + row.text_bytes, 0) > this.rankingLimits.maxCandidateBytes) {
+      const error = new RangeError(`Memory candidates exceed maxCandidateBytes=${this.rankingLimits.maxCandidateBytes}; use a more specific query.`);
+      error.code = 'MEMORY_RECALL_TOO_LARGE';
+      throw error;
+    }
+    const hits = metadata.map(row => this.get(row.id)).filter(Boolean)
+      .map(row => ({ id: row.id, text: row.text, kind: row.kind, createdAt: row.created_at }));
+    return rankCandidates(String(query ?? ''), hits, parsed.evidence, this.rankingRatios).slice(0, want);
   }
 
   close() {
