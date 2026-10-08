@@ -5,6 +5,18 @@ import {readFileSync} from 'node:fs';
 
 const config={defaultRoute:'flash',routes:{flash:{provider:'deepseek-official',model:'deepseek-flash'},
   chat:{provider:'openai-codex',model:'gpt-5.5'}},tasks:{evolve_upkeep:{route:'chat',fallback:'flash',retrySafe:false}}};
+test('both dreaming aliases dispatch one Feed requirement without permitting a prohibited Artifact call',async()=>{
+  for(const id of ['evolve_dreaming','dreaming']){
+    let prompt;
+    const configured={...config,tasks:{[id]:{route:'chat',visibleOutput:'required'}}};
+    const exit=await runTask(configured,id,undefined,async plan=>{prompt=plan.prompt;return 1;},()=>{},
+      {runId:'isolated-dreaming-prompt',runDate:'2026-10-08',inspectVisibleOutputs:async()=>[]});
+    assert.equal(exit,1);
+    assert.match(prompt,/预留最后 1 次给 feed_post，不额外调用 artifact_save/);
+    assert.doesNotMatch(prompt,/长报告可用 artifact_save/);
+    assert.match(prompt,/结束前用 feed_post 发布具体结论和下一步/);
+  }
+});
 test('default task routing preserves the deployed nine-task provider assignments',()=>{
   const deployed=JSON.parse(readFileSync(new URL('../routes.json',import.meta.url),'utf8'));
   for(const id of ['evolve_upkeep','heartbeat'])assert.equal(resolveTask(deployed,id).provider,'deepseek-official');

@@ -206,6 +206,8 @@ test('Linux CLI required output publishes real Feed content with trusted runner 
   assert.equal(execution.profile, 'evolve');
   assert.ok(execution.prompt.includes('日期 ' + execution.runDate));
   assert.ok(execution.prompt.includes('仅回复聊天或写记忆不算完成'));
+  assert.match(execution.prompt,/不额外调用 artifact_save/);
+  assert.doesNotMatch(execution.prompt,/长报告可用 artifact_save/);
   for (const key of ['taskId', 'runId', 'runDate']) assert.equal(post[key], execution[key]);
   assert.equal(post.idempotencyKey, 'feed:' + execution.taskId + ':' + execution.runDate);
   assert.equal(post.body, '来源已核对；下一步继续验证用户可见结果。');

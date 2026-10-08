@@ -5,6 +5,7 @@ import {TASKS} from '../src/tasks.js';
 import {resolveTask,runTask} from '../../../intel/task-runner/runner.mjs';
 
 const expected=readFileSync(new URL('./expected/dreaming-task-input.txt',import.meta.url),'utf8').trimEnd();
+const expectedDispatch=readFileSync(new URL('./expected/dreaming-dispatch-input.txt',import.meta.url),'utf8').trimEnd();
 const config=JSON.parse(readFileSync(new URL('../../../intel/task-runner/routes.json',import.meta.url),'utf8'));
 
 test('dreaming resolves current failure sources and reserves publication in its ten-call prompt',()=>{
@@ -15,7 +16,7 @@ test('dreaming resolves current failure sources and reserves publication in its 
 test('dreaming dispatch retains dated Feed delivery and reports a missing publication as failure',async()=>{
   const records=[];
   const exit=await runTask(config,'evolve_dreaming','stale',async plan=>{
-    assert.ok(plan.prompt.startsWith(expected));
+    assert.equal(plan.prompt,expectedDispatch);
     assert.ok(plan.prompt.includes('本轮任务 evolve_dreaming，日期 2026-10-07（Asia/Shanghai）'));
     assert.ok(plan.prompt.includes('仅回复聊天或写记忆不算完成'));
     assert.equal(plan.retrySafe,false);

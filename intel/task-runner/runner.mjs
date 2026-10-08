@@ -53,7 +53,8 @@ export async function runTask(config,id,customPrompt,execute,record,options={}){
   const runId=options.runId??randomUUID();
   if(typeof runId!=='string'||!runId||runId.length>256||!/^\d{4}-\d{2}-\d{2}$/.test(runDate))throw Error('invalid run identity');
   Object.assign(plan,{runId,runDate,timeZone});
-  if(plan.visibleOutput==='required') plan.prompt += `\n\n可见交付要求：本轮任务 ${id}，日期 ${runDate}（${timeZone}）。结束前用 feed_post 发布具体结论和下一步；引用记忆时把 memory_search/memory_write 返回的实际 ID 放入 references。长报告可用 artifact_save，同时在 Feed 中写清结论。无资料时如实发布本次检查范围与未发现新信号，禁止编造来源。任务身份由 runner 注入，不要自行填入或猜测 ID。仅回复聊天或写记忆不算完成。`;
+  const artifactGuidance=plan.template==='dreaming'?'':'长报告可用 artifact_save，同时在 Feed 中写清结论。';
+  if(plan.visibleOutput==='required') plan.prompt += `\n\n可见交付要求：本轮任务 ${id}，日期 ${runDate}（${timeZone}）。结束前用 feed_post 发布具体结论和下一步；引用记忆时把 memory_search/memory_write 返回的实际 ID 放入 references。${artifactGuidance}无资料时如实发布本次检查范围与未发现新信号，禁止编造来源。任务身份由 runner 注入，不要自行填入或猜测 ID。仅回复聊天或写记忆不算完成。`;
   if(plan.visibleOutput==='required'&&typeof options.inspectVisibleOutputs!=='function')throw Error('visible output inspector required');
   const info={taskId:id,runId,runDate,timeZone,provider:plan.provider,model:plan.model,transport:plan.transport,template:plan.template,reason:plan.reason};
   await record({kind:'start',...info});
