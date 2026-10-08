@@ -177,6 +177,7 @@
     "packages/*/*/tests/**/*.client.tsx",
     "packages/*/*/tests/**/*.client.spec.ts",
     "packages/*/*/tests/**/*.client.spec.tsx",
+    "packages/*/*/tests/**/*.client.e2e.ts",
     "packages/client/tsdown.client.ts",
     "scripts/*.client.spec.ts",
     "scripts/client-bundle-css.spec.ts",

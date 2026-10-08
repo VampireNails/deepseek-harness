@@ -220,7 +220,7 @@ it('rejects custom OAuth payloads and keeps a key when its form field is left bl
 
 it('delegates discovery and projects only IDs and names without returning provider metadata', async () => {
   const { controller, ctx } = await boot()
-  const discover = vi.spyOn(ctx.llm, 'discoverModels').mockResolvedValue([{ id: 'model', name: 'Model', diagnostic: 'private-token' }])
+  const discover = vi.spyOn(ctx.llm, 'discoverModels').mockResolvedValue([{ id: 'model', name: 'Model', contextWindow: 8192, maxTokens: 1024 }])
   const signal = new AbortController().signal
   expect(await controller.discover({ baseURL: 'https://example.com/v1', api: 'openai-completions' }, signal)).toEqual([{ id: 'model', name: 'Model' }])
   expect(discover).toHaveBeenCalledWith('first', { baseURL: 'https://example.com/v1', api: 'openai-completions' }, signal)
@@ -230,7 +230,7 @@ it('lists an installed read-only provider for verification without allowing draf
   const { controller, ctx } = await boot()
   ctx.llm.registerConfigurableProviders([{ provider: 'readonly-models', displayName: 'Read-only', settingsNs: 'readonly-models', settingsPath: [] }])
   ctx.effect(() => ctx.llm.registerAdapter(['readonly-models'], new class extends LlmAdapter {
-    async listModels() { return [{ provider: 'readonly-models', id: 'model', name: 'Model', description: 'private-metadata' }] }
+    override async listModels() { return [{ provider: 'readonly-models', id: 'model', name: 'Model', description: 'private-metadata' }] }
     async *stream() { yield { type: 'finish' as const, reason: { kind: 'stop' as const } } }
   }()))
   const row = (await controller.configuration()).providers.find(provider => provider.id === 'readonly-models')!
