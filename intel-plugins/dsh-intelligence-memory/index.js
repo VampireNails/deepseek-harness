@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { openStore } from "./src/store.js";
 import { FtsRetriever, DEFAULT_QUERY_LIMITS } from "./src/retriever.js";
-import { DEFAULT_SYNONYM_GROUPS, DEFAULT_RANKING_LIMITS, DEFAULT_RANKING_RATIOS } from './src/ranking.js';
+import { DEFAULT_SYNONYM_GROUPS, DEFAULT_RANKING_LIMITS, DEFAULT_RANKING_RATIOS, DEFAULT_PREFERENCE_SUBJECTS } from './src/ranking.js';
 import { memoryWriteTool, memoryReadTool, memorySearchTool } from "./src/tools.js";
 import { registerMemoryCorrection, memoryManagement } from "./src/correction.js";
 
@@ -29,6 +29,7 @@ export const Config = z.object({
   maxCandidates: z.number().min(1).max(Number.MAX_SAFE_INTEGER).step(1).default(DEFAULT_RANKING_LIMITS.maxCandidates),
   maxCandidateBytes: z.number().min(1).max(Number.MAX_SAFE_INTEGER).step(1).default(DEFAULT_RANKING_LIMITS.maxCandidateBytes),
   synonymGroups: z.array(z.array(z.string())).default(DEFAULT_SYNONYM_GROUPS),
+  preferenceSubjects: z.array(z.string()).default(DEFAULT_PREFERENCE_SUBJECTS),
   minimumScoreRatio: z.number().min(0).max(1).default(DEFAULT_RANKING_RATIOS.minimumScoreRatio),
   duplicatePatternPenalty: z.number().min(0).max(1).default(DEFAULT_RANKING_RATIOS.duplicatePatternPenalty),
 });
@@ -77,6 +78,7 @@ export function apply(ctx, config) {
     maxCandidates: cfg.maxCandidates ?? DEFAULT_RANKING_LIMITS.maxCandidates,
     maxCandidateBytes: cfg.maxCandidateBytes ?? DEFAULT_RANKING_LIMITS.maxCandidateBytes,
     synonymGroups: cfg.synonymGroups ?? DEFAULT_SYNONYM_GROUPS,
+    preferenceSubjects: cfg.preferenceSubjects ?? DEFAULT_PREFERENCE_SUBJECTS,
     minimumScoreRatio: cfg.minimumScoreRatio ?? DEFAULT_RANKING_RATIOS.minimumScoreRatio,
     duplicatePatternPenalty: cfg.duplicatePatternPenalty ?? DEFAULT_RANKING_RATIOS.duplicatePatternPenalty,
   });

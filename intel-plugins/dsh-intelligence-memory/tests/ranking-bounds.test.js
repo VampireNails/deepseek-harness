@@ -117,6 +117,20 @@ test('custom English phrase aliases match case insensitively without matching a 
   assert.deepEqual(memory.search('restart map'), [], 'An alias phrase must not match the end of restart');
 });
 
+test('configured named preference subjects retain personal statements before the candidate cap', t => {
+  const memory = fixture(t, { preferenceSubjects: ['我', '用户', 'Rowan'], maxCandidates: 3 });
+  for (let i = 0; i < 160; i++) memory.add({ text: `发布r${i}偏好设置校验完成，希望字段通过检查。` });
+  const id = memory.add({ text: 'Rowan 偏好清晰解释实验的理由。' }).id;
+  assert.deepEqual(memory.search('用户偏好').map(hit => hit.id), [id]);
+  assert.deepEqual(memory.search('实验理由').map(hit => hit.id), [id]);
+});
+
+test('preference subject aliases reject malformed configuration without guessing identity', t => {
+  for (const preferenceSubjects of [[], '用户', [''], ['  '], ['a'.repeat(33)], ['x*'], [2], Array.from({ length: 17 }, () => 'person')]) {
+    assert.throws(() => fixture(t, { preferenceSubjects }), /preferenceSubjects/);
+  }
+});
+
 const byteBudgetTexts = ['玉衡 coffee 校准表', '玉衡 coffee 记录簿'];
 const byteBudget = byteBudgetTexts.reduce((sum, text) => sum + Buffer.byteLength(text, 'utf8'), 0);
 

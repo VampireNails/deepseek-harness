@@ -10,10 +10,17 @@ export const DEFAULT_RANKING_RATIOS = { minimumScoreRatio: .1, duplicatePatternP
 
 const grammarWords = new Set('a an the my our your please for and or in of to with is are what which everything earlier previous review find conversation'.split(' '));
 const preferenceVerbs = DEFAULT_SYNONYM_GROUPS[0];
-// These complete phrases also constrain SQL before its candidate limit.
-export const PERSONAL_PREFERENCE_PHRASES = ['我', '用户'].flatMap(person =>
-  ['', '更', '比较', '通常', '一直', '个人'].flatMap(modifier =>
-    preferenceVerbs.map(verb => person + modifier + verb)));
+export const DEFAULT_PREFERENCE_SUBJECTS = ['我', '用户'];
+// Explicit subject aliases cover named statements without guessing who a name represents.
+export function preferencePhrases(subjects) {
+  if (!Array.isArray(subjects) || subjects.length < 1 || subjects.length > 16
+    || subjects.some(subject => typeof subject !== 'string' || !/^[\p{Script=Han}a-zA-Z0-9 ]{1,32}$/u.test(subject) || !subject.trim())) {
+    throw new RangeError('preferenceSubjects must contain 1–16 literal subject aliases of 1–32 characters');
+  }
+  return [...new Set(subjects)].flatMap(person =>
+    ['', '更', '比较', '通常', '一直', '个人'].flatMap(modifier =>
+      preferenceVerbs.flatMap(verb => [person + modifier + verb, person + ' ' + modifier + verb])));
+}
 
 export function personalPreferenceQuery(query) {
   if (/(?:偏好|喜好|希望)(?:设置|配置|字段|模板)/.test(query)) return false;

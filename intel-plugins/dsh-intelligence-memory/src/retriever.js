@@ -15,8 +15,8 @@
 
 import { randomUUID } from "node:crypto";
 import { MemoryValidity } from './validity.js';
-import { DEFAULT_SYNONYM_GROUPS, DEFAULT_RANKING_LIMITS, DEFAULT_RANKING_RATIOS, PERSONAL_PREFERENCE_PHRASES,
-  validateSynonyms, queryEvidence, rankCandidates } from './ranking.js';
+import { DEFAULT_SYNONYM_GROUPS, DEFAULT_RANKING_LIMITS, DEFAULT_RANKING_RATIOS, DEFAULT_PREFERENCE_SUBJECTS,
+  preferencePhrases, validateSynonyms, queryEvidence, rankCandidates } from './ranking.js';
 
 export function spaceCjk(text) {
   return text.replace(/([\p{Script=Han}])/gu, " $1 ").replace(/\s+/g, " ").trim();
@@ -59,6 +59,7 @@ export class FtsRetriever {
     this.rankingLimits = { ...DEFAULT_RANKING_LIMITS, ...limits };
     this.rankingRatios = { ...DEFAULT_RANKING_RATIOS, ...limits };
     this.synonyms = validateSynonyms(limits.synonymGroups ?? DEFAULT_SYNONYM_GROUPS);
+    this.preferencePhrases = preferencePhrases(limits.preferenceSubjects ?? DEFAULT_PREFERENCE_SUBJECTS);
     for (const key of Object.keys(DEFAULT_RANKING_RATIOS)) {
       const value = this.rankingRatios[key];
       if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) throw new RangeError(`${key} must be a finite ratio from 0 to 1`);
@@ -83,7 +84,7 @@ export class FtsRetriever {
       "WHERE memories_fts MATCH ? "+(this.validity.prepared?'AND NOT EXISTS (SELECT 1 FROM memory_state s WHERE s.memory_id=m.id AND s.active=0) ':'')
     );
     this.searchStmt = db.prepare(searchSql + "ORDER BY bm25(memories_fts) LIMIT ?");
-    this.preferenceStmt = db.prepare(searchSql + 'AND (' + PERSONAL_PREFERENCE_PHRASES.map(() => 'instr(m.text, ?) > 0').join(' OR ') + ') ORDER BY bm25(memories_fts) LIMIT ?');
+    this.preferenceStmt = db.prepare(searchSql + 'AND (' + this.preferencePhrases.map(() => 'instr(m.text, ?) > 0').join(' OR ') + ') ORDER BY bm25(memories_fts) LIMIT ?');
   }
 
   add({ text, kind = "note", sessionId = null }) {
@@ -125,7 +126,7 @@ export class FtsRetriever {
     if (!parsed) return [];
     const want = Math.max(1, Math.min(20, limit | 0));
     const metadata = parsed.evidence.personal
-      ? this.preferenceStmt.all(parsed.fts, ...PERSONAL_PREFERENCE_PHRASES, this.rankingLimits.maxCandidates)
+      ? this.preferenceStmt.all(parsed.fts, ...this.preferencePhrases, this.rankingLimits.maxCandidates)
       : this.searchStmt.all(parsed.fts, this.rankingLimits.maxCandidates);
     if (metadata.reduce((sum, row) => sum + row.text_bytes, 0) > this.rankingLimits.maxCandidateBytes) {
       const error = new RangeError(`Memory candidates exceed maxCandidateBytes=${this.rankingLimits.maxCandidateBytes}; use a more specific query.`);
