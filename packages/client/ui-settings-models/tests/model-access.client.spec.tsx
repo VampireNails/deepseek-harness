@@ -29,15 +29,15 @@ const pending: ModelAccessAttemptStatus = {
 }
 function bench(overrides: Partial<ModelAccessOperations> = {}) {
   const operations: ModelAccessOperations = {
-    configuration: vi.fn(async () => ({ ok: true, value: configuration })),
-    start: vi.fn(async () => ({ ok: true, value: owner })),
-    status: vi.fn(async () => ({ ok: true, value: pending })),
-    respond: vi.fn(async () => ({ ok: true, value: { ...pending, status: 'authorized' } })),
-    cancel: vi.fn(async () => ({ ok: true, value: { ...pending, status: 'cancelled' } })),
-    save: vi.fn(async () => ({ ok: true, value: configuration })),
-    logout: vi.fn(async () => ({ ok: true, value: configuration })),
-    verify: vi.fn(async () => ({ ok: true, value: { ok: true } })),
-    models: vi.fn(async () => ({ ok: true, value: [{ id: 'gpt-5' }] })),
+    configuration: vi.fn<ModelAccessOperations['configuration']>(async () => ({ ok: true, value: configuration })),
+    start: vi.fn<ModelAccessOperations['start']>(async () => ({ ok: true, value: owner })),
+    status: vi.fn<ModelAccessOperations['status']>(async () => ({ ok: true, value: pending })),
+    respond: vi.fn<ModelAccessOperations['respond']>(async () => ({ ok: true, value: { ...pending, status: 'authorized' } })),
+    cancel: vi.fn<ModelAccessOperations['cancel']>(async () => ({ ok: true, value: { ...pending, status: 'cancelled' } })),
+    save: vi.fn<ModelAccessOperations['save']>(async () => ({ ok: true, value: configuration })),
+    logout: vi.fn<ModelAccessOperations['logout']>(async () => ({ ok: true, value: configuration })),
+    verify: vi.fn<ModelAccessOperations['verify']>(async () => ({ ok: true, value: { ok: true } })),
+    models: vi.fn<ModelAccessOperations['models']>(async () => ({ ok: true, value: [{ id: 'gpt-5' }] })),
     ...overrides,
   }
   const updated = vi.fn()
@@ -135,7 +135,7 @@ describe('model account configuration', () => {
   })
   it('ends polling at the Host TTL and cancels the pending attempt', async () => {
     vi.useFakeTimers()
-    const b = bench({ status: vi.fn(async () => ({ ok: true, value: { ...pending, expiresAt: Date.now() + 100 } })) })
+    const b = bench({ status: vi.fn<ModelAccessOperations['status']>(async () => ({ ok: true, value: { ...pending, expiresAt: Date.now() + 100 } })) })
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: en.accountSignIn }))
     await act(async () => {})
@@ -213,7 +213,7 @@ describe('model account configuration', () => {
     vi.useFakeTimers()
     const status = vi.fn().mockResolvedValueOnce({ ok: true, value: pending })
       .mockResolvedValue({ ok: true, value: { ...pending, status: 'authorized' } })
-    const b = bench({ status, cancel: vi.fn(async () => ({ ok: true, value: pending })) })
+    const b = bench({ status, cancel: vi.fn<ModelAccessOperations['cancel']>(async () => ({ ok: true, value: pending })) })
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: en.accountSignIn }))
     await act(async () => {})
@@ -230,7 +230,7 @@ describe('model account configuration', () => {
     const expiring = { ...pending, expiresAt: Date.now() + 100 }
     const status = vi.fn().mockResolvedValueOnce({ ok: true, value: expiring })
       .mockResolvedValue({ ok: true, value: { ...expiring, status: 'authorized' } })
-    const b = bench({ status, cancel: vi.fn(async () => ({ ok: true, value: expiring })) })
+    const b = bench({ status, cancel: vi.fn<ModelAccessOperations['cancel']>(async () => ({ ok: true, value: expiring })) })
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: en.accountSignIn }))
     await act(async () => {})
@@ -243,8 +243,8 @@ describe('model account configuration', () => {
   it('bounds post-TTL reconciliation and leaves an unconfirmed outcome explicitly unknown', async () => {
     vi.useFakeTimers()
     const expiring = { ...pending, expiresAt: Date.now() + 100 }
-    const status = vi.fn(async () => ({ ok: true, value: expiring }))
-    const b = bench({ status, cancel: vi.fn(async () => ({ ok: true, value: expiring })) })
+    const status = vi.fn<ModelAccessOperations['status']>(async () => ({ ok: true, value: expiring }))
+    const b = bench({ status, cancel: vi.fn<ModelAccessOperations['cancel']>(async () => ({ ok: true, value: expiring })) })
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: en.accountSignIn }))
     await act(async () => {})
