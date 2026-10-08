@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { openStore } from "./src/store.js";
-import { FtsRetriever } from "./src/retriever.js";
+import { FtsRetriever, DEFAULT_QUERY_LIMITS } from "./src/retriever.js";
 import { memoryWriteTool, memoryReadTool, memorySearchTool } from "./src/tools.js";
 import { registerMemoryCorrection, memoryManagement } from "./src/correction.js";
 
@@ -23,6 +23,8 @@ export const Config = z.object({
   dataDir: z.string().default(""),
   recallLimit: z.number().default(3),
   minQueryChars: z.number().default(2),
+  maxQueryChars: z.number().min(1).max(Number.MAX_SAFE_INTEGER).step(1).default(DEFAULT_QUERY_LIMITS.maxQueryChars),
+  maxQueryTerms: z.number().min(1).max(Number.MAX_SAFE_INTEGER).step(1).default(DEFAULT_QUERY_LIMITS.maxQueryTerms),
 });
 
 const stateSchema = zod.object({
@@ -63,7 +65,10 @@ export function apply(ctx, config) {
 
   const db = openStore(dataDir);
   ctx.effect(() => () => db.close());
-  const retriever = new FtsRetriever(db);
+  const retriever = new FtsRetriever(db, {
+    maxQueryChars: cfg.maxQueryChars ?? DEFAULT_QUERY_LIMITS.maxQueryChars,
+    maxQueryTerms: cfg.maxQueryTerms ?? DEFAULT_QUERY_LIMITS.maxQueryTerms,
+  });
   ctx.provide('memoryReferences', {
     directory: resolve(dataDir),
     validate(ids) { return ids.every(id => retriever.get(id)); },
@@ -111,7 +116,8 @@ export function apply(ctx, config) {
         let hits;
         try {
           hits = retriever.search(query, recallLimit);
-        } catch {
+        } catch (error) {
+          if (error?.code === 'MEMORY_QUERY_TOO_LARGE') ctx.logger(name).warn(error.message);
           return decision;
         }
         if (hits.length === 0) return decision;

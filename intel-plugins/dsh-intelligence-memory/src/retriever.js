@@ -20,14 +20,27 @@ export function spaceCjk(text) {
   return text.replace(/([\p{Script=Han}])/gu, " $1 ").replace(/\s+/g, " ").trim();
 }
 
-function buildFtsQuery(query) {
-  const spaced = spaceCjk(String(query ?? ""));
+export const DEFAULT_QUERY_LIMITS = { maxQueryChars: 65536, maxQueryTerms: 2048 };
+
+function queryTooLarge(limit) {
+  const error = new RangeError(`Memory query exceeds ${limit}; use a shorter, more specific query.`);
+  error.code = 'MEMORY_QUERY_TOO_LARGE';
+  return error;
+}
+
+function buildFtsQuery(query, limits) {
+  const text = String(query ?? "");
+  if (text.length > limits.maxQueryChars) throw queryTooLarge(`maxQueryChars=${limits.maxQueryChars}`);
+  const spaced = spaceCjk(text);
   const chars = [];
   for (const m of spaced.matchAll(/[\p{Script=Han}]/gu)) chars.push(m[0]);
   const words = [];
   for (const m of spaced.matchAll(/[A-Za-z0-9]{2,}/g)) words.push(m[0].toLowerCase());
-  const uniqChars = [...new Set(chars)].slice(0, 10);
-  const uniqWords = [...new Set(words)].slice(0, 6);
+  const uniqChars = [...new Set(chars)];
+  const uniqWords = [...new Set(words)];
+  if (uniqChars.length + uniqWords.length > limits.maxQueryTerms) {
+    throw queryTooLarge(`maxQueryTerms=${limits.maxQueryTerms}`);
+  }
   if (uniqChars.length === 0 && uniqWords.length === 0) return null;
   const q = (t) => "\"" + t.replace(/"/g, "\"\"") + "\"";
   return { fts: [...uniqChars, ...uniqWords].map(q).join(" OR "), chars: uniqChars, words: uniqWords };
@@ -45,7 +58,13 @@ function overlapOk(text, chars, words) {
 }
 
 export class FtsRetriever {
-  constructor(db) {
+  constructor(db, limits = {}) {
+    this.queryLimits = { ...DEFAULT_QUERY_LIMITS, ...limits };
+    for (const key of Object.keys(DEFAULT_QUERY_LIMITS)) {
+      if (!Number.isSafeInteger(this.queryLimits[key]) || this.queryLimits[key] < 1) {
+        throw new RangeError(`${key} must be a positive safe integer`);
+      }
+    }
     this.db = db;
     this.validity=new MemoryValidity(db,spaceCjk);
     const active=this.validity.prepared?' AND NOT EXISTS (SELECT 1 FROM memory_state s WHERE s.memory_id=memories.id AND s.active=0)':'';
@@ -87,8 +106,15 @@ export class FtsRetriever {
     return row ?? null;
   }
 
+  /**
+   * Search every distinct Han character and ASCII word within configured query bounds.
+   * @param {string} query Keywords or a question; FTS operators are not interpreted.
+   * @param {number} limit Result count, clamped to 1–20.
+   * @returns {Array<{id:number,text:string,kind:string,createdAt:number}>} Active matching originals in BM25 order.
+   * @throws {RangeError} MEMORY_QUERY_TOO_LARGE before SQLite when a query exceeds either bound.
+   */
   search(query, limit = 5) {
-    const parsed = buildFtsQuery(query);
+    const parsed = buildFtsQuery(query, this.queryLimits);
     if (!parsed) return [];
     const want = Math.max(1, Math.min(20, limit | 0));
     const rows = this.searchStmt.all(parsed.fts, want * 3 + 5);
