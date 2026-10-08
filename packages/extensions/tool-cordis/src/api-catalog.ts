@@ -1560,7 +1560,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: '@Remote async discover(request: ModelAccessDiscoverRequest, signal: AbortSignal): Promise<{ id: string; name?: string }[]>',
         description: 'Discover model names through the installed Host adapter.',
-        parameters: [{ name: 'request', description: 'draft endpoint inputs.' }, { name: 'signal', description: 'caller lifetime.' }],
+        parameters: [{ name: 'request', description: 'provider or draft endpoint inputs; read-only providers reject overrides.' }, { name: 'signal', description: 'caller lifetime.' }],
         returns: 'discovered model names.',
       },
     ],

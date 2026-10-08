@@ -280,6 +280,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Projects the user-settings seam onto the generated Remote namespace: the read is always redacted and every refusal is classified here, not on the seam Definition.',
   },
   {
+    key: 'modelAccessController',
+    pkg: 'api-settings-controller',
+    title: 'Host model-access Remote controller',
+    mode: 'core',
+    note: 'Projects provider configuration, credential actions, model discovery and verification onto the modelAccess Remote namespace; credential values are redacted and provider refusals are classified.',
+  },
+  {
     key: 'workspaceFiles',
     pkg: 'api-workspace-files',
     title: 'Host workspace file Remote service',
