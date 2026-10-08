@@ -1177,6 +1177,19 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (scenario.name === 'memory-long-query') {
+              const events = parseSessionLog(actualLogs[0]!.content)
+              const results = events.flatMap(event => event.type === 'tool/result' ? [event.data.message] : [])
+              for (const [callId, text] of [
+                ['call_memory_latin', 'heliostat calibration handbook'],
+                ['call_memory_chinese', '青铜齿轮装配规范'],
+                ['call_memory_unrelated', '没有找到相关记忆'],
+              ]) {
+                const result = results.find(message => message.toolCallId === callId)
+                expect(result?.isError, callId).toBe(false)
+                expect(result?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(''), callId).toContain(text)
+              }
+            }
             if (retainedToolInput !== undefined) {
               verifyToolResultWriterParity(primaryFixture, actualLogs[0]!.content)
             }

@@ -1,0 +1,7 @@
+- insert:
+    - id: intelligence-memory
+      name: ../../../intel-plugins/dsh-intelligence-memory/index.js
+      config:
+        dataDir: !!js dshHomePath('intel-memory')
+        recallLimit: 3
+        minQueryChars: 2

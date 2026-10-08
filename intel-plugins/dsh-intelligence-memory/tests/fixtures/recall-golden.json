@@ -1,0 +1,557 @@
+{
+  "version": 1,
+  "synthetic": true,
+  "privateUserContent": false,
+  "judgment": "Relevant IDs are human-readable preference/fact/log annotations. All storage kind values are note; ranking cannot use fixture category metadata.",
+  "memories": [
+    {
+      "id": "p1",
+      "category": "preference",
+      "text": "匿名用户偏好用简洁中文回答问题，先给结论。",
+      "kind": "note"
+    },
+    {
+      "id": "p2",
+      "category": "preference",
+      "text": "匿名用户喜欢解释回答的原因和证据，不喜欢空泛奉承。",
+      "kind": "note"
+    },
+    {
+      "id": "p3",
+      "category": "preference",
+      "text": "匿名用户偏好无糖咖啡，早餐不喝含糖饮料。",
+      "kind": "note"
+    },
+    {
+      "id": "p4",
+      "category": "preference",
+      "text": "匿名用户喜欢深色界面，晚上避免刺眼背景。",
+      "kind": "note"
+    },
+    {
+      "id": "p5",
+      "category": "preference",
+      "text": "匿名用户希望已授权的可逆工作自动完成，外部发布需要按已批准范围执行。",
+      "kind": "note"
+    },
+    {
+      "id": "f1",
+      "category": "fact",
+      "text": "项目HMC客户端只支持Android，Host运行Linux，Windows只编译APK。",
+      "kind": "note"
+    },
+    {
+      "id": "f2",
+      "category": "fact",
+      "text": "HMC源码android目录为客户端，service目录提供Linux Host接入。",
+      "kind": "note"
+    },
+    {
+      "id": "f3",
+      "category": "fact",
+      "text": "Android验收保留API33模拟器，构建使用Gradle，APK需要来源回执。",
+      "kind": "note"
+    },
+    {
+      "id": "f4",
+      "category": "fact",
+      "text": "接入验证运行node --check server.mjs和plugin.mjs，使用node --test执行服务回归。",
+      "kind": "note"
+    },
+    {
+      "id": "f5",
+      "category": "fact",
+      "text": "测试服务器磁盘剩余8GB，需要清理构建缓存。",
+      "kind": "note"
+    },
+    {
+      "id": "f6",
+      "category": "fact",
+      "text": "模型、会话、工具和任务状态由DSH Host管理，手机不拥有最终任务状态。",
+      "kind": "note"
+    },
+    {
+      "id": "f7",
+      "category": "fact",
+      "text": "更正记忆前先备份SQLite数据库，保留原始记忆与审计记录。",
+      "kind": "note"
+    },
+    {
+      "id": "f8",
+      "category": "fact",
+      "text": "手机通过HTTPS证书和token配对Linux Host，配对失败应保留原连接。",
+      "kind": "note"
+    },
+    {
+      "id": "f9",
+      "category": "fact",
+      "text": "发送结果未知时重试必须复用同一requestId，避免重复提交，不清除草稿。",
+      "kind": "note"
+    },
+    {
+      "id": "f10",
+      "category": "fact",
+      "text": "后台任务提醒需要用户显式启用，通知点击后重新核对Host状态。",
+      "kind": "note"
+    },
+    {
+      "id": "f11",
+      "category": "fact",
+      "text": "匿名用户每天上午九点饮用无糖咖啡。",
+      "kind": "note"
+    },
+    {
+      "id": "f12",
+      "category": "fact",
+      "text": "Android手机使用系统输入法发送键，普通Enter和ShiftEnter保留多行编辑。",
+      "kind": "note"
+    },
+    {
+      "id": "l1",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release01：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l2",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release02：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l3",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release03：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l4",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release04：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l5",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release05：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l6",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release06：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l7",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release07：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l8",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release08：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l9",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release09：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l10",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release10：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l11",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release11：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l12",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release12：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l13",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release13：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l14",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release14：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l15",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release15：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l16",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release16：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l17",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release17：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l18",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release18：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l19",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release19：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    },
+    {
+      "id": "l20",
+      "category": "operation-log",
+      "text": "匿名用户发布记录 release20：Android APK构建成功，服务回归已完成，项目发布流程确认。",
+      "kind": "note"
+    }
+  ],
+  "queries": [
+    {
+      "id": "q01",
+      "category": "preference",
+      "query": "用户偏好",
+      "relevant": [
+        "p1",
+        "p2",
+        "p3",
+        "p4",
+        "p5"
+      ]
+    },
+    {
+      "id": "q02",
+      "category": "preference",
+      "query": "回答语言",
+      "relevant": [
+        "p1"
+      ]
+    },
+    {
+      "id": "q03",
+      "category": "preference",
+      "query": "简洁中文",
+      "relevant": [
+        "p1"
+      ]
+    },
+    {
+      "id": "q04",
+      "category": "negative",
+      "query": "火星地质样本",
+      "relevant": []
+    },
+    {
+      "id": "q05",
+      "category": "preference",
+      "query": "回答证据",
+      "relevant": [
+        "p2"
+      ]
+    },
+    {
+      "id": "q06",
+      "category": "preference",
+      "query": "不喜欢奉承",
+      "relevant": [
+        "p2"
+      ]
+    },
+    {
+      "id": "q07",
+      "category": "preference",
+      "query": "用户饮食偏好",
+      "relevant": [
+        "p3"
+      ]
+    },
+    {
+      "id": "q08",
+      "category": "preference",
+      "query": "无糖咖啡",
+      "relevant": [
+        "p3",
+        "f11"
+      ]
+    },
+    {
+      "id": "q09",
+      "category": "preference",
+      "query": "早餐饮料",
+      "relevant": [
+        "p3"
+      ]
+    },
+    {
+      "id": "q10",
+      "category": "fact",
+      "query": "咖啡饮用时间",
+      "relevant": [
+        "f11"
+      ]
+    },
+    {
+      "id": "q11",
+      "category": "preference",
+      "query": "用户界面偏好",
+      "relevant": [
+        "p4"
+      ]
+    },
+    {
+      "id": "q12",
+      "category": "preference",
+      "query": "深色界面",
+      "relevant": [
+        "p4"
+      ]
+    },
+    {
+      "id": "q13",
+      "category": "negative",
+      "query": "量子计算机芯片",
+      "relevant": []
+    },
+    {
+      "id": "q14",
+      "category": "preference",
+      "query": "已授权可逆工作",
+      "relevant": [
+        "p5"
+      ]
+    },
+    {
+      "id": "q15",
+      "category": "preference",
+      "query": "外部发布审批",
+      "relevant": [
+        "p5"
+      ]
+    },
+    {
+      "id": "q16",
+      "category": "fact",
+      "query": "HMC支持哪些平台",
+      "relevant": [
+        "f1"
+      ]
+    },
+    {
+      "id": "q17",
+      "category": "fact",
+      "query": "Android客户端",
+      "relevant": [
+        "f1",
+        "f2"
+      ]
+    },
+    {
+      "id": "q18",
+      "category": "fact",
+      "query": "Linux Host职责",
+      "relevant": [
+        "f6",
+        "f1"
+      ]
+    },
+    {
+      "id": "q19",
+      "category": "fact",
+      "query": "Windows编译APK",
+      "relevant": [
+        "f1",
+        "f3"
+      ]
+    },
+    {
+      "id": "q20",
+      "category": "fact",
+      "query": "HMC源码目录",
+      "relevant": [
+        "f2"
+      ]
+    },
+    {
+      "id": "q21",
+      "category": "fact",
+      "query": "service目录用途",
+      "relevant": [
+        "f2"
+      ]
+    },
+    {
+      "id": "q22",
+      "category": "fact",
+      "query": "API33验收",
+      "relevant": [
+        "f3"
+      ]
+    },
+    {
+      "id": "q23",
+      "category": "fact",
+      "query": "APK来源回执",
+      "relevant": [
+        "f3"
+      ]
+    },
+    {
+      "id": "q24",
+      "category": "fact",
+      "query": "Gradle构建",
+      "relevant": [
+        "f3"
+      ]
+    },
+    {
+      "id": "q25",
+      "category": "fact",
+      "query": "node服务回归",
+      "relevant": [
+        "f4"
+      ]
+    },
+    {
+      "id": "q26",
+      "category": "fact",
+      "query": "server.mjs语法检查",
+      "relevant": [
+        "f4"
+      ]
+    },
+    {
+      "id": "q27",
+      "category": "fact",
+      "query": "磁盘空间",
+      "relevant": [
+        "f5"
+      ]
+    },
+    {
+      "id": "q28",
+      "category": "fact",
+      "query": "磁盘剩余",
+      "relevant": [
+        "f5"
+      ]
+    },
+    {
+      "id": "q29",
+      "category": "fact",
+      "query": "清理构建缓存",
+      "relevant": [
+        "f5"
+      ]
+    },
+    {
+      "id": "q30",
+      "category": "fact",
+      "query": "DSH任务状态",
+      "relevant": [
+        "f6"
+      ]
+    },
+    {
+      "id": "q31",
+      "category": "fact",
+      "query": "记忆更正备份",
+      "relevant": [
+        "f7"
+      ]
+    },
+    {
+      "id": "q32",
+      "category": "fact",
+      "query": "SQLite审计原始",
+      "relevant": [
+        "f7"
+      ]
+    },
+    {
+      "id": "q33",
+      "category": "fact",
+      "query": "HTTPS配对证书",
+      "relevant": [
+        "f8"
+      ]
+    },
+    {
+      "id": "q34",
+      "category": "fact",
+      "query": "配对失败保留",
+      "relevant": [
+        "f8"
+      ]
+    },
+    {
+      "id": "q35",
+      "category": "fact",
+      "query": "requestId重试",
+      "relevant": [
+        "f9"
+      ]
+    },
+    {
+      "id": "q36",
+      "category": "fact",
+      "query": "未知发送结果",
+      "relevant": [
+        "f9"
+      ]
+    },
+    {
+      "id": "q37",
+      "category": "fact",
+      "query": "后台通知启用",
+      "relevant": [
+        "f10"
+      ]
+    },
+    {
+      "id": "q38",
+      "category": "fact",
+      "query": "输入法发送换行",
+      "relevant": [
+        "f12"
+      ]
+    },
+    {
+      "id": "q39",
+      "category": "operation-log",
+      "query": "release12发布日志",
+      "relevant": [
+        "l12"
+      ]
+    },
+    {
+      "id": "q40",
+      "category": "long-query",
+      "query": "根据我们之前交流记录请提醒我这个项目的Android验收API33要求是什么",
+      "relevant": [
+        "f3"
+      ]
+    }
+  ],
+  "limit": 5
+}
