@@ -53,6 +53,8 @@ Capture includes original `user/message` events whose source kind is `user`, exc
 <a id="model-experience"></a>
 ## Model Experience
 
+Dreaming starts with `joblog_status` and `joblog_alerts`, then pairs dated `route-runs.jsonl` records by run ID. Latest success does not erase earlier failures; usage limits and invalid authorization tokens require separate original error evidence. The prompt budgets ten calls including errors, at most two lesson writes, and one reserved Feed publication. It stops investigation when evidence is unavailable or the budget is reached and publishes the checked scope and gaps. This is prompt guidance, not a runtime tool cap; natural runs still require call-count and publication review.
+
 For runner identities `evolve_upkeep` and `memory_upkeep`, actual tool admission permits only top-level native `memory_search` and `memory_write`. `upkeepToolBudget` defaults to six calls per agent, including failed calls. Other task identities retain their existing tools. The upkeep prompt treats the supplied original batch as source data; memory search only checks duplicates or conflicts. Persisted completion inspection requires the exact attributed root/run, a completed turn, settled matching tool calls and canonical successful memory-write metadata. Denials, tool errors and failed writes keep the run unconfirmed.
 
 <a id="known-limitations-and-deferred-work"></a>

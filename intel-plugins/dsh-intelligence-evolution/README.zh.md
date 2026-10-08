@@ -53,6 +53,8 @@ kind: "package-bundle"
 <a id="model-experience"></a>
 ## 模型体验
 
+Dreaming 先调用 `joblog_status` 和 `joblog_alerts`，再按运行 ID 配对 `route-runs.jsonl` 的当日记录。最新成功不抹去此前失败；用量限制与授权 token 失效须分别核对原始错误。提示词将错误调用计入十次预算，最多写两条教训，并预留一次 Feed 发布。证据不可用或预算用尽时停止调查，发布已检查范围与缺口。这是提示指引，不是运行时工具上限；自然运行仍须核对调用数和发布结果。
+
 runner 身份为 `evolve_upkeep` 或 `memory_upkeep` 时，实际工具准入只允许顶层原生 `memory_search` 和 `memory_write`。`upkeepToolBudget` 默认每个智能体六次调用，包含失败调用。其他任务身份保留现有工具。upkeep 提示词把原始批次作为来源数据，记忆搜索只用于检查重复或冲突。持久化完成检查要求确切归类的根会话与运行、已完成轮次、身份匹配且全部结束的工具调用，以及规范的成功记忆写入元数据。准入拒绝、工具错误或写入失败都保持运行未确认。
 
 <a id="known-limitations-and-deferred-work"></a>
