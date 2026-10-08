@@ -30,6 +30,13 @@ function queryTooLarge(limit) {
   return error;
 }
 
+function preferencePredicate(count) {
+  if (count === 1) return 'instr(m.text, ?) > 0';
+  const left = Math.floor(count / 2);
+  // Keep SQL expression depth logarithmic for all supported subject aliases.
+  return '(' + preferencePredicate(left) + ' OR ' + preferencePredicate(count - left) + ')';
+}
+
 function buildFtsQuery(query, limits, groups) {
   const text = String(query ?? "");
   if (text.length > limits.maxQueryChars) throw queryTooLarge(`maxQueryChars=${limits.maxQueryChars}`);
@@ -84,7 +91,7 @@ export class FtsRetriever {
       "WHERE memories_fts MATCH ? "+(this.validity.prepared?'AND NOT EXISTS (SELECT 1 FROM memory_state s WHERE s.memory_id=m.id AND s.active=0) ':'')
     );
     this.searchStmt = db.prepare(searchSql + "ORDER BY bm25(memories_fts) LIMIT ?");
-    this.preferenceStmt = db.prepare(searchSql + 'AND (' + this.preferencePhrases.map(() => 'instr(m.text, ?) > 0').join(' OR ') + ') ORDER BY bm25(memories_fts) LIMIT ?');
+    this.preferenceStmt = db.prepare(searchSql + 'AND ' + preferencePredicate(this.preferencePhrases.length) + ' ORDER BY bm25(memories_fts) LIMIT ?');
   }
 
   add({ text, kind = "note", sessionId = null }) {

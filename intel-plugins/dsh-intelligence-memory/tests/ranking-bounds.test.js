@@ -131,6 +131,14 @@ test('preference subject aliases reject malformed configuration without guessing
   }
 });
 
+test('all sixteen supported distinct preference subjects work before the candidate cap', t => {
+  const preferenceSubjects = Array.from({ length: 16 }, (_, i) => 'Person' + i);
+  const memory = fixture(t, { preferenceSubjects, maxCandidates: 3 });
+  for (let i = 0; i < 160; i++) memory.add({ text: `发布r${i}偏好设置校验完成，希望字段通过检查。` });
+  const id = memory.add({ text: 'Person15 偏好清晰解释实验的理由。' }).id;
+  assert.deepEqual(memory.search('用户偏好').map(hit => hit.id), [id]);
+});
+
 const byteBudgetTexts = ['玉衡 coffee 校准表', '玉衡 coffee 记录簿'];
 const byteBudget = byteBudgetTexts.reduce((sum, text) => sum + Buffer.byteLength(text, 'utf8'), 0);
 
