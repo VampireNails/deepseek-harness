@@ -13,6 +13,24 @@ const messages=[
 const signal={cursors:proposedCursors,messages,counts:{sessions:2,messages:2,chars:61}};
 const complete={complete:true,failedWrites:0,writeIds:[]};
 const clone=value=>structuredClone(value);
+test('source authorship labels survive dispatch while unknown legacy inputs remain eligible',async()=>{
+  const {runUpkeep}=await import('../upkeep.mjs');
+  const f=fixture();
+  f.captureResult.messages[0].inputOrigin={kind:'human',basis:'host-message-attribution'};
+  f.captureResult.messages[1].inputOrigin={kind:'unknown',basis:'user-channel-only'};
+  await f.invoke(runUpkeep);
+  assert.deepEqual(f.executions[0].messages,f.captureResult.messages);
+  assertPromptFree(f.audit);
+});
+test('machine or invalid authorship on the source wire cannot enter a model batch or advance checkpoints',async()=>{
+  const {runUpkeep}=await import('../upkeep.mjs');
+  for(const origin of [{kind:'machine',basis:'host-message-attribution'},{kind:'user',basis:'user-channel-only'},
+    {kind:'human',basis:'user-channel-only'},{kind:'unknown',basis:'host-message-attribution'},null]){
+    const f=fixture();f.captureResult.messages[0].inputOrigin=origin;
+    await assert.rejects(()=>f.invoke(runUpkeep),{code:'UPKEEP_INVALID_SOURCE'});
+    assert.equal(f.executions.length,0);assert.deepEqual(f.readState(),committed);
+  }
+});
 
 function fixture(initial=committed){
   let state=clone(initial);

@@ -23,7 +23,7 @@ const verified=result=>result?.complete===true&&result.failedWrites===0&&Array.i
   result.writeIds.every(id=>Number.isSafeInteger(id)&&id>0);
 
 /**
- * Admit only new human input and retain unresolved side effects across cron invocations.
+ * Admit bounded new user-channel input and retain unresolved side effects across cron invocations.
  * The caller holds the task lock; source returns complete raw cuts, and inspect verifies persisted native tool outcomes.
  * @param options - Validated limits, clock, durable state, read-only source, model dispatch, run inspection and private-free audit.
  * @returns A prompt-free outcome; source, dispatch, verification and persistence failures reject with stable codes.
@@ -67,6 +67,12 @@ export async function runUpkeep({config,nowMs,taskId,stateStore,source,execute,i
       if(!object(message)||typeof message.sessionId!=='string'||!Number.isSafeInteger(message.seq)||message.seq<0||
         typeof message.text!=='string'||!message.text.trim()||message.seq<=seqOf(previous.cursors,message.sessionId)||
         message.seq>seqOf(cut.cursors,message.sessionId))throw fail('UPKEEP_INVALID_SOURCE');
+      if(message.inputOrigin!==undefined){
+        const origin=message.inputOrigin;
+        if(!object(origin)||Object.keys(origin).some(key=>!['kind','basis'].includes(key))||
+          !(origin.kind==='human'&&origin.basis==='host-message-attribution'||
+            origin.kind==='unknown'&&origin.basis==='user-channel-only'))throw fail('UPKEEP_INVALID_SOURCE');
+      }
       const key=JSON.stringify([message.sessionId,message.seq]);
       if(keys.has(key))throw fail('UPKEEP_INVALID_SOURCE');keys.add(key);chars+=message.text.length;
     }

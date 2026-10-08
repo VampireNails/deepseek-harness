@@ -8,6 +8,7 @@ import { AutomationSessionStore, runnerIdentity, readAutomationSessions } from "
 import { createUpkeepQuery } from './src/upkeep-host-source.js';
 import { captureUpkeepSource, inspectUpkeepRun } from './src/upkeep-source.js';
 import { startUpkeepServer } from './src/upkeep-socket.js';
+import { createUpkeepInputOrigin } from './src/upkeep-input-origin.js';
 
 export const name = "dsh-intelligence-evolution";
 export const inject = ["agents", "tools", "sessions"];
@@ -18,6 +19,9 @@ export const Config = z.object({
   upkeepSourceSocket: z.string().default(''),
   upkeepSourceTimeoutMs: z.number().min(1).max(300000).default(30000),
   upkeepMaxSessionBytes: z.number().min(1).max(536870912).default(67108864),
+  upkeepMachineSessionIds: z.array(z.string()).default([]),
+  upkeepMessageOrigins: z.array(z.object({sessionId:z.string(),seq:z.number(),messageId:z.string(),
+    kind:z.union([z.const('human'),z.const('machine')])})).default([]),
 }).default({});
 
 export function dataDir() {
@@ -52,6 +56,8 @@ export async function apply(ctx, config) {
     if (identity) throw Error('upkeep source socket belongs to the existing Host profile');
     const directory = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'intel-joblog');
     const maxSessionBytes = config.upkeepMaxSessionBytes ?? 67108864;
+    const inputOrigin = createUpkeepInputOrigin({machineSessionIds:config.upkeepMachineSessionIds,
+      messageOrigins:config.upkeepMessageOrigins});
     await ctx.inject(['sessions', 'sessionQuery', 'sessionPersistence'], async function upkeepHostSource(sourceCtx) {
       await sourceCtx.effect(async () => {
         // Resolve providers before accepting requests; an absent reader cannot become an empty cut.
@@ -60,7 +66,7 @@ export async function apply(ctx, config) {
           timeoutMs: config.upkeepSourceTimeoutMs ?? 30000,
           source: { async capture(request, { signal }) {
             const query = createUpkeepQuery(sourceCtx, { signal, maxSessionBytes });
-            const captured = await captureUpkeepSource(query, readAutomationSessions(directory), request);
+            const captured = await captureUpkeepSource(query, readAutomationSessions(directory), request, inputOrigin);
             const automatic = new Set(readAutomationSessions(directory).map(row => row.sessionId));
             // A task root can be created after the initial index read and before the corpus read.
             const retained = captured.messages.filter(message => !automatic.has(message.sessionId));

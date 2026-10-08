@@ -42,6 +42,8 @@ writeFileSync(process.env.TEST_CAPTURE,JSON.stringify({runId:process.env.INTEL_R
   const processed=await invoke(cli,env,'memory_upkeep');assert.equal(processed.code,0,processed.stderr);
   const sent=JSON.parse(await readFile(capture,'utf8'));
   assert.equal(sent.taskId,'memory_upkeep');assert.ok(sent.prompt.includes(message.text));assert.ok(sent.prompt.includes(message.messageId));
+  assert.match(sent.prompt,/缺少 inputOrigin 时按 unknown 处理/);
+  assert.doesNotMatch(sent.prompt,/新增真人输入|本轮已核实增量输入/);
   assert.deepEqual(sent.patch.find(row=>row.id==='tools'),{id:'tools',config:{mode:'native'}},
     'Upkeep must offer the native tools allowed by its guard even when the process opts into PTC');
   const after=JSON.parse(await readFile(stateFile,'utf8'));assert.equal(after.cursors[message.sessionId],1);assert.equal(after.pending??null,null);

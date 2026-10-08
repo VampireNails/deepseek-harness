@@ -24,7 +24,7 @@ ChatGPT cron 路由显式为每个一次性进程使用 SSE。否则，已安装
 
 在 Linux 上运行 `node --test intel/task-runner/tests/*.test.mjs`。隔离的 CLI 测试使用假的 `dsh` 可执行文件，从不调用生产模型。
 
-两个 upkeep 别名共用 `memory-upkeep` flock 和私有的 `intel-joblog/upkeep/state.json`。首次调用记录现有原始会话截点，不启动模型，也不把历史视为新增输入。后续调用只消费普通根会话中新增的原始人工消息；排除已归类的自动任务和标准子智能体。同一时刻的消息按原始事件序号区分。完整消息必须符合配置的批次限制；原文过大或来源不可用时失败，不推进检查点。
+两个 upkeep 别名共用 `memory-upkeep` flock 和私有的 `intel-joblog/upkeep/state.json`。首次调用记录现有原始会话截点，不启动模型，也不把历史视为新增输入。后续调用消费带有 [Host 作者标记](../../intel-plugins/dsh-intelligence-evolution/README.zh.md#understand-the-implementation) 的新增原始用户通道消息；排除已归类的自动任务和标准子智能体。旧来源服务缺少标记时仍视为未知，标记无效或包含机器消息时，分发前拒绝来源批次。同一时刻的消息按原始事件序号区分。完整消息必须符合配置的批次限制；原文过大或来源不可用时失败，不推进检查点。
 
 `routes.json.upkeep` 提供现有 Host 的仅所有者可访问的 `socketPath`、`sourceTimeoutMs`、批次限制，以及初始和最大退避毫秒数。生产默认允许 12 条消息、24,000 字符，空轮次按一、二、四小时退避。退避期间的调用不查询会话，也不启动模型。新增输入在下次到期调用时发现，不会立即重置截止时间。时钟回退时检查点不变。[演进插件](../../intel-plugins/dsh-intelligence-evolution/README.zh.md) 负责来源配置和原始读取限制。
 

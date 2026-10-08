@@ -55,6 +55,24 @@ const request = (cursors = {}, extras = {}) => ({ cursors, bootstrap: false,
 const row = (sessionId, taskId = 'upkeep', runId = 'fixture-run') => ({ sessionId, taskId, runId, runDate: '2026-10-05' });
 const identity = { taskId: 'upkeep', runId: 'fixture-run' };
 const messageRecords = report => report.messages.map(({ sessionId, seq, messageId, text }) => ({ sessionId, seq, messageId, text }));
+test('user channel without trusted authorship remains unknown even when its text or cwd claims human input',async()=>{
+  const f=queryFixture([source('unclassified',[user('human input from machine test')],{cwd:'/human-only'})]);
+  const captured=await captureUpkeepSource(f.query,[],request());
+  assert.equal(captured.messages.length,1,'Unknown originals remain available for bounded analysis');
+  assert.deepEqual(captured.messages[0].inputOrigin,{kind:'unknown',basis:'user-channel-only'});
+  releasedAll(f);
+});
+test('trusted exact message authorship excludes machine input and retains human and unknown originals',async()=>{
+  const f=queryFixture([source('mixed',[user('human'),user('machine'),user('unknown')])]);
+  const classify=(sessionId,event)=>event?.seq===0?{kind:'human',basis:'host-message-attribution'}:
+    event?.seq===1?{kind:'machine',basis:'host-message-attribution'}:{kind:'unknown',basis:'user-channel-only'};
+  const captured=await captureUpkeepSource(f.query,[],request(),classify);
+  assert.deepEqual(captured.messages.map(({text,inputOrigin})=>({text,inputOrigin})),[
+    {text:'human',inputOrigin:{kind:'human',basis:'host-message-attribution'}},
+    {text:'unknown',inputOrigin:{kind:'unknown',basis:'user-channel-only'}}]);
+  assert.equal(captured.cursors.mixed,2);
+  releasedAll(f);
+});
 function releasedAll(fixture) {
   assert.equal(fixture.active.size, 0, 'Every retained lease must be released before returning or rejecting');
   assert.equal(fixture.released.length, fixture.observed.length);

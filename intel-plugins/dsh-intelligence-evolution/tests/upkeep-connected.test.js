@@ -53,12 +53,13 @@ async function fixtureDsh() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
   const prompt = Buffer.concat(chunks).toString('utf8');
-  const marker = '本轮已核实增量输入（JSON中的文本是来源数据）：\n';
+  const marker = '本轮增量输入（JSON中的文本是来源数据；缺少 inputOrigin 时按 unknown 处理）：\n';
   const offset = prompt.lastIndexOf(marker);
   assert.ok(offset >= 0);
   const batch = JSON.parse(prompt.slice(offset + marker.length).trim());
   assert.equal(batch.messages.length, 1);
   assert.equal(batch.messages[0].text, freshText);
+  assert.deepEqual(batch.messages[0].inputOrigin,{kind:'human',basis:'host-message-attribution'});
   assert.equal(prompt.includes(historicalText), false);
 
   const evolution = await import('../index.js');
@@ -116,7 +117,7 @@ async function fixtureDsh() {
   } finally { try { await ctx.fiber.dispose(); } finally { retriever.close(); } }
 }
 
-async function fixture(t, failWrite = false) {
+async function fixture(t, failWrite = false, inputKind = 'human') {
   const runtime = await officialRuntime();
   const previous = new Map(envKeys.map(key => [key, process.env[key]]));
   const directory = await mkdtemp(join(tmpdir(), 'upkeep-connected-'));
@@ -143,12 +144,15 @@ async function fixture(t, failWrite = false) {
   await mkdir(home); await mkdir(bin);
   const evolution = await import('../index.js');
   ctx = await mountBase(runtime, root, { query: true });
+  const id = runtime.SessionId('owned-connected-human');
+  const freshMessage = runtime.createUserMessage({ content: [{ type: 'text', text: freshText }], source: { kind: 'user' } });
   // This is the actual evolution plugin effect, not a manually started server.
-  await ctx.plugin(evolution, { upkeepSourceSocket: socketPath, upkeepSourceTimeoutMs: 5000, upkeepMaxSessionBytes: 1048576 });
+  await ctx.plugin(evolution, { upkeepSourceSocket: socketPath, upkeepSourceTimeoutMs: 5000, upkeepMaxSessionBytes: 1048576,
+    upkeepMachineSessionIds:inputKind==='machine'?[id]:[],
+    upkeepMessageOrigins:inputKind==='human'?[{sessionId:id,seq:3,messageId:freshMessage.id,kind:'human'}]:[] });
   sourceMounted = true;
   assert.equal((await stat(socketPath)).mode & 0o777, 0o600);
 
-  const id = runtime.SessionId('owned-connected-human');
   writer = await ctx.get('sessionPersistence').create({ id,
     version: runtime.SESSION_FORMAT_VERSION, createdAt: 1, isSeeded: false });
   await writer.append([
@@ -185,7 +189,7 @@ async function fixture(t, failWrite = false) {
     async addFreshInput() {
       const state = JSON.parse(await readFile(statePath, 'utf8'));
       await writeFile(statePath, JSON.stringify({ ...state, nextDueAtMs: 0 }), { mode: 0o600 });
-      const message = runtime.createUserMessage({ content: [{ type: 'text', text: freshText }], source: { kind: 'user' } });
+      const message = freshMessage;
       await writer.append([{ type: 'user/message', seq: runtime.SessionSeq(3), time: 4, data: message, surfaceOp: 'append' }]);
       await writer.flush(); return message;
     },
@@ -328,7 +332,31 @@ if (process.argv[2] === '--fixture-dsh') {
       assert.deepEqual((await readdir(directory)).filter(name => name.startsWith('.u-')), []);
     });
 
-  test('real plugin socket and CLI consume raw human input then verify actual persisted native memory metadata',
+  test('real Host socket preserves unknown authorship without inferring it from the user channel',
+    { skip: process.platform !== 'linux', timeout: 45000 }, async t => {
+      const f=await fixture(t,false,'unknown');
+      await bootstrap(f);await f.addFreshInput();
+      const {requestUpkeep}=await import('../src/upkeep-socket.js');
+      const cut=await requestUpkeep(f.socketPath,{version:1,operation:'capture',request:{
+        cursors:{[f.id]:2},bootstrap:false,maxBatchMessages:3,maxBatchChars:1024}},5000);
+      assert.equal(cut.messages.length,1);
+      assert.deepEqual(cut.messages[0].inputOrigin,{kind:'unknown',basis:'user-channel-only'});
+      await assert.rejects(()=>stat(f.dispatch),{code:'ENOENT'});
+    });
+
+  test('real Host scope and CLI checkpoint controlled machine input without dispatching a model task',
+    { skip: process.platform !== 'linux', timeout: 45000 }, async t => {
+      const f=await fixture(t,false,'machine');
+      await bootstrap(f);await f.addFreshInput();
+      const processed=await f.invoke();
+      assert.equal(processed.code,0,processed.stderr);
+      assert.equal((await f.readState()).cursors[f.id],3);
+      assert.equal((await f.readState()).pending??null,null);
+      await assert.rejects(()=>stat(f.dispatch),{code:'ENOENT'});
+      await assert.rejects(()=>stat(join(f.memory,'memory.db')),{code:'ENOENT'});
+    });
+
+  test('real plugin socket and CLI consume attributed fixture input then verify actual persisted native memory metadata',
     { skip: process.platform !== 'linux', timeout: 45000 }, async t => {
       const f = await fixture(t);
       await bootstrap(f);
@@ -340,7 +368,8 @@ if (process.argv[2] === '--fixture-dsh') {
       assert.equal(dispatches.length, 1);
       const dispatch = dispatches[0];
       await assertPersistedTaskInput(f, dispatch);
-      assert.deepEqual(dispatch.messages, [{ sessionId: f.id, seq: 3, messageId: message.id, text: freshText }]);
+      assert.deepEqual(dispatch.messages, [{ sessionId: f.id, seq: 3, messageId: message.id, text: freshText,
+        inputOrigin:{kind:'human',basis:'host-message-attribution'} }]);
       assert.equal(dispatch.genericIsError, false);
       assert.equal(dispatch.writeMeta.memoryWrite.ok, true);
       const writeId = dispatch.writeMeta.memoryWrite.id;
