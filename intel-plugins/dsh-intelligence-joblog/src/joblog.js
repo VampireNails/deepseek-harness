@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -98,15 +98,18 @@ export class JobLog {
   /**
    * Read selected failures, retaining unmarked history and original dates.
    * @param options - includeTests selects all stored failures.
-   * @returns Selected text, or the empty-alert message.
+   * @returns Selected text, or the empty-alert message when absent or empty.
+   * @throws JOBLOG_READ_FAILED when the alert source cannot be read.
    */
   readAlerts(options = {}) {
+    let text;
     try {
-      const text = existsSync(this.alertsFile) ? readFileSync(this.alertsFile, "utf8") : '';
-      return this.selectAlerts(text, options).trim() || "(无告警)";
-    } catch {
-      return "(无告警)";
+      text = readFileSync(this.alertsFile, "utf8");
+    } catch (error) {
+      if (error.code === 'ENOENT') return "(无告警)";
+      throw Object.assign(new Error('JOBLOG_READ_FAILED'), { code: 'JOBLOG_READ_FAILED' });
     }
+    return this.selectAlerts(text, options).trim() || "(无告警)";
   }
 
   _log(line) {
