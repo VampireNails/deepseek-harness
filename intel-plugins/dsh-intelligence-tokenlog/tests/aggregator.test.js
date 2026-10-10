@@ -12,7 +12,8 @@ import {
 } from "../src/aggregator.js";
 
 const NOW = Date.now();
-const ev = (type, time, data) => JSON.stringify({ type, seq: 1, time, data });
+let sequence = 0;
+const ev = (type, time, data) => JSON.stringify({ type, seq: ++sequence, time, data });
 const userEv = (text, time) =>
   ev("user/message", time, { content: [{ type: "text", text }] });
 const asstEv = (input, output, time) =>
@@ -39,7 +40,6 @@ test("parseSessionText：累加 usage 并识别任务", () => {
     asstEv(1000, 200, NOW + 1),
     asstEv(500, 100, NOW + 2),
     ev("assistant/message", NOW + 3, { message: "无 usage 的事件" }),
-    "这不是 JSON",
   ].join("\n");
   const r = parseSessionText(text);
   assert.equal(r.input, 1500);
@@ -89,15 +89,13 @@ test("aggregateSessions：按任务+按天汇总", () => {
   assert.equal(Object.keys(agg.byDay).length, 1);
 });
 
-test("aggregateSessions：损坏 session 记数不抛错", () => {
+test("aggregateSessions：损坏 session 不返回假成功", () => {
   const root = mkdtempSync(join(tmpdir(), "toklog-"));
   const bad = makeSessionDir(root, "bad");
   const missing = join(root, "nodir"); // 不存在的目录名不会出现在 readdir，造一个无文件的 dir
   mkdirSync(join(root, "empty"), { recursive: true });
   const de = mockDecompress({ [bad]: null });
-  const agg = aggregateSessions(root, 7, de);
-  assert.equal(agg.sessions, 0);
-  assert.equal(agg.skipped, 2); // bad 解压失败 + empty 无文件
+  assert.throws(() => aggregateSessions(root, 7, de), /TOKENLOG_DECOMPRESS_FAILED/);
 });
 
 test("formatSummary：中文输出含三段式+成本估算", () => {
@@ -146,7 +144,7 @@ test("同一会话切换模型时，每条 usage 归属当时的 provider/model"
     header("openai-codex", "gpt-5.6-luna"), asstEv(200, 20, NOW),
     header("deepseek-official", "deepseek-flash"), asstEv(300, 30, NOW)].join("\n");
   const agg = aggregateSessions(root, 1, mockDecompress({ [file]: text }));
-  assert.deepEqual(agg.byModel, {
+  assert.deepEqual(Object.fromEntries(Object.entries(agg.byModel).map(([id,v])=>[id,{input:v.input,output:v.output,sessions:v.sessions}])), {
     "deepseek-official/deepseek-flash": { input: 400, output: 40, sessions: 1 },
     "openai-codex/gpt-5.6-luna": { input: 200, output: 20, sessions: 1 },
   });
@@ -157,5 +155,5 @@ test("缺少 request/header 的用量不假设为 DeepSeek", t => {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const file = makeSessionDir(root, "unknown");
   const agg = aggregateSessions(root, 1, mockDecompress({ [file]: asstEv(100, 10, NOW) }));
-  assert.deepEqual(agg.byModel, { unknown: { input: 100, output: 10, sessions: 1 } });
+  assert.deepEqual(Object.fromEntries(Object.entries(agg.byModel).map(([id,v])=>[id,{input:v.input,output:v.output,sessions:v.sessions}])), { unknown: { input: 100, output: 10, sessions: 1 } });
 });

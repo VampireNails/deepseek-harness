@@ -8,9 +8,11 @@
 // 分开，decompress 可注入，单测用 mock 数据，不碰真实 session。
 
 import { execFileSync } from "node:child_process";
-import { readdirSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readdirSync, lstatSync, openSync, closeSync } from "node:fs";
+import { join, resolve, dirname, basename } from "node:path";
 import { homedir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 
 /** @returns Retained root-session log directory for the configured DSH home. */
 export function defaultSessionsRoot() {
@@ -46,155 +48,177 @@ export const TASK_LABELS = {
 
 // 从首条 user/message 文本识别任务
 export function identifyTask(firstUserText) {
-  const text = firstUserText || "";
+  const text = typeof firstUserText === "string" ? firstUserText : "";
   for (const [kw, id] of TASK_KEYWORDS) {
     if (text.includes(kw)) return id;
   }
   return "other";
 }
 
-// 解析一个 session 的解压后 JSONL 文本。
-// 返回 { input, output, task, messages }；messages 为带 usage 的 assistant 消息数。
-export function parseSessionText(jsonlText) {
-  let input = 0;
-  let output = 0;
-  let messages = 0;
-  let task = "other";
-  let taskLocked = false;
-  for (const line of jsonlText.split("\n")) {
-    const s = line.trim();
-    if (!s) continue;
+// Parse retained durable JSON strictly; sequence duplicates are idempotent only when identical.
+function events(text) {
+  const seen = new Map(), rows = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
     let ev;
-    try {
-      ev = JSON.parse(s);
-    } catch {
-      continue; // 坏行跳过
+    try { ev = JSON.parse(line); } catch { throw Error('TOKENLOG_LOG_INVALID'); }
+    if (!ev || typeof ev !== 'object' || Array.isArray(ev)) throw Error('TOKENLOG_LOG_INVALID');
+    if (ev.seq !== undefined) {
+      if (!Number.isSafeInteger(ev.seq) || ev.seq < 0) throw Error('TOKENLOG_LOG_INVALID');
+      const previous = seen.get(ev.seq);
+      if (previous !== undefined) {
+        if (previous !== line) throw Error('TOKENLOG_DUPLICATE_CONFLICT');
+        continue;
+      }
+      seen.set(ev.seq, line);
     }
-    if (!taskLocked && ev.type === "user/message") {
-      const c = ev.data && ev.data.content;
-      const text = Array.isArray(c) && c[0] && typeof c[0].text === "string" ? c[0].text : "";
-      task = identifyTask(text);
-      taskLocked = true;
-    }
-    if (ev.type === "assistant/message" && ev.data && ev.data.usage) {
-      const u = ev.data.usage;
-      if (typeof u.inputTokens === "number") input += u.inputTokens;
-      if (typeof u.outputTokens === "number") output += u.outputTokens;
-      messages++;
-    }
+    rows.push(ev);
   }
-  return { input, output, task, messages };
+  return rows;
+}
+const numericFields = ['input', 'output', 'messages', 'cacheRead', 'cacheWrite', 'cacheReadRecords', 'cacheWriteRecords'];
+const zero = () => Object.fromEntries(numericFields.map(key => [key, 0]));
+function add(target, value) {
+  for (const key of numericFields) {
+    target[key] += value[key];
+    if (!Number.isSafeInteger(target[key]) || target[key] < 0) throw Error('TOKENLOG_LOG_INVALID');
+  }
+}
+function usage(value) {
+  const result = zero();
+  for (const [from, to] of [['inputTokens','input'], ['outputTokens','output'], ['cacheReadTokens','cacheRead'], ['cacheWriteTokens','cacheWrite']]) {
+    if (value[from] === undefined && from.startsWith('cache')) continue;
+    if (!Number.isSafeInteger(value[from]) || value[from] < 0) throw Error('TOKENLOG_LOG_INVALID');
+    result[to] = value[from];
+    if (from.startsWith('cache')) result[to + 'Records'] = 1;
+  }
+  result.messages = 1;
+  return result;
+}
+// This reader keeps the existing uncached input/output meaning; cache counts remain separate.
+export function parseSessionText(text) {
+  const rows = events(text), counts = zero();
+  const first = rows.find(ev => ev.type === 'user/message');
+  const task = identifyTask(first?.data?.content?.[0]?.text);
+  for (const ev of rows) if (ev.type === 'assistant/message' && ev.data?.usage) add(counts, usage(ev.data.usage));
+  return {input: counts.input, output: counts.output, task, messages: counts.messages};
 }
 
 function defaultDecompress(file, { deadline, decompressTimeoutMs = 5000 } = {}) {
   const remaining = deadline === undefined ? decompressTimeoutMs : deadline - Date.now();
-  if (remaining <= 0) throw new Error("TOKENLOG_TIMEOUT");
-  return execFileSync("zstd", ["-dc", file], {
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: Math.max(1, Math.floor(Math.min(remaining, decompressTimeoutMs))),
-    killSignal: "SIGKILL",
-  }).toString("utf8");
-}
-
-function dayKey(ms) {
-  const d = new Date(ms);
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-// 扫描并聚合。decompress 可注入（单测用）。
-// 返回 { days, sessions, skipped, byTask: {task: {input, output, sessions}}, byDay: {day: {input, output}} }
-export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7, decompress = defaultDecompress, options = {}) {
-  const result = { days, sessions: 0, skipped: 0, byTask: {}, byDay: {} };
-  const cutoff = Date.now() - days * 24 * 3600 * 1000;
-
-  const bump = (bucket, key, input, output) => {
-    if (!bucket[key]) bucket[key] = { input: 0, output: 0, sessions: 0 };
-    bucket[key].input += input;
-    bucket[key].output += output;
-    bucket[key].sessions += 1;
-  };
-
-  let dirs;
+  if (remaining <= 0) throw Error('TOKENLOG_TIMEOUT');
+  // Check the reader's access before zstd collapses filesystem and format errors into an exit status.
+  let fd;
+  try { fd = openSync(file, 'r'); }
+  catch { throw Error('TOKENLOG_LOG_UNREADABLE'); }
+  closeSync(fd);
+  let bytes;
   try {
-    dirs = readdirSync(sessionsRoot, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
+    bytes = execFileSync('zstd', ['-dc', file], {maxBuffer: 64 * 1024 * 1024,
+      timeout: Math.max(1, Math.floor(Math.min(remaining, decompressTimeoutMs))), killSignal: 'SIGKILL', stdio:['ignore','pipe','pipe']});
   } catch (error) {
-    throw new Error('TOKENLOG_SOURCE_UNAVAILABLE');
+    if (error.code === 'ENOENT') throw Error('TOKENLOG_ZSTD_UNAVAILABLE');
+    if (error.code === 'EACCES' || error.code === 'EPERM') throw Error('TOKENLOG_ZSTD_NOT_EXECUTABLE');
+    if (error.code === 'ETIMEDOUT' || error.signal === 'SIGKILL') throw Error('TOKENLOG_TIMEOUT');
+    throw Error('TOKENLOG_DECOMPRESS_FAILED');
   }
-
-  for (const dir of dirs) {
-    if (options.deadline !== undefined && Date.now() >= options.deadline) throw new Error("TOKENLOG_TIMEOUT");
-    const file = join(sessionsRoot, dir, "session.v4.jsonl.zstd");
-    if (!existsSync(file)) {
-      result.skipped++;
-      continue;
-    }
-    let text;
-    try {
-      text = decompress(file, options);
-    } catch {
-      if (options.deadline !== undefined && Date.now() >= options.deadline) throw new Error("TOKENLOG_TIMEOUT");
-      result.skipped++; // 解压失败：记数，不抛错
-      continue;
-    }
-    // 按天过滤：只统计 cutoff 之后的 assistant/message
-    let input = 0;
-    let output = 0;
-    let task = "other";
-    let sessionModel = "unknown";
-    const sessionModels = {};
-    let taskLocked = false;
-    let hit = false;
-    for (const line of text.split("\n")) {
-      const s = line.trim();
-      if (!s) continue;
-      let ev;
-      try {
-        ev = JSON.parse(s);
-      } catch {
-        continue;
-      }
-      if (ev.type === "request/header" && ev.data && ev.data.header && ev.data.header.config) {
-        const { provider, model } = ev.data.header.config;
-        sessionModel = typeof provider === "string" && typeof model === "string"
-          ? `${provider}/${model}` : "unknown";
-      }
-      if (!taskLocked && ev.type === "user/message") {
-        const c = ev.data && ev.data.content;
-        const t = Array.isArray(c) && c[0] && typeof c[0].text === "string" ? c[0].text : "";
-        task = identifyTask(t);
-        taskLocked = true;
-      }
-      if (
-        ev.type === "assistant/message" &&
-        ev.data &&
-        ev.data.usage &&
-        typeof ev.time === "number" &&
-        ev.time >= cutoff
-      ) {
-        const u = ev.data.usage;
-        if (typeof u.inputTokens === "number") input += u.inputTokens;
-        if (typeof u.outputTokens === "number") output += u.outputTokens;
-        hit = true;
-        bump(result.byDay, dayKey(ev.time), u.inputTokens || 0, u.outputTokens || 0);
-        bump(sessionModels, sessionModel, u.inputTokens || 0, u.outputTokens || 0);
-      }
-    }
-    if (!hit) continue; // 该 session 在窗口内无消息：不计入
-    result.sessions++;
-    bump(result.byTask, task, input, output);
-    // 每个模型只计一个会话；用量按消息归属，保留会话内的切换。
-    if (!result.byModel) result.byModel = {};
-    for (const [model, usage] of Object.entries(sessionModels)) {
-      bump(result.byModel, model, usage.input, usage.output);
-    }
+  try { return new TextDecoder('utf-8', {fatal: true}).decode(bytes); }
+  catch { throw Error('TOKENLOG_LOG_INVALID_UTF8'); }
+}
+function dayKey(ms) {
+  const d = new Date(ms), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function attributionIndex(sessionsRoot, explicit) {
+  const file = explicit ?? (basename(sessionsRoot) === '--root--' && basename(dirname(sessionsRoot)) === 'sessions'
+    ? join(dirname(dirname(sessionsRoot)), 'intel-joblog', 'automation-sessions.sqlite') : undefined);
+  if (!file) return;
+  let stat;
+  try { stat = lstatSync(file); } catch (error) { if (error.code === 'ENOENT') return; throw Error('TOKENLOG_METADATA_UNREADABLE'); }
+  if (!stat.isFile() || stat.size > 32 * 1024 * 1024) throw Error('TOKENLOG_METADATA_INVALID');
+  let db;
+  try {
+    db = new DatabaseSync(file, {readOnly:true});
+    if (db.prepare('PRAGMA user_version').get().user_version !== 1) throw Error('invalid version');
+    const find = db.prepare('SELECT task_id,run_id,run_date FROM automation_sessions WHERE session_id=?');
+    return {find: id => find.get(id), close: () => db.close()};
+  } catch (error) { db?.close(); throw Error('TOKENLOG_METADATA_INVALID'); }
+}
+function taskIdentity(rows, index) {
+  const header = rows.find(ev => ev.version === 4 && typeof ev.id === 'string' && !ev.type);
+  const identity = header && header.id.length <= 1024 ? index?.find(header.id) : undefined;
+  if (identity) {
+    const {task_id: id, run_id: run, run_date: date} = identity;
+    if (!/^[a-z][a-z0-9_-]{0,79}$/.test(id) || typeof run !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(run) ||
+      typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date+'T00:00:00Z')) || new Date(date+'T00:00:00Z').toISOString().slice(0,10) !== date)
+      throw Error('TOKENLOG_METADATA_INVALID');
+    const classification = /^legacy-evidence:[a-f0-9]{64}$/.test(run) ? 'legacy-evidence' : 'native';
+    return {id, classification, source: 'automation-index-v1', inferred:false, scope:'unclassified'};
   }
-  if (options.deadline !== undefined && Date.now() >= options.deadline) throw new Error("TOKENLOG_TIMEOUT");
+  const first = rows.find(ev => ev.type === 'user/message');
+  const guess = identifyTask(first?.data?.content?.[0]?.text);
+  return {id:guess === 'other' ? 'unknown' : guess, classification:guess === 'other' ? 'unknown' : 'heuristic',
+    source:guess === 'other' ? 'none' : 'first-user-keywords', inferred:guess !== 'other', scope:'unclassified'};
+}
+/** Read retained v4 root logs atomically; any unreadable log fails the entire scan. */
+export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7, decompress = defaultDecompress, options = {}) {
+  const result = {days, sessions:0, skipped:0, byTask:{}, byDay:{}, byModel:{},
+    taskUsage:{available:true,classificationAvailable:true,scopeAvailable:false}, availability:{status:'complete'}, details:zero()};
+  const cutoff = Date.now() - days * 24 * 3600 * 1000;
+  let dirs;
+  try { dirs = readdirSync(sessionsRoot, {withFileTypes:true}).filter(e => e.isDirectory()).map(e => e.name).sort(); }
+  catch { throw Error('TOKENLOG_SOURCE_UNAVAILABLE'); }
+  const index = attributionIndex(sessionsRoot, options.automationIndex), roots = new Map();
+  function bump(bucket, key, value, sessions, identity) {
+    if (!Object.hasOwn(bucket,key)) Object.defineProperty(bucket,key,{value:{...zero(), sessions:0, ...identity}, enumerable:true});
+    add(bucket[key], value); bucket[key].sessions += sessions;
+  }
+  try {
+    for (const dir of dirs) {
+      if (options.deadline !== undefined && Date.now() >= options.deadline) throw Error('TOKENLOG_TIMEOUT');
+      const file = join(sessionsRoot, dir, 'session.v4.jsonl.zstd');
+      try { const stat=lstatSync(file); if (!stat.isFile()) throw Error('TOKENLOG_LOG_UNREADABLE'); }
+      catch(error) { throw Error(error.code === 'ENOENT' ? 'TOKENLOG_LOG_MISSING' : 'TOKENLOG_LOG_UNREADABLE'); }
+      let text;
+      try { text = decompress(file, options); }
+      catch(error) {
+        if (error.code === 'EACCES' || error.code === 'EPERM') throw Error('TOKENLOG_LOG_UNREADABLE');
+        if (error.message?.startsWith('TOKENLOG_')) throw error;
+        throw Error('TOKENLOG_DECOMPRESS_FAILED');
+      }
+      const rows = events(text); if (!rows.length) throw Error('TOKENLOG_LOG_INVALID');
+      const header = rows.find(ev => ev.version === 4 && typeof ev.id === 'string' && !ev.type);
+      if (header) {
+        const fingerprint = createHash('sha256').update(JSON.stringify(rows)).digest('hex'), previous = roots.get(header.id);
+        if (previous !== undefined) { if (previous !== fingerprint) throw Error('TOKENLOG_DUPLICATE_CONFLICT'); continue; }
+        roots.set(header.id, fingerprint);
+      }
+      const identity = taskIdentity(rows, index), sessionCounts = zero(), models = new Map();
+      let model = 'unknown';
+      for (const ev of rows) {
+        if (ev.type === 'request/header') {
+          const config = ev.data?.header?.config;
+          model = publicModelId(config?.provider) && publicModelId(config?.model) ? config.provider+'/'+config.model : 'unknown';
+        }
+        if (ev.type !== 'assistant/message' || !ev.data?.usage) continue;
+        const counts = usage(ev.data.usage);
+        if (!Number.isSafeInteger(ev.time) || !Number.isFinite(new Date(ev.time).getTime())) throw Error('TOKENLOG_LOG_INVALID');
+        if (ev.time < cutoff) continue;
+        add(sessionCounts,counts); bump(result.byDay,dayKey(ev.time),counts,1);
+        if (!models.has(model)) models.set(model,zero()); add(models.get(model),counts);
+      }
+      if (!sessionCounts.messages) continue;
+      result.sessions++; add(result.details, sessionCounts);
+      // Keep legacy keyword keys while native/audited identities cannot collide with guesses.
+      const key=identity.classification === 'heuristic' ? identity.id : identity.classification+':'+identity.id;
+      bump(result.byTask,key,sessionCounts,1,identity);
+      for (const [id,counts] of models) bump(result.byModel,id,counts,1);
+    }
+  } finally { index?.close(); }
+  if (options.deadline !== undefined && Date.now() >= options.deadline) throw Error('TOKENLOG_TIMEOUT');
   return result;
 }
-
+function publicModelId(id) { return typeof id === 'string' && id.length <= 128 && /^[A-Za-z0-9][A-Za-z0-9._:@+-]*(?:\/[A-Za-z0-9][A-Za-z0-9._:@+-]*)*$/.test(id) && !/(?:^|\/)[A-Za-z]:/.test(id); }
 function fmt(n) {
   return n.toLocaleString("en-US");
 }
@@ -219,7 +243,7 @@ export function formatSummary(agg, days) {
   lines.push("| 任务 | 会话数 | 输入 | 输出 |");
   lines.push("|---|---|---|---|");
   for (const [task, v] of tasks) {
-    lines.push(`| ${TASK_LABELS[task] || task} | ${v.sessions} | ${fmt(v.input)} | ${fmt(v.output)} |`);
+    lines.push(`| ${TASK_LABELS[v.id ?? task] || v.id || '未知任务'}（${({native:'原生身份','legacy-evidence':'历史证据',heuristic:'关键词推断',unknown:'未知'})[v.classification] || '旧版推断'}；范围未记录） | ${v.sessions} | ${fmt(v.input)} | ${fmt(v.output)} |`);
   }
   if (!tasks.length) lines.push("|（无）| | | |");
   lines.push("");

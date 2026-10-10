@@ -9,7 +9,7 @@ test("worker 返回只读聚合结果并释放后返回", async t => {
   const sessionsRoot = mkdtempSync(join(tmpdir(), "toklog-worker-"));
   t.after(() => rmSync(sessionsRoot, { recursive: true, force: true }));
   assert.deepEqual(await aggregateInWorker(1, { sessionsRoot }),
-    { days: 1, sessions: 0, skipped: 0, byTask: {}, byDay: {} });
+    {days:1,sessions:0,skipped:0,byTask:{},byDay:{},byModel:{},taskUsage:{available:true,classificationAvailable:true,scopeAvailable:false},availability:{status:'complete'},details:{input:0,output:0,messages:0,cacheRead:0,cacheWrite:0,cacheReadRecords:0,cacheWriteRecords:0}});
 });
 
 test("已取消的调用不启动 worker", async () => {

@@ -1,0 +1,21 @@
+{
+  "totals": {
+    "input": 50,
+    "output": 10
+  },
+  "classifications": [
+    "heuristic",
+    "legacy-evidence",
+    "native",
+    "unknown"
+  ],
+  "scope": "unclassified",
+  "actualModels": [
+    "actual/fallback",
+    "actual/primary"
+  ],
+  "cacheRecorded": 4,
+  "duplicateRootCounted": false,
+  "sourceFailureIsError": true,
+  "cancelledIsError": true
+}
