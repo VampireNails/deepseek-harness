@@ -3,6 +3,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 
 const textBlock = (text) => [{ type: "text", text }];
 const jsonOutput = (render) => ({ schema: { type: "json" }, render });
+const storageFields=err=>err?.code?.startsWith('CRON_')?{code:err.code,committed:err.committed,...(err.errno?{errno:err.errno}:{})}:{};
 
 function agentOf(exec) {
   const agent = exec?.agent;
@@ -30,7 +31,7 @@ export function cronCreateTool(scheduler) {
         const text = await scheduler.create(agentOf(exec), args.name, args.prompt, args.schedule);
         return { ok: true, text };
       } catch (err) {
-        return { ok: false, text: `创建失败：${err?.message ?? err}` };
+        return { ok: false, text: `创建失败：${err?.message ?? err}`,...storageFields(err) };
       }
     },
   });
@@ -47,7 +48,7 @@ export function cronListTool(scheduler) {
         const text = await scheduler.list(agentOf(exec));
         return { ok: true, text };
       } catch (err) {
-        return { ok: false, text: `查询失败：${err?.message ?? err}` };
+        return { ok: false, text: `查询失败：${err?.message ?? err}`,...storageFields(err) };
       }
     },
   });
@@ -68,7 +69,7 @@ export function cronDeleteTool(scheduler) {
         const text = await scheduler.remove(agentOf(exec), args.ref);
         return { ok: true, text };
       } catch (err) {
-        return { ok: false, text: `删除失败：${err?.message ?? err}` };
+        return { ok: false, text: `删除失败：${err?.message ?? err}`,...storageFields(err) };
       }
     },
   });

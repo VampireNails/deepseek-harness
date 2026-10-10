@@ -12,7 +12,7 @@
 //      every: id/kind/prompt/everySeconds/scheduledAt；scheduledAt 为
 //      YYYY-MM-DDTHH:mm:ss.sssZ）。
 //   - 持久化屏障照抄 preflight：ctx.sessions.flush(session)。
-//   - 串行化照抄 runScheduleTransaction 的 WeakMap-per-agent tail 模式（15 行，本地实现）。
+//   - 串行化覆盖整个存储目录：所有 agent 的读改写及跨进程 writer 共享排他。
 //   - 绝不复用 id、绝不 delete 非 active id——否则 decode 侧抛 ScheduleLogError 会导致
 //     schedule runtime 永久 fault。因此每次 append 前都在同一同步段内做 fold 检查
 //     （同步段不可被交错，天然原子）。
@@ -22,7 +22,7 @@
 // seen 集合里已有该 id 而跳过。
 
 import { MAX_JOBS, parseSchedule, describeSchedule } from "./parse.js";
-import { nextJobId } from "./store.js";
+import {persistenceError} from '../../shared/json-store.js';
 import { nextOccurrence, slotDate, toInstant, formatLocal } from "./timecalc.js";
 import {emitEvent} from '../../dsh-intelligence-sysevents/src/store.js';
 import {createHash} from 'node:crypto';
@@ -97,7 +97,7 @@ export class CronScheduler {
     this.store = store;
     this.timeZone = timeZone || "Asia/Shanghai";
     this.ctx = ctx;
-    this.tails = new WeakMap(); // per-agent 串行化（runScheduleTransaction 同款模式）
+    new Intl.DateTimeFormat('en-US',{timeZone:this.timeZone});
   }
 
   warn(msg) {
@@ -112,11 +112,7 @@ export class CronScheduler {
   }
 
   _queue(agent, fn) {
-    const prior = this.tails.get(agent) ?? Promise.resolve();
-    const run = prior.then(fn);
-    const tail = run.then(() => undefined, () => undefined);
-    this.tails.set(agent, tail);
-    return run.finally(() => { if (this.tails.get(agent) === tail) this.tails.delete(agent); });
+    return this.store.transaction(fn);
   }
 
   _reminderPrompt(job) {
@@ -141,9 +137,9 @@ export class CronScheduler {
     return this._queue(agent, async () => {
       const jobs = this.store.load();
       if (jobs.length >= MAX_JOBS) {
-        throw new Error(`定时任务已达上限（${MAX_JOBS} 个），删掉不用的再建。`);
+        throw new Error(`定时任务已达上限（${MAX_JOBS} 个）；已用 ${jobs.length}/${MAX_JOBS}，删掉不用的再建。`);
       }
-      const id = nextJobId(jobs);
+      const id = this.store.nextId(foldScheduleEvents(agent.session.ownEvents()).seen);
       const now = Date.now();
       const sessionId = agent.session.id;
       let record, slotId;
@@ -175,20 +171,20 @@ export class CronScheduler {
       // 幂等：fold 里已见过该 id 说明 append 已发生过（crash 在落盘后），跳过
       const fold = foldScheduleEvents(agent.session.ownEvents());
       if (!fold.seen.has(slotId)) {
-        agent.session.append("schedule/change", { version: 1, operation: "create", schedule: record });
-        await this.ctx.sessions.flush(agent.session);
+        try{agent.session.append("schedule/change", { version: 1, operation: "create", schedule: record });await this.ctx.sessions.flush(agent.session);}
+        catch(error){throw persistenceError('CRON','SCHEDULE_FAILED',error,true);}
       }
-      return `已创建定时任务【${id}】${name}：${describeSchedule(parsed)}，下次触发 ${formatLocal(this.timeZone, record.scheduledAt)}`;
+      return `已创建定时任务【${id}】${name}：${describeSchedule(parsed)}，下次触发 ${formatLocal(this.timeZone, record.scheduledAt)}；已用 ${jobs.length}/${MAX_JOBS}`;
     });
   }
 
   async list(agent) {
     return this._queue(agent, async () => {
       const jobs = this.store.load();
-      if (jobs.length === 0) return "还没有自定义定时任务。";
+      if (jobs.length === 0) return `还没有自定义定时任务。已用 0/${MAX_JOBS}`;
       const fold = foldScheduleEvents(agent.session.ownEvents());
       const now = Date.now();
-      const lines = [`自定义定时任务（${jobs.length} 个）：`];
+      const lines = [`自定义定时任务（${jobs.length} 个；已用 ${jobs.length}/${MAX_JOBS}）：`];
       for (const j of jobs) {
         let state, next;
         if (j.done) {
@@ -241,15 +237,15 @@ export class CronScheduler {
       if (job.sessionId === agent.session.id && job.scheduleId && !job.done) {
         const fold = foldScheduleEvents(agent.session.ownEvents());
         if (fold.active.has(job.scheduleId)) {
-          agent.session.append("schedule/change", { version: 1, operation: "delete", id: job.scheduleId });
-          await this.ctx.sessions.flush(agent.session);
+          try{agent.session.append("schedule/change", { version: 1, operation: "delete", id: job.scheduleId });await this.ctx.sessions.flush(agent.session);}
+          catch(error){throw persistenceError('CRON','SCHEDULE_FAILED',error,true);}
         } else {
           note = "（底层提醒已不在，仅清理记录）";
         }
       } else if (job.sessionId !== agent.session.id) {
         note = "（任务属于其他会话，仅删除本记录，其会话内的提醒不受影响）";
       }
-      return `已删除定时任务【${job.id}】${job.name}${note}`;
+      return `已删除定时任务【${job.id}】${job.name}${note}；已用 ${rest.length}/${MAX_JOBS}`;
     });
   }
 
@@ -309,15 +305,12 @@ export class CronScheduler {
 
   async reconcile(agent) {
     const sessionId = agent.session.id;
-    if (!this.store.load().some((j) => j.sessionId === sessionId && !j.done)) return;
     await this._queue(agent, async () => {
       const now = Date.now();
       const jobs = this.store.load();
       const mine = jobs.filter((j) => j.sessionId === sessionId && !j.done);
-      if (mine.length === 0) return;
       const fold = foldScheduleEvents(agent.session.ownEvents());
       let dirty = false;
-      let appended = false;
 
       for (const job of mine) {
         const rec = job.scheduleId ? fold.active.get(job.scheduleId) : undefined;
@@ -327,7 +320,6 @@ export class CronScheduler {
           // overdue：退役旧的（只删 active 的，避免 corrupt log）
           agent.session.append("schedule/change", { version: 1, operation: "delete", id: job.scheduleId });
           fold.active.delete(job.scheduleId); // 本地 fold 同步，避免下面的领养捡回刚删的 id
-          appended = true;
         }
         // 领养：同 job 前缀的存活 schedule（crash 在落盘更新前）
         const adopted = [...fold.active.keys()].find(
@@ -377,7 +369,6 @@ export class CronScheduler {
           continue;
         }
         agent.session.append("schedule/change", { version: 1, operation: "create", schedule: record });
-        appended = true;
         job.scheduleId = newId;
         job.nextFire = record.scheduledAt;
         dirty = true;
@@ -390,12 +381,14 @@ export class CronScheduler {
         const hasOwner = mine.some((j) => id === `${ID_PREFIX}${j.id}` || id.startsWith(`${ID_PREFIX}${j.id}-`));
         if (!hasOwner) {
           agent.session.append("schedule/change", { version: 1, operation: "delete", id });
-          appended = true;
         }
       }
 
+      // An active/seen event may have been appended before a failed create/delete flush.
+      // Even an empty store can own orphan schedules after a partially committed delete.
+      try{await this.ctx.sessions.flush(agent.session);}
+      catch(error){throw persistenceError('CRON','SCHEDULE_FAILED',error);}
       if (dirty) this.store.save(jobs);
-      if (appended) await this.ctx.sessions.flush(agent.session);
     }).catch((err) => this.warn(`对账失败: ${err?.message}`));
   }
 

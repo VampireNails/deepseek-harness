@@ -130,7 +130,8 @@ prompt "$SID" "帮我创建一个每5分钟提醒我喝水的定时任务" "req-
 
 if wait_for "cron.json 落盘" 60 python3 -c "
 import json, os
-jobs = json.load(open(os.path.join(os.environ['DSH_HOME'], 'intel-cron/cron.json')))
+data = json.load(open(os.path.join(os.environ['DSH_HOME'], 'intel-cron/cron.json')))
+jobs = data if isinstance(data, list) else data['jobs']
 assert len(jobs) == 1 and jobs[0]['id'] == 'c1', jobs
 print('job:', jobs[0]['id'], jobs[0]['scheduleId'])
 "; then pass "cron_create → cron.json"; else fail "cron.json 落盘"; fi
@@ -172,7 +173,8 @@ start_mock "cron_delete" '{"ref":"c1"}' "tool_call_success,success"
 prompt "$SID" "删除喝水提醒任务" "req-cron-3" > /dev/null
 if wait_for "cron_delete 清理" 60 python3 -c "
 import json, os
-jobs = json.load(open(os.path.join(os.environ['DSH_HOME'], 'intel-cron/cron.json')))
+data = json.load(open(os.path.join(os.environ['DSH_HOME'], 'intel-cron/cron.json')))
+jobs = data if isinstance(data, list) else data['jobs']
 assert jobs == [], jobs
 print('cron.json 已空')
 "; then pass "cron_delete 清理记录"; else fail "cron_delete 清理记录"; fi

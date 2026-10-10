@@ -1,0 +1,10 @@
+{
+  "capacity": "还没有自定义定时任务。已用 0/20",
+  "created": true,
+  "deletedIdReused": false,
+  "corruptCode": "CRON_INVALID_DATA",
+  "partialCode": "GOALS_PROJECTION_FAILED",
+  "committedJSONReadable": true,
+  "markdownRepair": true,
+  "serviceProgressCount": 2
+}

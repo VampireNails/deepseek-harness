@@ -1,0 +1,11 @@
+# dsh-intelligence-goals
+
+English | [中文](README.zh.md)
+
+GoalsStore owns `$DSH_HOME/intel-goals/goals.json`, containing `{goals, seq}`. goal_create, goal_progress, goal_close and goal_list share that store with the intelGoals service. IDs increase monotonically; JSON retains every progress entry while Markdown displays the latest ten per active goal. The existing JSON format and extension fields are preserved. Invalid JSON, UTF8, record fields, sequence values, duplicate IDs or permission failures reject rather than yielding an empty store. Only a genuinely missing file in an accessible directory starts empty.
+
+Mutations hold the existing `.writer.sqlite` cross-process writer lock through read, modification and publication. A private owner-only exclusive temporary is fully written and fsynced in the target directory before rename, followed by directory fsync. Failures before rename retain the original complete JSON. JSON is authoritative; goals.md is a separately committed, regenerable projection published after JSON. A projection failure reports `GOALS_PROJECTION_FAILED`, safe errno and `committed:true`; a directory sync failure after JSON rename also reports committed state. Errors exclude raw paths and contents. Read JSON or goal_list to confirm the recorded goal/progress before deciding on another mutation; do not blindly repeat a create or progress operation.
+
+load, findGoal and listGoals read authoritative JSON without requiring Markdown or a write lock. rebuildMarkdown repairs only the projection. goal_list attempts that repair and still displays JSON records with a warning if Markdown or its writer lock remains unavailable. Neither projection repair nor list repeats a business mutation. Two files are not a transaction; atomic rename and writer exclusion do not promise power-loss exactly-once effects or protect against older writers that ignore the lock. Existing goals timestamps retain the process local timezone.
+
+Run `node --test tests/goals.test.js` from this plugin. The owning cron tests additionally exercise shared persistence faults, independent processes, and an isolated supported DSH profile with the real registry/executor and no provider requests.

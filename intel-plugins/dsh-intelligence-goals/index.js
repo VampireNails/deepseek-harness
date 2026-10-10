@@ -8,6 +8,7 @@ export const inject = ["agents", "tools"];
 export const Config = z.object({}).default({});
 
 const textBlock = (text) => [{ type: "text", text }];
+const storageFields=e=>e?.code?.startsWith('GOALS_')?{code:e.code,committed:e.committed,...(e.errno?{errno:e.errno}:{})}:{};
 
 function fmtGoal(g) {
   const lines = [`[${g.id}] ${g.title} (${g.status})`, `  创建：${g.created}`];
@@ -34,8 +35,10 @@ export function apply(ctx, config) {
           },
           output: { schema: { type: "json" }, render: (args, value) => textBlock(value.text) },
           execute: async (args) => {
-            const id = goals.create(args.title, args.desc || "");
-            return { text: `已创建目标 ${id}：${args.title.trim()}` };
+            try{
+              const id = goals.create(args.title, args.desc || "");
+              return { text: `已创建目标 ${id}：${args.title.trim()}` };
+            }catch(e){if(!e.code?.startsWith('GOALS_'))throw e;return {text:e.message,...storageFields(e)};}
           },
         })
       );
@@ -53,7 +56,7 @@ export function apply(ctx, config) {
               const g = goals.logProgress(args.ref, args.text);
               return { text: `已记进展到 ${g.title}[${g.id}]` };
             } catch (e) {
-              return { text: e.message };
+              return { text: e.message,...storageFields(e) };
             }
           },
         })
@@ -71,7 +74,7 @@ export function apply(ctx, config) {
               const g = goals.close(args.ref);
               return { text: `已关闭目标 ${g.title}[${g.id}]` };
             } catch (e) {
-              return { text: e.message };
+              return { text: e.message,...storageFields(e) };
             }
           },
         })
@@ -93,8 +96,10 @@ export function apply(ctx, config) {
               return { text: `status 只能是 active/closed/all，收到：${args.status}` };
             }
             const gs = goals.listGoals(status);
-            if (!gs.length) return { text: `暂无${status === "all" ? "" : status}目标` };
-            return { text: gs.map(fmtGoal).join("\n\n") };
+            const text=gs.length?gs.map(fmtGoal).join("\n\n"):`暂无${status === "all" ? "" : status}目标`;
+            // JSON remains readable even while the derived Markdown cannot be repaired.
+            try{goals.rebuildMarkdown();}catch(e){return {text:text+`\nMarkdown 未同步：${e.message}`,...storageFields(Object.assign(e,{committed:true}))};}
+            return { text };
           },
         })
       );

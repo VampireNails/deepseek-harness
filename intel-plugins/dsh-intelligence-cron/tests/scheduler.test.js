@@ -184,7 +184,7 @@ test("create: MAX_JOBS 上限", async () => {
     const session = fakeSession("sess-1");
     const agent = { session };
     const { sch, store } = makeScheduler(dir, agent);
-    store.save(Array.from({ length: 20 }, (_, i) => ({ id: `c${i + 1}`, name: `t${i + 1}` })));
+    store.save(Array.from({ length: 20 }, (_, i) => ({ id: `c${i + 1}`, name: `t${i + 1}`,prompt:'p',sessionId:'sess-1',schedule:{kind:'interval',seconds:300},scheduleId:`cron-c${i+1}`,nextFire:toInstant(Date.now()+300000) })));
     await assert.rejects(sch.create(agent, "x", "y", "每天9点"), /已达上限（20 个）/);
   } finally {
     rmSync(dir, { recursive: true, force: true });

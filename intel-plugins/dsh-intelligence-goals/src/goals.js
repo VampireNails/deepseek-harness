@@ -1,6 +1,19 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync,mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import {readJson,atomicText,writerSync,persistenceError} from '../../shared/json-store.js';
+
+function validData(data){
+ if(!data||typeof data!=='object'||Array.isArray(data)||!Array.isArray(data.goals)||!Number.isSafeInteger(data.seq)||data.seq<0)return false;
+ const ids=new Set();
+ return data.goals.every(g=>{
+  if(!g||typeof g!=='object'||!/^g[1-9]\d*$/.test(g.id)||ids.has(g.id)||!Number.isSafeInteger(Number(g.id.slice(1)))||Number(g.id.slice(1))>data.seq||
+   typeof g.title!=='string'||!g.title||typeof g.desc!=='string'||!['active','closed'].includes(g.status)||typeof g.created!=='string'||
+   !Array.isArray(g.progress)||g.progress.some(p=>!p||typeof p.ts!=='string'||typeof p.text!=='string')||
+   (g.status==='closed'&&typeof g.closed!=='string'))return false;
+  ids.add(g.id);return true;
+ });
+}
 
 export function goalsDir() {
   return join(process.env.DSH_HOME || join(homedir(), ".dsh"), "intel-goals");
@@ -23,20 +36,22 @@ export class GoalsStore {
     this.dir = dir;
     this.file = join(dir, "goals.json");
     this.mdFile = join(dir, "goals.md");
-    mkdirSync(dir, { recursive: true });
+    try{mkdirSync(dir,{recursive:true});}catch(error){throw persistenceError('GOALS','WRITE_FAILED',error);}
   }
 
   load() {
-    try {
-      const data = JSON.parse(readFileSync(this.file, "utf8"));
-      if (data && Array.isArray(data.goals) && typeof data.seq === "number") return data;
-    } catch {}
-    return { goals: [], seq: 0 };
+    return readJson(this.file,()=>({goals:[],seq:0}),validData,'GOALS');
   }
 
   _save(data) {
-    writeFileSync(this.file, JSON.stringify(data, null, 1));
-    this._renderMd(data);
+    this.load();
+    if(!validData(data))throw persistenceError('GOALS','INVALID_DATA');
+    atomicText(this.file, JSON.stringify(data, null, 1),'GOALS');
+    try{this._renderMd(data);}catch(error){throw persistenceError('GOALS','PROJECTION_FAILED',error,true);}
+  }
+
+  rebuildMarkdown(){
+    return writerSync(this.dir,'GOALS',()=>this._renderMd(this.load()));
   }
 
   _renderMd(data = null) {
@@ -63,13 +78,18 @@ export class GoalsStore {
       }
     }
     lines.push("");
-    writeFileSync(this.mdFile, lines.join("\n"));
+    const text=lines.join("\n");
+    try{if(readFileSync(this.mdFile,'utf8')===text)return;}
+    catch(error){if(error.code!=='ENOENT')throw persistenceError('GOALS','PROJECTION_FAILED',error,true);}
+    atomicText(this.mdFile,text,'GOALS');
   }
 
   create(title, desc = "") {
     title = (title || "").trim();
     if (!title) throw new Error("goal_create: title 不能为空");
+    return writerSync(this.dir,'GOALS',()=>{
     const data = this.load();
+    if(!Number.isSafeInteger(data.seq+1))throw persistenceError('GOALS','ID_EXHAUSTED');
     data.seq += 1;
     const gid = `g${data.seq}`;
     data.goals.push({
@@ -82,6 +102,7 @@ export class GoalsStore {
     });
     this._save(data);
     return gid;
+    });
   }
 
   // 按 id 或标题模糊匹配查找。返回 {goal} 或 {error}；找不到/歧义时报错说明，绝不猜。
@@ -118,15 +139,18 @@ export class GoalsStore {
   logProgress(ref, text) {
     text = (text || "").trim();
     if (!text) throw new Error("goal_progress: text 不能为空");
+    return writerSync(this.dir,'GOALS',()=>{
     const data = this.load();
     const { goal, error } = this._find(data, ref);
     if (error) throw new Error(error);
     goal.progress.push({ ts: ts(), text });
     this._save(data);
     return goal;
+    });
   }
 
   close(ref) {
+    return writerSync(this.dir,'GOALS',()=>{
     const data = this.load();
     const { goal, error } = this._find(data, ref);
     if (error) throw new Error(error);
@@ -135,5 +159,6 @@ export class GoalsStore {
     goal.closed = ts();
     this._save(data);
     return goal;
+    });
   }
 }
