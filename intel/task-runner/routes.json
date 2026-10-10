@@ -61,6 +61,20 @@
     }
   },
   "timeZone": "Asia/Shanghai",
+  "heartbeat": {
+    "enabled": true,
+    "sourceTimeoutMs": 5000,
+    "maxSourceBytes": 4194304,
+    "windowMs": 3600000,
+    "pendingAfterMs": 700000,
+    "initialBackoffMs": 3600000,
+    "maxBackoffMs": 14400000,
+    "serviceUnit": "dsh-prod.service",
+    "listenAddress": "100.73.148.102",
+    "listenPort": 43197,
+    "minDiskBytes": 2147483648,
+    "minMemoryBytes": 104857600
+  },
   "upkeep": {
     "socketPath": "/root/.dsh/intel-joblog/upkeep/source.sock",
     "sourceTimeoutMs": 30000,

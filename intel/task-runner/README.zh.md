@@ -28,6 +28,12 @@ JobLog 完成记录携带与路由审计相同的 run ID 和开始时间，以�
 
 在 Linux 上运行 `node --test intel/task-runner/tests/*.test.mjs`。隔离的 CLI 测试使用假的 `dsh` 可执行文件，从不调用生产模型。
 
+`routes.json.heartbeat.enabled` 启用有界本地预检；缺少配置或为 `false` 时保留旧分发行为。已存在的空清单按 `heartbeat-empty-checklist` 停用；清单缺失、不可读或非空但不受支持时失败。支持的 [清单](../../intel-plugins/dsh-intelligence-evolution/HEARTBEAT.md) 对应服务状态/重启次数、精确 HMC 监听、磁盘和内存阈值、完整近期 journal 错误记录，以及 JobLog/路由历史。来源读取不启动模型，也不写来源数据。未知、截断、损坏或权限拒绝保留原安全代码，通过 runner 失败事件报告；不根据提示词关键词推测结果。近期旧 start 没有 run ID 时仍未确认；选中路由、JobLog 和告警时间晚于观测截止点时失败，不容许时钟偏移。旧来源保持未分类，显式测试行被排除，heartbeat 自身失败由 pending 检查点管理，避免自触发循环。
+
+Heartbeat 配置必须提供 `serviceUnit`、`listenAddress`、`listenPort`、`minDiskBytes`、`minMemoryBytes`、`sourceTimeoutMs`、`maxSourceBytes`、`windowMs`、`pendingAfterMs`、`initialBackoffMs` 和 `maxBackoffMs`。随仓配置使用探针 5 秒期限、每文件/命令 4 MiB 上限、一小时错误窗口、700 秒未完成阈值、2 GiB 磁盘和 100 MiB 内存阈值，以及一至四小时相同异常退避。每次调用先获取全部当前来源，再判断退避。稳定健康阈值结果启动零模型；变化信号、恢复或到期相同异常准入一次运行。健康阈值内的可用资源波动不改变身份。来源/配置变化重置退避；相同异常遇到时钟回退明确失败，变化信号仍可准入并保留单调截止时间。
+
+Heartbeat flock 覆盖预检、准入、分发和审计。生产使用 `intel-joblog/heartbeat/state.json`；显式 test scope 有独立锁与 `test-state.json`。运行器启动前 fsync 持久化 pending 信号/运行 ID，只有进程成功并且完成检查点可靠写入后才清除 pending。失败、崩溃或完成不确定时，重启后仍拒绝同一信号重复分发。新的可靠信号可替代 pending，在审计中保留原身份，不重放原副作用。升级时保留状态；手动修正前检查原运行和系统事件。安静决策记录 reason、清单/信号/来源身份哈希、观测时间和零执行，不创建成功模型 JobLog 运行或异常通知。准入摘要只含状态和安全事件身份，不含 journal 消息或提示词，通过 profile 已记录的任务输入发送。进程成功不代表已核验模型/工具结果或通知交付。
+
 两个 upkeep 别名共用 `memory-upkeep` flock 和私有的 `intel-joblog/upkeep/state.json`。首次调用记录现有原始会话截点，不启动模型，也不把历史视为新增输入。后续调用消费带有 [Host 作者标记](../../intel-plugins/dsh-intelligence-evolution/README.zh.md#understand-the-implementation) 的新增原始用户通道消息；排除已归类的自动任务和标准子智能体。旧来源服务缺少标记时仍视为未知，标记无效或包含机器消息时，分发前拒绝来源批次。同一时刻的消息按原始事件序号区分。完整消息必须符合配置的批次限制；原文过大或来源不可用时失败，不推进检查点。
 
 `routes.json.upkeep` 提供现有 Host 的仅所有者可访问的 `socketPath`、`sourceTimeoutMs`、批次限制，以及初始和最大退避毫秒数。生产默认允许 12 条消息、24,000 字符，空轮次按一、二、四小时退避。退避期间的调用不查询会话，也不启动模型。新增输入在下次到期调用时发现，不会立即重置截止时间。时钟回退时检查点不变。[演进插件](../../intel-plugins/dsh-intelligence-evolution/README.zh.md) 负责来源配置和原始读取限制。

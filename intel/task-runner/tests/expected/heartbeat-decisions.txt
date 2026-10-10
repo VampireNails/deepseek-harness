@@ -1,0 +1,7 @@
+{"kind":"heartbeat-healthy","reason":"healthy-baseline","observedAtMs":100,"modelExecutions":0}
+{"kind":"heartbeat-no-change","reason":"healthy-unchanged","observedAtMs":101,"modelExecutions":0}
+{"kind":"heartbeat-signals","reason":"signal-changed","observedAtMs":102,"modelExecutions":0}
+{"kind":"heartbeat-processed","reason":"signal-changed","observedAtMs":102,"modelExecutions":1,"exit":0}
+{"kind":"heartbeat-backoff","reason":"same-anomaly-backoff","observedAtMs":103,"modelExecutions":0}
+{"kind":"heartbeat-signals","reason":"recovered","observedAtMs":104,"modelExecutions":0}
+{"kind":"heartbeat-processed","reason":"recovered","observedAtMs":104,"modelExecutions":1,"exit":0}
