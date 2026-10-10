@@ -24,6 +24,8 @@
 import { MAX_JOBS, parseSchedule, describeSchedule } from "./parse.js";
 import { nextJobId } from "./store.js";
 import { nextOccurrence, slotDate, toInstant, formatLocal } from "./timecalc.js";
+import {emitEvent} from '../../dsh-intelligence-sysevents/src/store.js';
+import {createHash} from 'node:crypto';
 
 export const MIN_EVERY_SECONDS = 300;
 const ID_PREFIX = "cron-";
@@ -100,6 +102,13 @@ export class CronScheduler {
 
   warn(msg) {
     try { this.ctx.logger?.warn?.(`dsh-intelligence-cron: ${msg}`); } catch { /* ignore */ }
+  }
+
+  _failureWarning(fields) {
+    const text=JSON.stringify(fields);
+    try{if(this.ctx.logger?.warn){this.ctx.logger.warn(text);return;}}
+    catch(loggerError){/* stderr remains available when the Host logger rejects. */}
+    process.stderr.write(text+'\n');
   }
 
   _queue(agent, fn) {
@@ -255,7 +264,7 @@ export class CronScheduler {
     if (typeof sid !== "string" || !sid.startsWith(ID_PREFIX)) return;
     const agent = this.ctx.agents.get(session.id);
     if (!agent) return;
-    this._queue(agent, async () => {
+    return this._queue(agent, async () => {
       const jobs = this.store.load();
       const job = jobs.find((j) => j.scheduleId === sid && !j.done);
       if (!job) return; // 已删：不重武装
@@ -279,10 +288,21 @@ export class CronScheduler {
           version: 1, operation: "create",
           schedule: buildRecord("at", newId, this._reminderPrompt(job), { targetMs: target }, now),
         });
-        await this.ctx.sessions.flush(agent.session);
       }
+      // A previously appended slot may still need its failed durability barrier retried.
+      await this.ctx.sessions.flush(agent.session);
       this.store.save(jobs);
-    }).catch((err) => this.warn(`重武装失败: ${err?.message}`));
+    }).catch((err) => {
+      const code=typeof err?.code==='string'&&/^[A-Z0-9_]{1,80}$/.test(err.code)?err.code:'CRON_REARM_FAILED';
+      const taskId=sid.match(/^cron-(c\d+)(?:-|$)/)?.[1]??'cron';
+      const runId=createHash('sha256').update(JSON.stringify([session.id,sid])).digest('hex');
+      const fields={type:'cron.rearm_failed',severity:'high',title:'定时任务重武装失败',
+        detail:`taskId=${taskId}; runId=${runId}; code=${code}`,source:'cron',taskId,runId,
+        sessionId:session.id,scheduleId:sid,code,exitCategory:'rearm-error'};
+      this._failureWarning({...fields,kind:'cron-rearm-failed'});
+      try{emitEvent(fields);}
+      catch(eventError){this._failureWarning({kind:'system-event-write-failed',taskId,runId,code:eventError.code??'SYSEVENTS_WRITE_FAILED',originalCode:code});}
+    });
   }
 
   // ---- 对账：agent/created 时补建本会话归属 job 的存活 schedule ----

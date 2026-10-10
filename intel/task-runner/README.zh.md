@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文
 
+任务最终失败发射 `task.failed`，携带 JobLog 的 run ID、安全代码和退出类别。事件写失败独立写入 stderr 与路由审计，保留任务原非零退出。事件或 JobLog 写错误不能把成功任务改记失败。真实锁超时发射 `runner.lock_timeout`，不创建已完成任务运行。routes 配置的 `lockTimeoutSeconds` 支持 1–610 秒，默认 610；私有获取标记区分 flock 冲突退出 75 与任务自身退出 75。正常 upkeep 准入/退避及成功任务不发失败事件。隔离、去重和源恢复见 [系统事件](../../intel-plugins/dsh-intelligence-sysevents/README.zh.md)。
+
 ChatGPT cron 路由显式为每个一次性进程使用 SSE。否则，已安装 SDK 的默认 WebSocket 缓存会在回复后继续保留进程五分钟。此单次调用 patch 不改变 web profile。路由的 `transport` 接受 `sse`、`websocket`、`websocket-cached` 或 `auto`；fallback 请求使用其自身路由的传输方式。
 
 此运行器从演进功能当前的 `TASKS` 模板中解析内置 cron 任务 ID。内置任务会忽略可选的旧提示词参数；自定义任务必须提供明确的提示词。`routes.json` 提供任务路由、默认提供方与模型，以及超时时间。运行器仅启动 `evolve` DSH profile，并显式传入模型 patch。它依赖已安装的 profile 依赖和正常的提供方凭据，不会安装提供方或图像工具。

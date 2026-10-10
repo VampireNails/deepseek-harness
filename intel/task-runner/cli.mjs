@@ -10,6 +10,7 @@ import {createUpkeepStateStore} from './upkeep-state.mjs';
 import {requestUpkeep} from '../../intel-plugins/dsh-intelligence-evolution/src/upkeep-socket.js';
 import {JobLog} from '../../intel-plugins/dsh-intelligence-joblog/src/joblog.js';
 import {inspectVisibleOutputs} from './outputs.mjs';
+import {emitEvent} from '../../intel-plugins/dsh-intelligence-sysevents/src/store.js';
 
 const here=dirname(fileURLToPath(import.meta.url));
 async function main(){
@@ -25,12 +26,32 @@ async function main(){
   const root=join(home,'intel-joblog');
   await mkdir(root,{recursive:true});
   const log=new JobLog(root,{scope:process.env.INTEL_JOBLOG_SCOPE??'production'});
-  let identity={runId:randomUUID(),startedAt:new Date().toISOString()};
+  let identity={runId:randomUUID(),startedAt:new Date().toISOString()},taskExit,lastFinishExit,processSignal,completionAttempted=false;
+  const scope=process.env.INTEL_JOBLOG_SCOPE??'production';
+  async function report(type,code,exitCode,exitCategory){
+    try{emitEvent({type,severity:'high',title:type==='runner.lock_timeout'?'任务锁等待超时':'任务执行失败',
+      detail:`taskId=${id}; runId=${identity.runId}; code=${code}`,
+      scope,source:'runner',taskId:id,runId:identity.runId,code,exitCode,exitCategory});}
+    catch(error){
+      const row={time:new Date().toISOString(),kind:'system-event-write-failed',taskId:id,runId:identity.runId,code:error.code??'SYSEVENTS_WRITE_FAILED',taskExit:exitCode};
+      process.stderr.write(JSON.stringify(row)+'\n');
+      try{await appendFile(join(root,'route-runs.jsonl'),JSON.stringify(row)+'\n');}
+      catch(auditError){process.stderr.write('Task runner audit failed: AUDIT_WRITE_FAILED\n');}
+    }
+  }
+  async function reportExit(exit){
+    await report('task.failed',exit===124?'TASK_TIMEOUT':exit===65?'TASK_NO_VISIBLE_OUTPUT':processSignal?'TASK_SIGNAL':'TASK_EXIT_NONZERO',
+      exit,exit===124?'timeout':exit===65?'no-visible-output':processSignal?'signal':'nonzero');
+  }
   async function recordFailure(error){
     const code=typeof error.code==='string'&&/^[A-Z0-9_]+$/.test(error.code)?error.code:'TASK_RUNNER_FAILED';
-    await appendFile(join(root,'route-runs.jsonl'),JSON.stringify({time:new Date().toISOString(),kind:'error',taskId:id,code})+'\n');
-    if(code.startsWith('JOBLOG_'))return; // Storage failure cannot reclassify a completed task.
-    log._recordRun(id,'fail',code,identity);log._alert(id,code+'; runId='+identity.runId);
+    process.stderr.write(JSON.stringify({kind:'runner-error',taskId:id,runId:identity.runId,code,taskExit})+'\n');
+    if(taskExit===undefined&&!code.startsWith('JOBLOG_'))await report('task.failed',code,1,'runner-error');
+    try{await appendFile(join(root,'route-runs.jsonl'),JSON.stringify({time:new Date().toISOString(),kind:'error',taskId:id,runId:identity.runId,code})+'\n');}
+    catch(auditError){process.stderr.write('Task runner audit failed: AUDIT_WRITE_FAILED\n');}
+    if(taskExit!==undefined||code.startsWith('JOBLOG_'))return; // Storage failure cannot reclassify a completed task.
+    try{log._recordRun(id,'fail',code,identity);log._alert(id,code+'; runId='+identity.runId);}
+    catch(storageError){process.stderr.write('Task runner persistence failed: '+(storageError.code?.startsWith('JOBLOG_')?storageError.code:'JOBLOG_WRITE_FAILED')+'\n');}
   }
   const lockDirectory=join(root,'runner-locks');
   await mkdir(lockDirectory,{recursive:true,mode:0o700});
@@ -38,13 +59,24 @@ async function main(){
   const lock=join(lockDirectory,lockTask+'.lock');
   // Linux flock closes on process exit. Hold it across preflight, child execution and audit.
   if(process.env.INTEL_RUNNER_LOCK!==lock){
-    try { process.exitCode=await new Promise((resolve,reject)=>{
-      const child=spawn('flock',['--exclusive','--timeout','610',lock,process.execPath,fileURLToPath(import.meta.url),id,...rest],
-        {stdio:'inherit',env:{...process.env,INTEL_RUNNER_LOCK:lock}});
+    const invocation=await mkdtemp(join(lockDirectory,'invocation-')),marker=join(invocation,'acquired');
+    try {
+      const config=JSON.parse(await readFile(process.env.INTEL_ROUTER_CONFIG??join(here,'routes.json'),'utf8')),lockTimeout=config.lockTimeoutSeconds??610;
+      if(!Number.isSafeInteger(lockTimeout)||lockTimeout<1||lockTimeout>610)throw Error('invalid lockTimeoutSeconds');
+      process.exitCode=await new Promise((resolve,reject)=>{
+      const child=spawn('flock',['--exclusive','--timeout',String(lockTimeout),'--conflict-exit-code','75',lock,process.execPath,fileURLToPath(import.meta.url),id,...rest],
+        {stdio:'inherit',env:{...process.env,INTEL_RUNNER_LOCK:lock,INTEL_RUNNER_ACQUIRED:marker}});
       child.once('error',reject);child.once('close',(code,signal)=>resolve(code??(signal?1:0)));
-    }); } catch(error) { await recordFailure(error); throw error; }
+    });
+      if(process.exitCode===75){
+        let acquired=false;try{await readFile(marker);acquired=true;}catch(error){if(error.code!=='ENOENT')throw error;}
+        if(!acquired)await report('runner.lock_timeout','RUNNER_LOCK_TIMEOUT',75,'lock-timeout');
+      }
+    } catch(error) { await recordFailure(error); throw error; }
+    finally{await rm(invocation,{recursive:true,force:true});}
     return;
   }
+  if(process.env.INTEL_RUNNER_ACQUIRED)await writeFile(process.env.INTEL_RUNNER_ACQUIRED,'acquired');
   const dir=await mkdtemp(join(tmpdir(),'intel-task-'));
   try{
     const config=JSON.parse(await readFile(process.env.INTEL_ROUTER_CONFIG??join(here,'routes.json'),'utf8'));
@@ -70,6 +102,7 @@ async function main(){
         });
         child.once('error',error=>{clearTimeout(timer);clearTimeout(killTimer);reject(error);});
         child.once('close',(code,signal)=>{
+          processSignal=signal;
           clearTimeout(timer);clearTimeout(killTimer);
           if(timedOut){try{process.kill(-child.pid,'SIGKILL');}catch(error){if(error.code!=='ESRCH'){reject(error);return;}}}
           if(inputError){reject(inputError);return;}
@@ -81,6 +114,7 @@ async function main(){
     const record=async entry=>{
       const row={time:new Date().toISOString(),taskId:id,...entry};
       if(entry.kind==='start')identity={runId:entry.runId,startedAt:row.time};
+      if(entry.kind==='finish')lastFinishExit=entry.exit;
       await appendFile(join(root,'route-runs.jsonl'),JSON.stringify(row)+'\n');
       // provider/model identify the requested patch; actual request identity comes from tokenlog.
       process.stderr.write(JSON.stringify(row)+'\n');
@@ -101,11 +135,22 @@ async function main(){
       });
       quiet=['upkeep-bootstrap','upkeep-no-signal','upkeep-backoff','upkeep-clock-rollback'].includes(outcome.kind);
     }else exit=await runTask(config,id,rest.join(' '),execute,record,common);
-    if(!quiet)log._recordRun(id,exit===0?'ok':'fail',`exit ${exit}; runId=${identity.runId}; route-runs.jsonl`,identity);
+    taskExit=exit;
+    if(exit!==0)await reportExit(exit);
+    if(!quiet){completionAttempted=true;log._recordRun(id,exit===0?'ok':'fail',`exit ${exit}; runId=${identity.runId}; route-runs.jsonl`,identity);}
     if(exit!==0)log._alert(id,`task exit ${exit}; runId=${identity.runId}; inspect route-runs.jsonl`);
     process.exitCode=exit;
   }catch(error){
+    if(taskExit===undefined&&lastFinishExit!==undefined&&lastFinishExit!==0){
+      taskExit=lastFinishExit;
+      await reportExit(taskExit);
+      if(!completionAttempted){
+        try{log._recordRun(id,taskExit===0?'ok':'fail',`exit ${taskExit}; runId=${identity.runId}; route-runs.jsonl`,identity);if(taskExit!==0)log._alert(id,`task exit ${taskExit}; runId=${identity.runId}`);}
+        catch(storageError){process.stderr.write('Task runner persistence failed: '+(storageError.code?.startsWith('JOBLOG_')?storageError.code:'JOBLOG_WRITE_FAILED')+'\n');}
+      }
+    }
     await recordFailure(error);
+    if(taskExit!==undefined&&taskExit!==0){process.exitCode=taskExit;return;}
     throw error;
   }finally{await rm(dir,{recursive:true,force:true});}
 }

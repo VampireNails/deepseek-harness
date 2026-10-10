@@ -10,6 +10,8 @@ cron_create 解析中文时间并创建提醒，cron_list 列出提醒状态，c
 
 提醒属于创建它的会话，仅在会话存活时跟进。对账恢复下一个未来触发点，不补发错过的提醒。wrapper 元数据位于 $DSH_HOME/intel-cron/cron.json。工具和监听器使用 ctx.effect。
 
+dispatch 重武装失败向 [系统事件](../dsh-intelligence-sysevents/README.zh.md) 发射 `cron.rearm_failed`。事件以稳定派生 run ID 与安全代码标识会话、任务和已触发槽位，不包含提醒名称、提示词或原始错误正文。同槽位重复报告去重。flush 失败保留旧槽位的包装元数据；重复 dispatch 在保存元数据前，重试已追加新槽位的持久化屏障。事件写失败独立告警并带原始代码。显式 test scope 保持隔离；正常 dispatch 和成功恢复不发异常通知。
+
 ## 移除与验证
 
 卸载前从任务所属会话调用 cron_delete，移除未触发的调度。从其他会话删除任务仅移除 wrapper 元数据，已持久化的提醒仍然有效。仅卸载会移除重新安排的监听器，但已持久化的单次提醒仍可能由 DSH Schedule 触发。运行 node --test tests/parse.test.js tests/scheduler.test.js；tests/integration.sh 使用隔离 profile、真实计时器和模拟 LLM 另行验证。

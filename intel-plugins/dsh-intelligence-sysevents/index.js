@@ -4,8 +4,7 @@
 // ~/.dsh/intel-system-events/events.jsonl。HMC 侧 muse/system-events/list
 // 读这个文件推送到手机。本插件只做发射与落盘，不做推送通道。
 //
-// 事件源（约定，不硬编码）：heartbeat 异常、evolve 任务失败、goalact 提议等，
-// 由各任务 prompt 在发现异常时调用 sysevents_emit。
+// 模型可通过工具发射业务异常；runner/cron 直接复用 store 发射运行故障。
 // severity：high（默认推）/ normal / low（默认不推，由 App 端策略决定）。
 
 import z from "@deepseek-ai/schemastery";
@@ -42,7 +41,7 @@ export function apply(ctx, config) {
               const ev = emitEvent(args);
               return { text: `事件已记录：[${ev.severity}] ${ev.type} ${ev.title}（id ${ev.id.slice(0, 8)}）` };
             } catch (e) {
-              return { text: `发射失败：${e.message}` };
+              return { text: `发射失败：${e.code??'SYSEVENTS_WRITE_FAILED'}` };
             }
           },
         })

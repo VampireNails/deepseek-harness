@@ -2,6 +2,8 @@
 
 English | [中文](README.zh.md)
 
+Final task failures emit `task.failed` with the JobLog run ID, safe code and exit category. Event write errors are independently reported to stderr and the route audit, preserving the task's nonzero exit. A successful task is never relabeled failed by an event or JobLog write error. A real lock timeout emits `runner.lock_timeout` without creating a completed task run. Routes config `lockTimeoutSeconds` accepts 1–610 seconds and defaults to 610; a private acquisition marker distinguishes flock conflict exit 75 from task exit 75. Quiet upkeep admission/backoff and successful tasks emit no failure event. See [system events](../../intel-plugins/dsh-intelligence-sysevents/README.md) for isolation, deduplication and source recovery.
+
 The ChatGPT cron route explicitly uses SSE for each one-shot process. The installed SDK's default WebSocket cache otherwise retains the process for five minutes after a reply. This per-invocation patch leaves the web profile unchanged. Route `transport` accepts `sse`, `websocket`, `websocket-cached` or `auto`; fallback requests use their own route's transport.
 
 This runner resolves built-in cron task IDs against the live evolution `TASKS` templates. An optional old prompt is ignored for built-in IDs; custom jobs require their explicit prompt. `routes.json` supplies task routes, the default provider/model and timeout. The runner launches only the `evolve` DSH profile, with an explicit model patch. It requires installed profile dependencies and normal provider credentials; it does not install providers or image tools.

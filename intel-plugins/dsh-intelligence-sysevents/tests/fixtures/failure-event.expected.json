@@ -1,0 +1,13 @@
+{
+  "type": "task.failed",
+  "severity": "high",
+  "title": "任务执行失败",
+  "detail": "",
+  "scope": "production",
+  "source": "runner",
+  "taskId": "custom",
+  "runId": "run-1",
+  "exitCategory": "nonzero",
+  "code": "TASK_EXIT_NONZERO",
+  "exitCode": 1
+}
