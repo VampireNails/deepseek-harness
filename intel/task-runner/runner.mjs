@@ -1,5 +1,6 @@
 import {TASKS} from '../../intel-plugins/dsh-intelligence-evolution/src/tasks.js';
 import {randomUUID} from 'node:crypto';
+import {classifyFailure} from './failure.mjs';
 
 /** Production cron aliases to the evolution module's template names. */
 export const TASK_ALIASES=Object.freeze({evolve_upkeep:'memory_upkeep',evolve_studying:'studying',
@@ -8,8 +9,8 @@ export const TASK_ALIASES=Object.freeze({evolve_upkeep:'memory_upkeep',evolve_st
 
 function resolveRoute(config,id,label='route'){
   const selected=config.routes?.[id];
-  if(!selected||typeof selected.provider!=='string'||!selected.provider||
-    typeof selected.model!=='string'||!selected.model||
+  if(!selected||typeof selected.provider!=='string'||!/^[-a-zA-Z0-9_.]{1,100}$/.test(selected.provider)||
+    typeof selected.model!=='string'||!/^[-a-zA-Z0-9_.:/]{1,160}$/.test(selected.model)||
     (selected.transport!==undefined&&!['sse','websocket','websocket-cached','auto'].includes(selected.transport)))
     throw Error('invalid '+label);
   return {provider:selected.provider,model:selected.model,transport:selected.transport};
@@ -27,6 +28,11 @@ export function resolveTask(config,id,customPrompt){
   const route=config.tasks?.[id],routeId=route?.route??config.defaultRoute;
   const selected=resolveRoute(config,routeId);
   if(route?.fallback!==undefined)resolveRoute(config,route.fallback,'fallback route');
+  if(route?.retrySafe!==undefined&&typeof route.retrySafe!=='boolean')throw Error('invalid retrySafe');
+  if(config.fallback?.enabled!==undefined&&typeof config.fallback.enabled!=='boolean')throw Error('invalid fallback enabled');
+  if(config.fallback?.enabled&&(!Number.isSafeInteger(config.fallback.maxAttempts)||config.fallback.maxAttempts<1||config.fallback.maxAttempts>2||
+    !Number.isSafeInteger(config.fallback.totalTimeoutMs)||config.fallback.totalTimeoutMs<1000||config.fallback.totalTimeoutMs>600000))
+    throw Error('invalid fallback limits');
   if(route?.visibleOutput!==undefined&&!['required','optional'].includes(route.visibleOutput))throw Error('invalid visible output policy');
   if(route?.deduplicateDaily!==undefined&&typeof route.deduplicateDaily!=='boolean')throw Error('invalid daily deduplication policy');
   const template=TASK_ALIASES[id]??(Object.hasOwn(TASKS,id)?id:null);
@@ -42,9 +48,9 @@ export function resolveTask(config,id,customPrompt){
  * @param config - Deployment routing configuration.
  * @param id - Task identifier.
  * @param customPrompt - Explicit custom task prompt, if needed.
- * @param execute - Launches a resolved profile request and returns its exit code.
+ * @param execute - Launches a resolved profile request and returns an exit or safe runtime observations.
  * @param record - Persists a prompt-free route audit record.
- * @returns The final process exit code; launch and audit errors reject.
+ * @returns The final process exit code; launch failures finalize as runner errors and audit errors reject.
  */
 export async function runTask(config,id,customPrompt,execute,record,options={}){
   const plan=resolveTask(config,id,customPrompt);
@@ -68,26 +74,49 @@ export async function runTask(config,id,customPrompt,execute,record,options={}){
       return 0;
     }
   }
-  async function finish(attempt,exit){
+  async function finish(attempt,result,attempts,failure){
+    const exit=result.exit;
     const identity={...info,provider:attempt.provider,model:attempt.model,transport:attempt.transport};
     if(exit===0&&plan.visibleOutput==='required'){
       const outputs=await options.inspectVisibleOutputs(attempt);
       if(!Array.isArray(outputs)||!outputs.some(output=>output?.taskId===id&&output?.runId===runId&&output?.runDate===runDate&&hasContent(output))){
         await record({kind:'no-visible-output',...identity});
-        await record({kind:'finish',...identity,exit:65,processExit:0});
+        await record({kind:'finish',...identity,exit:65,processExit:0,attempts,code:'TASK_NO_VISIBLE_OUTPUT',category:'no-visible-output'});
         return 65;
       }
     }
-    await record({kind:'finish',...identity,exit});
+    await record({kind:'finish',...identity,exit,processExit:Object.hasOwn(result,'processExit')?result.processExit:exit,signal:result.signal,attempts,fallbackReason,...failure,
+      actualProvider:result.receipt?.provider,actualModel:result.receipt?.model});
     return exit;
   }
-  const exit=await finish(plan,await execute(plan));
-  if(exit===65)return exit; // Never replay completed side effects to manufacture output.
-  if(exit===0||!plan.fallback)return exit;
-  if(!plan.retrySafe){await record({kind:'retry-refused',...info,primaryExit:exit});return exit;}
-  const next={...plan,...resolveRoute(config,plan.fallback,'fallback route')};
-  await record({kind:'fallback',...info,provider:next.provider,model:next.model,transport:next.transport,primaryExit:exit});
-  return await finish(next,await execute(next));
+  const enabled=config.fallback?.enabled===true;
+  const now=options.monotonicNow??(()=>performance.now()),deadline=now()+(enabled?config.fallback.totalTimeoutMs:config.timeoutMs??600000);
+  let attempt={...plan,attempt:1},result,failure,fallbackReason;
+  for(;;){
+    const timeoutMs=Math.max(1,Math.min(config.timeoutMs??600000,Math.floor(deadline-now())));
+    let raw;
+    try{raw=await execute({...attempt,timeoutMs,disableProviderRetry:enabled});}
+    catch(error){raw={exit:1,launchCode:['ENOENT','EACCES','EPIPE'].includes(error.code)?error.code:'UNKNOWN'};}
+    result=typeof raw==='number'?{exit:raw}:raw;
+    if(!Number.isSafeInteger(result?.exit)||result.exit<0||result.exit>255)throw Error('invalid process result');
+    failure=result.exit===0?undefined:classifyFailure(result);
+    await record({kind:'attempt',...info,provider:attempt.provider,model:attempt.model,attempt:attempt.attempt,exit:result.exit,...failure,
+      actualProvider:result.receipt?.provider,actualModel:result.receipt?.model});
+    if(result.exit===0)break;
+    const refusal=!enabled?'fallback-disabled':!plan.fallback?'fallback-unconfigured':attempt.attempt>=config.fallback.maxAttempts?'attempt-limit':
+      deadline-now()<1?'deadline-exhausted':!failure.preExecution?'unsafe-or-unknown-result':undefined;
+    if(refusal){
+      fallbackReason=refusal;
+      if(plan.fallback)await record({kind:'retry-refused',...info,attempt:attempt.attempt,primaryExit:result.exit,fallbackReason:refusal,...failure});
+      break;
+    }
+    const next={...plan,...resolveRoute(config,plan.fallback,'fallback route'),attempt:attempt.attempt+1};
+    fallbackReason='pre-execution-rejection';
+    await record({kind:'fallback',...info,provider:next.provider,model:next.model,transport:next.transport,primaryExit:result.exit,
+      attempt:next.attempt,fallbackReason:'pre-execution-rejection',...failure});
+    attempt=next;
+  }
+  return await finish(attempt,result,attempt.attempt,failure);
 }
 
 /**

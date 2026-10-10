@@ -17,47 +17,56 @@
       "route": "chatgpt",
       "retrySafe": false,
       "visibleOutput": "required",
-      "deduplicateDaily": true
+      "deduplicateDaily": true,
+      "fallback": "flash"
     },
     "evolve_upkeep": {
       "route": "flash",
-      "retrySafe": false
+      "retrySafe": false,
+      "fallback": "chatgpt"
     },
     "evolve_studying": {
       "route": "chatgpt",
       "retrySafe": false,
       "visibleOutput": "required",
-      "deduplicateDaily": true
+      "deduplicateDaily": true,
+      "fallback": "flash"
     },
     "evolve_ideas": {
       "route": "chatgpt",
       "retrySafe": false,
       "visibleOutput": "required",
-      "deduplicateDaily": true
+      "deduplicateDaily": true,
+      "fallback": "flash"
     },
     "evolve_dreaming": {
       "route": "chatgpt",
       "retrySafe": false,
       "visibleOutput": "required",
-      "deduplicateDaily": true
+      "deduplicateDaily": true,
+      "fallback": "flash"
     },
     "evolve_skill_review": {
       "route": "chatgpt",
       "retrySafe": false,
       "visibleOutput": "required",
-      "deduplicateDaily": true
+      "deduplicateDaily": true,
+      "fallback": "flash"
     },
     "evolve_goal_review": {
       "route": "chatgpt",
-      "retrySafe": false
+      "retrySafe": false,
+      "fallback": "flash"
     },
     "evolve_goal_act": {
       "route": "chatgpt",
-      "retrySafe": false
+      "retrySafe": false,
+      "fallback": "flash"
     },
     "heartbeat": {
       "route": "flash",
-      "retrySafe": false
+      "retrySafe": false,
+      "fallback": "chatgpt"
     }
   },
   "timeZone": "Asia/Shanghai",
@@ -82,5 +91,10 @@
     "maxBackoffMs": 14400000,
     "maxBatchMessages": 12,
     "maxBatchChars": 24000
+  },
+  "fallback": {
+    "enabled": true,
+    "maxAttempts": 2,
+    "totalTimeoutMs": 600000
   }
 }

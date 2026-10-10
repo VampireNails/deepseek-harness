@@ -1,0 +1,10 @@
+[
+  {"mode":"quota-success","exit":0,"category":"success","models":["deepseek-flash","deepseek-pro"],"attempts":2},
+  {"mode":"quota","exit":1,"category":"quota","models":["deepseek-flash","deepseek-pro"],"attempts":2},
+  {"mode":"rate","exit":1,"category":"rate-limit","models":["deepseek-flash","deepseek-pro"],"attempts":2},
+  {"mode":"auth","exit":1,"category":"authentication","models":["deepseek-flash"],"attempts":1},
+  {"mode":"service","exit":1,"category":"service","models":["deepseek-flash"],"attempts":1},
+  {"mode":"network","exit":1,"category":"network","models":["deepseek-flash"],"attempts":1},
+  {"mode":"partial","exit":1,"category":"rate-limit","models":["deepseek-flash"],"attempts":1},
+  {"mode":"effect","exit":1,"category":"quota","models":["deepseek-flash","deepseek-flash"],"attempts":1}
+]

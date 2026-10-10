@@ -30,11 +30,13 @@ if(process.env.TEST_DESCENDANT==='1'){
     assert.equal(result.status,0,result.stderr);
     const sent=JSON.parse(await readFile(capture,'utf8'));
     assert.equal(sent.profile,'evolve');assert.ok(sent.prompt.includes('joblog'));assert.notEqual(sent.prompt.trim(),'stale');
-    assert.deepEqual(sent.patch,[{id:'agent-default-model',config:{provider:'deepseek-official',model:'deepseek-flash'}}]);
+    assert.deepEqual(sent.patch.filter(row=>!row.insert&&row.id!=='headless-runner'),[{id:'agent-default-model',config:{provider:'deepseek-official',model:'deepseek-flash'}}]);
+    assert.match(sent.patch.find(row=>row.insert).insert[0].name,/runtime.mjs$/);
+    assert.deepEqual(sent.patch.at(-1).inject,['headlessStartup','intelTaskRuntime']);
     await writeFile(config,JSON.stringify({timeoutMs:1000,defaultRoute:'chat',routes:{chat:{provider:'openai-codex',model:'gpt-5.5',transport:'sse'}}}));
     const chat=spawnSync(process.execPath,[cli,'custom','read only'],{env,encoding:'utf8',timeout:10000});
     assert.equal(chat.status,0,chat.stderr);
-    assert.deepEqual(JSON.parse(await readFile(capture,'utf8')).patch,[
+    assert.deepEqual(JSON.parse(await readFile(capture,'utf8')).patch.filter(row=>!row.insert&&row.id!=='headless-runner'),[
       {id:'agent-default-model',config:{provider:'openai-codex',model:'gpt-5.5'}},
       {id:'llm-pi-ai',config:{providers:{'openai-codex':{transport:'sse'}}}},
     ]);

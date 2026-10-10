@@ -8,11 +8,13 @@ ChatGPT cron 路由显式为每个一次性进程使用 SSE。否则，已安装
 
 此运行器从演进功能当前的 `TASKS` 模板中解析内置 cron 任务 ID。内置任务会忽略可选的旧提示词参数；自定义任务必须提供明确的提示词。`routes.json` 提供任务路由、默认提供方与模型，以及超时时间。运行器仅启动 `evolve` DSH profile，并显式传入模型 patch。它依赖已安装的 profile 依赖和正常的提供方凭据，不会安装提供方或图像工具。
 
-`route-runs.jsonl` 记录请求的提供方与模型、模板 ID、进程退出码和 fallback 原因，不记录提示词或凭据。请求的身份不能证明实际使用的模型：须将成功请求与 tokenlog 关联核对。重试非零退出的任务可能重复产生副作用，因此默认路由禁用重试。仅对经过审查的只读任务启用 `retrySafe`。超时会终止进程组；退出失败仍可能表示已经产生部分副作用，需要检查。
+`route-runs.jsonl` 记录请求及运行时解析的 provider/model、模板、原进程退出码、信号、稳定失败类别和 fallback 原因，不记录提示词或凭据。额度、限流、鉴权、服务、网络、模型配置、工具和结果未知分别保留。退出码 1 及 provider/工具文字不能单独证明额度耗尽。provider stderr 只读取不转发，因为它可能包含请求数据。超时终止进程组，结果仍未知。
 
-JobLog 完成记录携带与路由审计相同的 run ID 和开始时间，以及最终退出码和审计文件引用。`INTEL_JOBLOG_SCOPE=test` 显式隔离受控测试；缺省选择生产，其他值拒绝。JobLog 持久化错误以非零退出并按安全代码审计，不为已完成任务另造一条失败运行。保留策略、部分持久化、旧快照和备份要求见 [JobLog](../../intel-plugins/dsh-intelligence-joblog/README.zh.md)。
+JobLog 完成记录携带与路由审计相同的 run ID 和开始时间，以及最终退出码、选路原因、请求/实际选择、尝试次数和降级原因。未配置的自定义任务保留兼容默认路由，并显示 `unconfigured-task`；缺少实际身份时保持 `unknown`。`INTEL_JOBLOG_SCOPE=test` 显式隔离受控测试；缺省选择生产，其他值拒绝。JobLog 持久化错误以非零退出并按安全代码审计，不为已完成任务另造一条失败运行。保留策略、部分持久化、旧快照和备份要求见 [JobLog](../../intel-plugins/dsh-intelligence-joblog/README.zh.md)。
 
-九个生产任务配置省略 `fallback`：主路由失败即为最终失败，审计保留请求路由及退出码。明确通过只读审计的自定义任务可以同时配置 `fallback` 与 `retrySafe: true`；降级尝试记录自身 provider、model 和 transport。仅配置 `fallback` 不授权重试。
+每个任务的 `fallback` 指向一个路由。顶层 `fallback` 必须设置 `enabled: true`、包含主尝试的 `maxAttempts`（1–2）及 `totalTimeoutMs`（1000–600000）。缺失/关闭配置保留单次进程；启用时关闭 profile 的 provider retry 插件，各次尝试共享单调时钟总期限。随仓任务最多采用一次备用路由。只有可靠的首次 HTTP 402/429 额度拒绝或 429 限流拒绝，且完整运行回执证明仅一个会话、一步、无工具/输出/部分流/retry、模型匹配时才允许 fallback。鉴权、5xx、网络中断、超时、信号、损坏/缺失回执及任何工具或输出都禁止重放；`retrySafe` 为兼容仍可配置，但不能绕过限制。两次尝试共享原 run ID/日期/scope，最终只有一条 JobLog 完成记录，失败时产生一条最终事件。
+
+运行器通过支持的 CLI patch 入口插入被动运行时观测。独立继承管道只传安全事实；父进程保留已观察的副作用，即使后续回执重置计数也不能清除。执行前核验解码后的默认选择，分发前核验请求选择。`runtime.defaultModelId`、`runtime.piAiId`、`runtime.retryId` 和 `runtime.headlessId` 可以适配插件 ID；缺省分别对应 `agent-default-model`、`llm-pi-ai`、`llm-retry` 和 `headless-runner`。headless 准入依赖观测就绪；解码选择或请求选择不匹配时，在 provider 分发之前失败。即使 retry 插件 ID 过时，终止请求错误观测也会阻止嵌套恢复。运行时请求记录证明解析后的选择；所属 Linux 测试另以已安装 CLI 和真实 provider 客户端访问 loopback HTTP provider，捕获实际 request model。未提供可靠 HTTP status 的 provider 可分类，但不能授权 fallback。
 
 配置 `visibleOutput: "required"` 的任务必须留下本次运行的 Feed 文章或 Artifact 版本。运行器的最终 dreaming 提示词要求 Feed 发布，保留模板禁止 `artifact_save` 的要求；其他模板保留长报告可选提示。进程退出零但没有可读产出时改记退出码 65，fallback 也适用，并且不会因此重试。运行器按配置时区给发布工具注入任务 ID、唯一运行 ID 和日期。`references` 仅接受已有记忆的整数 ID，写入前核验。手动发布不虚构运行身份。upkeep 没有新信号时可安静成功，无需发布。
 

@@ -56,7 +56,7 @@ test('concurrent real CLI invocations share admission and restart preserves pend
   const results=await Promise.all([f.run({TEST_EXIT:'7'}),f.run({TEST_EXIT:'7'})]);assert.ok(results.some(x=>x.code===7));assert.equal(await f.models(),1);
   const pending=JSON.parse(await readFile(f.state,'utf8')).pending;assert.ok(pending?.runId);const again=await f.run();assert.equal(again.code,1);assert.match(again.stderr,/HEARTBEAT_PREVIOUS_RUN_UNRESOLVED/);assert.equal(await f.models(),1);
   f.data.systemctl='ActiveState=active\nSubState=running\nNRestarts=0\nInvocationID=bbbb\n';await f.save();assert.equal((await f.run()).code,0);assert.equal(await f.models(),2);
-  const old=(await f.events()).find(x=>x.exitCode===7);assert.equal(old.runId,pending.runId);assert.equal(old.code,'TASK_EXIT_NONZERO');
+  const old=(await f.events()).find(x=>x.exitCode===7);assert.equal(old.runId,pending.runId);assert.equal(old.code,'TASK_RESULT_UNKNOWN');
 });
 test('disabled or absent heartbeat config retains legacy execution',linux,async t=>{
   const f=await fixture(t);f.config.heartbeat.enabled=false;await f.save();assert.equal((await f.run()).code,0);delete f.config.heartbeat;await f.save();assert.equal((await f.run()).code,0);assert.equal(await f.models(),2);

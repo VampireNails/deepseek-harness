@@ -45,7 +45,7 @@ const identity = { taskId: process.env.INTEL_TASK_ID, runId: process.env.INTEL_R
   runDate: process.env.INTEL_RUN_DATE };
 appendFileSync(process.env.TEST_EXECUTIONS, JSON.stringify({ profile, patch, prompt, ...identity }) + '\\n');
 assert.equal(profile, 'evolve');
-assert.deepEqual(patch, [
+assert.deepEqual(patch.filter(row => !row.insert && row.id !== 'headless-runner'), [
   { id: 'agent-default-model', config: { provider: 'isolated-provider', model: 'isolated-model' } },
   { id: 'llm-pi-ai', config: { providers: { 'isolated-provider': { transport: 'sse' } } } },
 ]);

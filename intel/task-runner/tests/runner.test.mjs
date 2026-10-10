@@ -23,11 +23,11 @@ test('default task routing preserves the deployed nine-task provider assignments
   for(const id of ['morning_briefing','evolve_studying','evolve_ideas','evolve_dreaming','evolve_skill_review','evolve_goal_review','evolve_goal_act'])
     {const plan=resolveTask(deployed,id,'brief');assert.equal(plan.provider,'openai-codex');assert.equal(plan.transport,'sse');}
 });
-test('deployed side-effecting tasks declare no fallback and retain the primary failure',async()=>{
+test('deployed side-effecting tasks retain uncertain primary failure despite configured fallback',async()=>{
   const deployed=JSON.parse(readFileSync(new URL('../routes.json',import.meta.url),'utf8'));
   for(const [id,assignment] of Object.entries(deployed.tasks)){
     assert.equal(assignment.retrySafe,false,id);
-    assert.equal(Object.hasOwn(assignment,'fallback'),false,id);
+    assert.equal(typeof assignment.fallback,'string',id);
     const audit=[],attempts=[];
     const exit=await runTask(deployed,id,'brief',async plan=>{attempts.push(plan);return 124;},
       row=>audit.push(row),{inspectVisibleOutputs:async()=>[],runDate:'2026-10-05'});
@@ -51,16 +51,16 @@ test('primary failure is recorded and side-effecting tasks are not retried',asyn
   const seen=[],audit=[];
   const exit=await runTask(config,'evolve_upkeep','old',async plan=>{seen.push(plan);return 1;},entry=>audit.push(entry));
   assert.equal(exit,1);assert.equal(seen.length,1);
-  assert.equal(audit.at(-1).kind,'retry-refused');assert.equal(audit.at(-1).model,'gpt-5.5');
+  assert.equal(audit.some(row=>row.kind==='retry-refused'),true);assert.equal(audit.at(-1).model,'gpt-5.5');
 });
-test('explicit read-only retry records both requested routes and exit reasons',async()=>{
+test('a read-only label cannot authorize replay of an unknown exit',async()=>{
   const safe={...config,routes:{...config.routes,chat:{...config.routes.chat,transport:'sse'}},tasks:{custom:{route:'chat',fallback:'flash',retrySafe:true}}},audit=[],seen=[];
   const exit=await runTask(safe,'custom','read only',async plan=>{seen.push(plan);return seen.length===1?1:0;},entry=>audit.push(entry));
-  assert.equal(exit,0);assert.equal(seen[1].provider,'deepseek-official');
-  assert.equal(seen[0].transport,'sse');assert.equal(seen[1].transport,undefined);
-  assert.equal(audit.find(e=>e.kind==='fallback').primaryExit,1);
-  assert.equal(audit.at(-1).model,'deepseek-flash');
-  await assert.rejects(runTask(safe,'custom','read only',async()=>{throw Error('spawn failed');},()=>{}),/spawn failed/);
+  assert.equal(exit,1);assert.equal(seen.length,1);
+  assert.equal(seen[0].transport,'sse');
+  assert.equal(audit.find(e=>e.kind==='retry-refused').primaryExit,1);
+  assert.equal(audit.at(-1).model,'gpt-5.5');
+  assert.equal(await runTask(safe,'custom','read only',async()=>{throw Error('spawn failed');},()=>{}),1);
 });
 test('migration preview only replaces registered built-in invocations',()=>{
   const input='0 3 * * * /root/intel/bin/intel-task.sh evolve_upkeep "old"\n0 4 * * * /root/intel/bin/intel-task.sh custom "stay"\n# keep\n';

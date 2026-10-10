@@ -13,6 +13,7 @@ import {requestUpkeep} from '../../intel-plugins/dsh-intelligence-evolution/src/
 import {JobLog} from '../../intel-plugins/dsh-intelligence-joblog/src/joblog.js';
 import {inspectVisibleOutputs} from './outputs.mjs';
 import {emitEvent} from '../../intel-plugins/dsh-intelligence-sysevents/src/store.js';
+import {validateReceipt} from './failure.mjs';
 
 const here=dirname(fileURLToPath(import.meta.url));
 async function main(){
@@ -28,7 +29,7 @@ async function main(){
   const root=join(home,'intel-joblog');
   await mkdir(root,{recursive:true});
   const log=new JobLog(root,{scope:process.env.INTEL_JOBLOG_SCOPE??'production'});
-  let identity={runId:randomUUID(),startedAt:new Date().toISOString()},taskExit,lastFinishExit,processSignal,completionAttempted=false;
+  let identity={runId:randomUUID(),startedAt:new Date().toISOString()},taskExit,lastFinishExit,processSignal,finalRoute,completionAttempted=false;
   const scope=process.env.INTEL_JOBLOG_SCOPE??'production';
   async function report(type,code,exitCode,exitCategory){
     try{emitEvent({type,severity:'high',title:type==='runner.lock_timeout'?'任务锁等待超时':'任务执行失败',
@@ -42,7 +43,7 @@ async function main(){
     }
   }
   async function reportExit(exit){
-    await report('task.failed',exit===124?'TASK_TIMEOUT':exit===65?'TASK_NO_VISIBLE_OUTPUT':processSignal?'TASK_SIGNAL':'TASK_EXIT_NONZERO',
+    await report('task.failed',finalRoute?.code??(exit===124?'TASK_TIMEOUT':exit===65?'TASK_NO_VISIBLE_OUTPUT':processSignal?'TASK_SIGNAL':'TASK_EXIT_NONZERO'),
       exit,exit===124?'timeout':exit===65?'no-visible-output':processSignal?'signal':'nonzero');
   }
   async function recordFailure(error){
@@ -86,18 +87,48 @@ async function main(){
     const timeoutMs=config.timeoutMs;
     if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>600000)throw Error('invalid timeoutMs');
     const execute=async plan=>{
+      const preparationStarted=performance.now();
       const patch=join(dir,'model.json');
-      const patches=[{id:'agent-default-model',config:{provider:plan.provider,model:plan.model}}];
+      const ids={defaultModelId:'agent-default-model',piAiId:'llm-pi-ai',retryId:'llm-retry',headlessId:'headless-runner',...config.runtime};
+      if(!Object.keys(config.runtime??{}).every(key=>['defaultModelId','piAiId','retryId','headlessId'].includes(key)))throw Error('invalid runtime plugin ids');
+      if(!Object.values(ids).every(value=>typeof value==='string'&&/^[a-z][a-z0-9_-]{0,79}$/.test(value)))throw Error('invalid runtime plugin ids');
+      const patches=[{id:ids.defaultModelId,config:{provider:plan.provider,model:plan.model}}];
       if(plan.template==='memory_upkeep')patches.push({id:'tools',config:{mode:'native'}});
-      if(plan.transport!==undefined)patches.push({id:'llm-pi-ai',config:{providers:{[plan.provider]:{transport:plan.transport}}}});
+      if(plan.transport!==undefined)patches.push({id:ids.piAiId,config:{providers:{[plan.provider]:{transport:plan.transport}}}});
+      if(plan.disableProviderRetry)patches.push({id:ids.retryId,disabled:true});
+      patches.push({insert:[{id:'intel-task-runtime',name:new URL('./runtime.mjs',import.meta.url).href}]});
+      patches.push({id:ids.headlessId,inject:['headlessStartup','intelTaskRuntime']});
       await writeFile(patch,JSON.stringify(patches));
-      return await new Promise((resolve,reject)=>{
-        const child=spawn('dsh',['--profile','evolve','--patch',patch],{stdio:['pipe','inherit','inherit'],detached:true,
-          env:{...process.env,INTEL_TASK_ID:plan.id,INTEL_RUN_ID:plan.runId,INTEL_RUN_DATE:plan.runDate}});
+      const remainingMs=Math.floor(plan.timeoutMs-(performance.now()-preparationStarted));
+      if(remainingMs<=0)return {exit:124,processExit:null};
+      let receipt,buffer='',invalidReceipt=false,unsafe=false;
+      const result=await new Promise((resolve,reject)=>{
+        const child=spawn('dsh',['--profile','evolve','--patch',patch],{stdio:['pipe','inherit','pipe','pipe'],detached:true,
+          env:{...process.env,INTEL_TASK_ID:plan.id,INTEL_RUN_ID:plan.runId,INTEL_RUN_DATE:plan.runDate,
+            INTEL_RUNTIME_FD:'3',INTEL_RUN_ATTEMPT:String(plan.attempt),INTEL_ROUTE_PROVIDER:plan.provider,INTEL_ROUTE_MODEL:plan.model,
+            INTEL_DISABLE_PROVIDER_RETRY:plan.disableProviderRetry?'1':'0'}});
+        child.stderr.resume(); // Provider diagnostics may contain request data; safe codes come from the receipt.
+        child.stdio[3].setEncoding('utf8');
+        child.stdio[3].on('error',()=>{invalidReceipt=true;});
+        child.stdio[3].on('data',chunk=>{
+          if(invalidReceipt)return;
+          buffer+=chunk;
+          for(let end;(end=buffer.indexOf('\n'))>=0;){
+            const line=buffer.slice(0,end);buffer=buffer.slice(end+1);
+            if(Buffer.byteLength(line)>8192){invalidReceipt=true;break;}
+            try{
+              const next=validateReceipt(JSON.parse(line),plan);
+              if(!next){invalidReceipt=true;break;}
+              unsafe ||= next.tools>0||next.outputs>0||next.streamOutput||next.retries>0||next.sessions>1||next.steps>1;
+              receipt=next;
+            }catch(error){invalidReceipt=true;break;}
+          }
+          if(Buffer.byteLength(buffer)>8192)invalidReceipt=true;
+        });
         let timedOut=false,inputError;
-        const timer=setTimeout(()=>{timedOut=true;try{process.kill(-child.pid,'SIGTERM');}catch(error){if(error.code!=='ESRCH')reject(error);}},timeoutMs);
+        const timer=setTimeout(()=>{timedOut=true;try{process.kill(-child.pid,'SIGTERM');}catch(error){if(error.code!=='ESRCH')reject(error);}},remainingMs);
         let killTimer;
-        child.once('spawn',()=>{killTimer=setTimeout(()=>{if(timedOut){try{process.kill(-child.pid,'SIGKILL');}catch(error){if(error.code!=='ESRCH')reject(error);}}},timeoutMs+5000);});
+        child.once('spawn',()=>{killTimer=setTimeout(()=>{if(timedOut){try{process.kill(-child.pid,'SIGKILL');}catch(error){if(error.code!=='ESRCH')reject(error);}}},remainingMs+5000);});
         child.stdin.on('error',error=>{
           if(error.code==='EPIPE')return;
           inputError=error;
@@ -109,17 +140,22 @@ async function main(){
           clearTimeout(timer);clearTimeout(killTimer);
           if(timedOut){try{process.kill(-child.pid,'SIGKILL');}catch(error){if(error.code!=='ESRCH'){reject(error);return;}}}
           if(inputError){reject(inputError);return;}
-          resolve(timedOut?124:code??(signal?1:0));
+          resolve({exit:timedOut?124:code??(signal?1:0),processExit:code,signal});
         });
         child.stdin.end(plan.prompt+'\n');
       });
+      if(!invalidReceipt&&!buffer){result.receipt=receipt;if(unsafe&&receipt)result.receipt.streamOutput=true;}
+      if(result.receipt?.complete&&result.receipt.modelMatches===false){
+        result.receipt.failure={code:'NO_MODEL'};result.exit=result.exit||1;
+      }
+      return result;
     };
     const record=async entry=>{
       const row={time:new Date().toISOString(),scope,taskId:id,...entry};
       if(entry.kind==='start')identity={runId:entry.runId,startedAt:row.time};
-      if(entry.kind==='finish')lastFinishExit=entry.exit;
+      if(entry.kind==='attempt'||entry.kind==='finish'){lastFinishExit=entry.exit;finalRoute=entry;}
       await appendFile(join(root,'route-runs.jsonl'),JSON.stringify(row)+'\n');
-      // provider/model identify the requested patch; actual request identity comes from tokenlog.
+      // The receipt identifies the resolved request; HTTP capture verifies the provider's wire model.
       process.stderr.write(JSON.stringify(row)+'\n');
     };
     const common={inspectVisibleOutputs:()=>inspectVisibleOutputs(home)};
@@ -150,8 +186,8 @@ async function main(){
     }else exit=await runTask(config,id,rest.join(' '),execute,record,common);
     taskExit=exit;
     if(exit!==0)await reportExit(exit);
-    if(!quiet){completionAttempted=true;log._recordRun(id,exit===0?'ok':'fail',`exit ${exit}; runId=${identity.runId}; route-runs.jsonl`,identity);}
-    if(exit!==0)log._alert(id,`task exit ${exit}; runId=${identity.runId}; inspect route-runs.jsonl`);
+    if(!quiet){completionAttempted=true;log._recordRun(id,exit===0?'ok':'fail',`reason=${finalRoute?.reason??'preflight'}; requested=${finalRoute?.provider??'none'}/${finalRoute?.model??'none'}; actual=${finalRoute?.actualProvider??'unknown'}/${finalRoute?.actualModel??'unknown'}; attempts=${finalRoute?.attempts??0}; fallback=${finalRoute?.fallbackReason??'none'}; code=${finalRoute?.code??'OK'}; exit ${exit}; runId=${identity.runId}; route-runs.jsonl`,identity);}
+    if(exit!==0)log._alert(id,`task exit ${exit}; code=${finalRoute?.code??'TASK_EXIT_NONZERO'}; runId=${identity.runId}; inspect route-runs.jsonl`);
     process.exitCode=exit;
   }catch(error){
     if(taskExit===undefined&&lastFinishExit!==undefined&&lastFinishExit!==0){
