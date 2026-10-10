@@ -49,10 +49,10 @@ async function main(){
     const code=typeof error.code==='string'&&/^[A-Z0-9_]+$/.test(error.code)?error.code:'TASK_RUNNER_FAILED';
     const source=['service','listener','disk','memory','journal','route','joblog'].includes(error.source)?error.source:undefined;
     process.stderr.write(JSON.stringify({kind:'runner-error',taskId:id,runId:identity.runId,code,source,taskExit})+'\n');
-    if(taskExit===undefined&&!code.startsWith('JOBLOG_'))await report('task.failed',code,1,'runner-error');
+    if(taskExit===undefined&&(source!==undefined||!code.startsWith('JOBLOG_')))await report('task.failed',code,1,'runner-error');
     try{await appendFile(join(root,'route-runs.jsonl'),JSON.stringify({time:new Date().toISOString(),scope,kind:'error',taskId:id,runId:identity.runId,code,source})+'\n');}
     catch(auditError){process.stderr.write('Task runner audit failed: AUDIT_WRITE_FAILED\n');}
-    if(taskExit!==undefined||code.startsWith('JOBLOG_'))return; // Storage failure cannot reclassify a completed task.
+    if(taskExit!==undefined||code.startsWith('JOBLOG_')&&source===undefined)return; // Completion storage failure cannot reclassify a task.
     try{log._recordRun(id,'fail',code,identity);log._alert(id,code+'; runId='+identity.runId);}
     catch(storageError){process.stderr.write('Task runner persistence failed: '+(storageError.code?.startsWith('JOBLOG_')?storageError.code:'JOBLOG_WRITE_FAILED')+'\n');}
   }

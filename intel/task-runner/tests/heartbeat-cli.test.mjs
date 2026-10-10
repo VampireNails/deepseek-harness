@@ -76,3 +76,7 @@ test('heartbeat real lock conflict reports timeout without probing or model comp
   t.after(async()=>{const closed=once(holder,'close');try{process.kill(-holder.pid,'SIGTERM');}catch(e){if(e.code!=='ESRCH')throw e;}await closed;});await once(holder.stdout,'data');
   const result=await f.run();assert.equal(result.code,75);assert.equal(await f.models(),0);assert.equal((await f.events()).at(-1).code,'RUNNER_LOCK_TIMEOUT');assert.equal(new JobLog(join(f.home,'intel-joblog')).readHistory().length,0);
 });
+test('heartbeat JobLog source corruption emits the original source code without executing a model',linux,async t=>{
+  const f=await fixture(t);await writeFile(join(f.home,'intel-joblog','job_history.sqlite'),'broken sqlite');const result=await f.run();assert.equal(result.code,1);assert.equal(await f.models(),0);assert.match(result.stderr,/JOBLOG_READ_FAILED/);
+  const events=await f.events();assert.equal(events.length,1);assert.equal(events[0].code,'JOBLOG_READ_FAILED');assert.match(result.stderr,/"source":"joblog"/);
+});
