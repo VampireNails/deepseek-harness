@@ -83,7 +83,7 @@ test('registered alerts reject unreadable storage without rendering no-alert suc
     }
     const text='\n## 2026-10-09 10:00:00 [owned_failure] 运行失败\nRECOVERED_FAILURE\n';
     await writeFile(file,text);
-    const value=await alerts.execute({});
+    const value=await alerts.execute({includeTests:true});
     assert.equal(value.text,text.trim());
     assert.deepEqual(alerts.output.render({},value),[{type:'text',text:text.trim()}]);
     assert.equal(await readFile(file,'utf8'),text);

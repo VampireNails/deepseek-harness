@@ -37,10 +37,11 @@ test("guarded 失败路径：runs.json 记 fail + 告警文件有记录 + 抛异
     );
     const runs = JSON.parse(readFileSync(join(dir, "job_runs.json"), "utf8"));
     assert.equal(runs["fail_job"].status, "fail");
-    assert.ok(runs["fail_job"].detail.includes("boom"));
+    assert.ok(runs["fail_job"].detail.includes("task failed"));
+    assert.ok(!runs["fail_job"].detail.includes("boom"));
     const alerts = readFileSync(join(dir, "job_alerts.md"), "utf8");
     assert.ok(alerts.includes("fail_job"));
-    assert.ok(alerts.includes("boom"));
+    assert.ok(alerts.includes("task failed"));
   } finally {
     cleanup();
   }

@@ -3,6 +3,7 @@ import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {tmpdir,homedir} from 'node:os';
 import {spawn} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
 import {runTask,migrateCrontab,resolveTask} from './runner.mjs';
 import {runUpkeep} from './upkeep.mjs';
 import {createUpkeepStateStore} from './upkeep-state.mjs';
@@ -23,11 +24,13 @@ async function main(){
   const home=process.env.DSH_HOME??join(homedir(),'.dsh');
   const root=join(home,'intel-joblog');
   await mkdir(root,{recursive:true});
-  const log=new JobLog(root);
+  const log=new JobLog(root,{scope:process.env.INTEL_JOBLOG_SCOPE??'production'});
+  let identity={runId:randomUUID(),startedAt:new Date().toISOString()};
   async function recordFailure(error){
     const code=typeof error.code==='string'&&/^[A-Z0-9_]+$/.test(error.code)?error.code:'TASK_RUNNER_FAILED';
     await appendFile(join(root,'route-runs.jsonl'),JSON.stringify({time:new Date().toISOString(),kind:'error',taskId:id,code})+'\n');
-    log._recordRun(id,'fail',code);log._alert(id,code);
+    if(code.startsWith('JOBLOG_'))return; // Storage failure cannot reclassify a completed task.
+    log._recordRun(id,'fail',code,identity);log._alert(id,code+'; runId='+identity.runId);
   }
   const lockDirectory=join(root,'runner-locks');
   await mkdir(lockDirectory,{recursive:true,mode:0o700});
@@ -77,6 +80,7 @@ async function main(){
     };
     const record=async entry=>{
       const row={time:new Date().toISOString(),taskId:id,...entry};
+      if(entry.kind==='start')identity={runId:entry.runId,startedAt:row.time};
       await appendFile(join(root,'route-runs.jsonl'),JSON.stringify(row)+'\n');
       // provider/model identify the requested patch; actual request identity comes from tokenlog.
       process.stderr.write(JSON.stringify(row)+'\n');
@@ -97,8 +101,8 @@ async function main(){
       });
       quiet=['upkeep-bootstrap','upkeep-no-signal','upkeep-backoff','upkeep-clock-rollback'].includes(outcome.kind);
     }else exit=await runTask(config,id,rest.join(' '),execute,record,common);
-    if(!quiet)log._recordRun(id,exit===0?'ok':'fail',`exit ${exit}; route-runs.jsonl`);
-    if(exit!==0)log._alert(id,`task exit ${exit}; inspect route-runs.jsonl`);
+    if(!quiet)log._recordRun(id,exit===0?'ok':'fail',`exit ${exit}; runId=${identity.runId}; route-runs.jsonl`,identity);
+    if(exit!==0)log._alert(id,`task exit ${exit}; runId=${identity.runId}; inspect route-runs.jsonl`);
     process.exitCode=exit;
   }catch(error){
     await recordFailure(error);

@@ -8,6 +8,8 @@ ChatGPT cron 路由显式为每个一次性进程使用 SSE。否则，已安装
 
 `route-runs.jsonl` 记录请求的提供方与模型、模板 ID、进程退出码和 fallback 原因，不记录提示词或凭据。请求的身份不能证明实际使用的模型：须将成功请求与 tokenlog 关联核对。重试非零退出的任务可能重复产生副作用，因此默认路由禁用重试。仅对经过审查的只读任务启用 `retrySafe`。超时会终止进程组；退出失败仍可能表示已经产生部分副作用，需要检查。
 
+JobLog 完成记录携带与路由审计相同的 run ID 和开始时间，以及最终退出码和审计文件引用。`INTEL_JOBLOG_SCOPE=test` 显式隔离受控测试；缺省选择生产，其他值拒绝。JobLog 持久化错误以非零退出并按安全代码审计，不为已完成任务另造一条失败运行。保留策略、部分持久化、旧快照和备份要求见 [JobLog](../../intel-plugins/dsh-intelligence-joblog/README.zh.md)。
+
 九个生产任务配置省略 `fallback`：主路由失败即为最终失败，审计保留请求路由及退出码。明确通过只读审计的自定义任务可以同时配置 `fallback` 与 `retrySafe: true`；降级尝试记录自身 provider、model 和 transport。仅配置 `fallback` 不授权重试。
 
 配置 `visibleOutput: "required"` 的任务必须留下本次运行的 Feed 文章或 Artifact 版本。运行器的最终 dreaming 提示词要求 Feed 发布，保留模板禁止 `artifact_save` 的要求；其他模板保留长报告可选提示。进程退出零但没有可读产出时改记退出码 65，fallback 也适用，并且不会因此重试。运行器按配置时区给发布工具注入任务 ID、唯一运行 ID 和日期。`references` 仅接受已有记忆的整数 ID，写入前核验。手动发布不虚构运行身份。upkeep 没有新信号时可安静成功，无需发布。

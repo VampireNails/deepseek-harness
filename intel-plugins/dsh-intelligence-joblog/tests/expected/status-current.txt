@@ -1,2 +1,1 @@
-- test_named_custom: fail（2026-10-05 10:01:00）来源：生产 CUSTOM_PRIMARY_EXIT_124
-- unknown_custom: fail（2026-10-04 10:00:00）来源：未标注 HISTORICAL_CUSTOM_FAILURE
+- test_named_custom: fail（2026-10-05 10:01:00）来源：生产 旧快照 CUSTOM_PRIMARY_EXIT_124

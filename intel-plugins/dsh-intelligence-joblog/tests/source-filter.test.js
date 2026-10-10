@@ -12,9 +12,9 @@ test('registered status excludes explicitly marked tests, retains custom failure
       unknown_custom:{last:'2026-10-04 10:00:00',status:'fail',detail:'HISTORICAL_CUSTOM_FAILURE'},
     });await writeFile(file,raw);
     const tool=tools.get('joblog_status'),value=await tool.execute({});
-    assert.doesNotMatch(value.text,/fixture_failure|ISOLATED_TEST/);assert.match(value.text,/test_named_custom: fail/);assert.match(value.text,/CUSTOM_PRIMARY_EXIT_124/);assert.match(value.text,/unknown_custom: fail/);
+    assert.doesNotMatch(value.text,/fixture_failure|ISOLATED_TEST|unknown_custom/);assert.match(value.text,/test_named_custom: fail/);assert.match(value.text,/CUSTOM_PRIMARY_EXIT_124/);
     assert.deepEqual(tool.output.render({},value),[{type:'text',text:(await readFile(new URL('./expected/status-current.txt',import.meta.url),'utf8')).trimEnd()}]);
-    const all=await tool.execute({includeTests:true});assert.match(all.text,/fixture_failure: fail/);assert.match(all.text,/ISOLATED_TEST/);
+    const all=await tool.execute({includeTests:true});assert.match(all.text,/fixture_failure: fail/);assert.match(all.text,/ISOLATED_TEST/);assert.match(all.text,/unknown_custom: fail/);
     assert.equal(await readFile(file,'utf8'),raw);
   }finally{for(const dispose of disposers.reverse())dispose();if(previous===undefined)delete process.env.DSH_HOME;else process.env.DSH_HOME=previous;await rm(home,{recursive:true,force:true});}
 });
