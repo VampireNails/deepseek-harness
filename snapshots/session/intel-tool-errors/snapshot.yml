@@ -1,0 +1,8 @@
+version: 1
+scenario: intel-tool-errors
+profile: headless
+composition: intel-tool-errors
+recording: authored
+header:
+  class: intel-errors
+  pin: true

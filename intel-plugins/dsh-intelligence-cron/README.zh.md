@@ -25,3 +25,5 @@ dispatch 重武装失败向 [系统事件](../dsh-intelligence-sysevents/README.
 ## 移除与验证
 
 卸载前从任务所属会话调用 cron_delete，移除未触发的调度。从其他会话删除任务仅移除 wrapper 元数据，已持久化的提醒仍然有效。仅卸载会移除重新安排的监听器，但已持久化的单次提醒仍可能由 DSH Schedule 触发。运行 node --test tests/parse.test.js tests/scheduler.test.js；tests/integration.sh 使用隔离 profile、真实计时器和模拟 LLM 另行验证。
+
+工具失败使用不同的 CRON_* 错误码区分无效输入、未找到或歧义引用、容量和存储问题。执行器失败正文保留安全 errno 与已证实的 JSON committed 状态。容量拒绝同时显示观察到的已用数量和有效上限。部分提交后先读取与对账，不重复 create/delete。成功保留 {ok:true,text}。

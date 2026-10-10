@@ -1,6 +1,7 @@
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { GoalsStore, goalsDir } from "./src/goals.js";
+import { intelError, toolError } from '../shared/tool-error.js';
 
 export const name = "dsh-intelligence-goals";
 export const inject = ["agents", "tools"];
@@ -8,7 +9,6 @@ export const inject = ["agents", "tools"];
 export const Config = z.object({}).default({});
 
 const textBlock = (text) => [{ type: "text", text }];
-const storageFields=e=>e?.code?.startsWith('GOALS_')?{code:e.code,committed:e.committed,...(e.errno?{errno:e.errno}:{})}:{};
 
 function fmtGoal(g) {
   const lines = [`[${g.id}] ${g.title} (${g.status})`, `  创建：${g.created}`];
@@ -38,7 +38,7 @@ export function apply(ctx, config) {
             try{
               const id = goals.create(args.title, args.desc || "");
               return { text: `已创建目标 ${id}：${args.title.trim()}` };
-            }catch(e){if(!e.code?.startsWith('GOALS_'))throw e;return {text:e.message,...storageFields(e)};}
+            }catch(e){throw toolError(e,'GOALS_OPERATION_FAILED');}
           },
         })
       );
@@ -56,7 +56,7 @@ export function apply(ctx, config) {
               const g = goals.logProgress(args.ref, args.text);
               return { text: `已记进展到 ${g.title}[${g.id}]` };
             } catch (e) {
-              return { text: e.message,...storageFields(e) };
+              throw toolError(e,'GOALS_OPERATION_FAILED');
             }
           },
         })
@@ -74,7 +74,7 @@ export function apply(ctx, config) {
               const g = goals.close(args.ref);
               return { text: `已关闭目标 ${g.title}[${g.id}]` };
             } catch (e) {
-              return { text: e.message,...storageFields(e) };
+              throw toolError(e,'GOALS_OPERATION_FAILED');
             }
           },
         })
@@ -93,12 +93,13 @@ export function apply(ctx, config) {
           execute: async (args) => {
             const status = (args.status || "all").trim().toLowerCase();
             if (!["active", "closed", "all"].includes(status)) {
-              return { text: `status 只能是 active/closed/all，收到：${args.status}` };
+              throw intelError('GOALS_INVALID_STATUS');
             }
-            const gs = goals.listGoals(status);
+            let gs;
+            try{gs=goals.listGoals(status);}catch(e){throw toolError(e,'GOALS_OPERATION_FAILED');}
             const text=gs.length?gs.map(fmtGoal).join("\n\n"):`暂无${status === "all" ? "" : status}目标`;
             // JSON remains readable even while the derived Markdown cannot be repaired.
-            try{goals.rebuildMarkdown();}catch(e){return {text:text+`\nMarkdown 未同步：${e.message}`,...storageFields(Object.assign(e,{committed:true}))};}
+            try{goals.rebuildMarkdown();}catch(e){throw toolError(Object.assign(e,{committed:true}),'GOALS_OPERATION_FAILED',{availableText:text});}
             return { text };
           },
         })

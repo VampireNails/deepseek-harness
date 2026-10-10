@@ -59,6 +59,8 @@ Reading logs or checking credentials does not change model requests already in f
 The report counts retained logs, not a billing ledger. Any unsupported, missing, unreadable or corrupt retained file fails the scan; the reader does not return partial success. Input/output retain their disjoint uncached-input/output meaning. Cache-read/cache-write tokens and the number of records containing each field are separate; missing cache fields do not mean zero. Usage-record counts do not establish HTTP requests or attempts. Token records do not establish subscription entitlement, cache prices or monetary charges, so the report provides no cost estimate. Other session generations and separately stored child logs are outside this reader's scope.
 
 <a id="dev-note"></a>
+Tool failures preserve the worker's exact supported TOKENLOG_* protocol codes in error.info.code and safe rendered content. Unknown worker exceptions become TOKENLOG_READ_FAILED. Cancellation and timeout remain failures; successful totals, task classification and unavailable billing semantics are unchanged.
+
 ## Dev Note
 
 <details>

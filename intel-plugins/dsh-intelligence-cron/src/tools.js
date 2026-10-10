@@ -1,13 +1,13 @@
 // tools.js —— cron_create / cron_list / cron_delete（工具名沿用 Python 版 custom_cron）
 import { defineTool } from "@deepseek-ai/dsh-tools";
+import { intelError, toolError } from '../../shared/tool-error.js';
 
 const textBlock = (text) => [{ type: "text", text }];
 const jsonOutput = (render) => ({ schema: { type: "json" }, render });
-const storageFields=err=>err?.code?.startsWith('CRON_')?{code:err.code,committed:err.committed,...(err.errno?{errno:err.errno}:{})}:{};
 
 function agentOf(exec) {
   const agent = exec?.agent;
-  if (!agent || !agent.session) throw new Error("cron 工具需要在会话内调用");
+  if (!agent || !agent.session) throw intelError('CRON_SESSION_REQUIRED');
   return agent;
 }
 
@@ -31,7 +31,7 @@ export function cronCreateTool(scheduler) {
         const text = await scheduler.create(agentOf(exec), args.name, args.prompt, args.schedule);
         return { ok: true, text };
       } catch (err) {
-        return { ok: false, text: `创建失败：${err?.message ?? err}`,...storageFields(err) };
+        throw toolError(err,'CRON_OPERATION_FAILED');
       }
     },
   });
@@ -48,7 +48,7 @@ export function cronListTool(scheduler) {
         const text = await scheduler.list(agentOf(exec));
         return { ok: true, text };
       } catch (err) {
-        return { ok: false, text: `查询失败：${err?.message ?? err}`,...storageFields(err) };
+        throw toolError(err,'CRON_OPERATION_FAILED');
       }
     },
   });
@@ -69,7 +69,7 @@ export function cronDeleteTool(scheduler) {
         const text = await scheduler.remove(agentOf(exec), args.ref);
         return { ok: true, text };
       } catch (err) {
-        return { ok: false, text: `删除失败：${err?.message ?? err}`,...storageFields(err) };
+        throw toolError(err,'CRON_OPERATION_FAILED');
       }
     },
   });

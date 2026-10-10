@@ -67,3 +67,5 @@ kind: "package-bundle"
 无。
 
 </details>
+
+工具失败将 worker 精确匹配的受支持 TOKENLOG_* 协议错误码保留到 error.info.code 与安全渲染正文。未知 worker 异常转换为 TOKENLOG_READ_FAILED。取消和超时仍为失败；成功总量、任务分类及费用不可用语义保持不变。

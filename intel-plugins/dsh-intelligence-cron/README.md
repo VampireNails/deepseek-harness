@@ -25,3 +25,5 @@ Dispatch re-arming failures emit `cron.rearm_failed` to [system events](../dsh-i
 ## Removal and verification
 
 Call cron_delete from the owning session before unloading to remove an outstanding schedule. Deleting a job from another session removes only wrapper metadata and leaves its persisted reminder active. Unloading alone removes re-arming listeners but an already persisted one-shot can still fire through DSH Schedule. Run node --test tests/parse.test.js tests/scheduler.test.js; tests/integration.sh separately checks an isolated profile and a real timer with a mock LLM.
+
+Tool failures use distinct CRON_* codes for invalid input, missing or ambiguous references, capacity, and storage. The failed executor result retains safe errno and proven JSON committed state in its content. Capacity rejection also reports the observed used count and effective limit. Read and reconcile after a partial commit instead of repeating create/delete. Success retains {ok:true,text}.

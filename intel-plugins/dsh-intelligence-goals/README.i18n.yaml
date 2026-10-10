@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write intel-plugins/dsh-intelligence-goals/README.md
-README.md: f351ce809a91b4205f2f30653de66d241a0ef3b7
-README.zh.md: 075559a44cba91618d430f18bcd90d16b2820880
+README.md: 35fc867965091d4ac1ecbeb0bd2e91a2fdd5ee39
+README.zh.md: a1c8b2d87234ea3f9b32a32f4562987ff9437cf2

@@ -9,3 +9,5 @@ GoalsStore 管理 `$DSH_HOME/intel-goals/goals.json`，内容为 `{goals, seq}`�
 load、findGoal 和 listGoals 只读权威 JSON，不依赖 Markdown 或写锁。rebuildMarkdown 只修复投影。goal_list 尝试修复，Markdown 或 writer 锁仍不可用时仍展示 JSON 记录并附警告。投影修复和列表都不重放业务变更。两个文件不是事务；原子 rename 和 writer 排他不承诺断电 exactly-once 效果，也不保护忽略锁的旧 writer。既有目标时间戳沿用进程本地时区。
 
 在本插件目录运行 `node --test tests/goals.test.js`。cron 拥有者测试还覆盖共享持久化故障、独立进程，以及隔离的受支持 DSH profile；使用真实 registry/executor，不发送 provider 请求。
+
+所有失败的目标操作均返回 isError=true 与稳定 GOALS_* 错误码。goal_list 在 JSON 可读而 Markdown 投影不可用时明确为部分可用：失败结果仍包含可读目标及 Markdown 未同步提示。修复投影不会重复进展或创建。正常成功输出保留 {text}。

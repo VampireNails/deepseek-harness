@@ -23,6 +23,7 @@
 
 import { MAX_JOBS, parseSchedule, describeSchedule } from "./parse.js";
 import {persistenceError} from '../../shared/json-store.js';
+import {intelError} from '../../shared/tool-error.js';
 import { nextOccurrence, slotDate, toInstant, formatLocal } from "./timecalc.js";
 import {emitEvent} from '../../dsh-intelligence-sysevents/src/store.js';
 import {createHash} from 'node:crypto';
@@ -55,7 +56,7 @@ export function foldScheduleEvents(events) {
 
 function checkPrompt(prompt) {
   const p = (prompt || "").trim();
-  if (!p) throw new Error("任务内容（prompt）不能为空，要告诉我到时间具体做什么。");
+  if (!p) throw intelError('CRON_INVALID_PROMPT');
   return p;
 }
 
@@ -72,10 +73,7 @@ export function buildRecord(kind, id, prompt, opts, nowMs) {
     const s = opts.seconds;
     if (!Number.isSafeInteger(s)) throw new Error("every_seconds 必须为整数");
     if (s < MIN_EVERY_SECONDS) {
-      throw new Error(
-        `间隔太短：dsh 最小支持每 ${MIN_EVERY_SECONDS / 60} 分钟一次，` +
-        `「${describeSchedule({ kind: "interval", seconds: s })}」换算后不足 300 秒，请改大间隔`
-      );
+      throw intelError('CRON_INVALID_INTERVAL');
     }
     return { id, kind: "every", prompt: p, everySeconds: s, scheduledAt: toInstant(nowMs + s * 1000) };
   }
@@ -131,13 +129,14 @@ export class CronScheduler {
   async create(agent, name, prompt, scheduleText) {
     name = (name || "").trim();
     prompt = (prompt || "").trim();
-    if (!name) throw new Error("任务名称不能为空。");
-    const parsed = parseSchedule(scheduleText); // 抛中文
+    if (!name) throw intelError('CRON_INVALID_NAME');
+    let parsed;
+    try{parsed=parseSchedule(scheduleText);}catch(error){throw intelError('CRON_INVALID_SCHEDULE');}
     checkPrompt(prompt);
     return this._queue(agent, async () => {
       const jobs = this.store.load();
       if (jobs.length >= MAX_JOBS) {
-        throw new Error(`定时任务已达上限（${MAX_JOBS} 个）；已用 ${jobs.length}/${MAX_JOBS}，删掉不用的再建。`);
+        const error=intelError('CRON_CAPACITY_REACHED');error.used=jobs.length;error.message+=` 已用 ${jobs.length}/${MAX_JOBS}`;throw error;
       }
       const id = this.store.nextId(foldScheduleEvents(agent.session.ownEvents()).seen);
       const now = Date.now();
@@ -217,15 +216,15 @@ export class CronScheduler {
 
   async remove(agent, ref) {
     ref = (ref || "").trim();
-    if (!ref) throw new Error("请告诉我删哪个任务（id 如 c1，或名称关键词）。");
+    if (!ref) throw intelError('CRON_INVALID_REF');
     return this._queue(agent, async () => {
       const jobs = this.store.load();
       let hit = jobs.filter((j) => j.id === ref);
       if (hit.length === 0) {
         const cands = jobs.filter((j) => j.name.includes(ref));
-        if (cands.length === 0) throw new Error(`没找到任务：${ref}`);
+        if (cands.length === 0) throw intelError('CRON_NOT_FOUND');
         if (cands.length > 1) {
-          throw new Error(`名称命中多个：${cands.map((j) => `【${j.id}】${j.name}`).join("、")}，请用 id 删除。`);
+          throw intelError('CRON_AMBIGUOUS_REF');
         }
         hit = cands;
       }

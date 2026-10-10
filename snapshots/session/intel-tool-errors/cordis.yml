@@ -1,0 +1,9 @@
+- insert:
+    - id: intelligence-memory
+      name: ../../../intel-plugins/dsh-intelligence-memory/index.js
+    - id: intelligence-cron
+      name: ../../../intel-plugins/dsh-intelligence-cron/index.js
+    - id: intelligence-goals
+      name: ../../../intel-plugins/dsh-intelligence-goals/index.js
+    - id: intelligence-sysevents
+      name: ../../../intel-plugins/dsh-intelligence-sysevents/index.js

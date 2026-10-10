@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import { toolRowModel } from '../../packages/client/ui-tool/src/client/tool/models/tool-call-model.ts'
 import { releasedV0SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v0-to-v1'
 import type { SessionFormatEvent, SessionFormatMigrationContext } from '@deepseek-ai/dsh-session-format'
 import { assertWorkspaceOutsideTemp, outsideTempWorkspaceParent } from '../../scripts/snapshot-workspace-parent.ts'
@@ -1188,6 +1189,30 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (scenario.name === 'intel-tool-errors') {
+              const events = parseSessionLog(actualLogs[0]!.content)
+              const results = events.filter(event => event.type === 'tool/result')
+              expect(results.map(event => event.data.message.isError)).toEqual([true, true, true, false, true])
+              expect(results.map(event => event.data.error?.code)).toEqual([
+                'CRON_INVALID_SCHEDULE', 'GOALS_INVALID_STATUS', 'MEMORY_INVALID_TEXT', undefined, 'SYSEVENTS_INVALID_ENTRY',
+              ])
+              const views = results.map(event => {
+                const call = events.find(candidate => candidate.type === 'tool/call'
+                  && candidate.data.callId === event.data.message.source.callId)
+                if (call?.type !== 'tool/call') throw new Error('Missing intel tool call')
+                return toolRowModel(call.data.name, {
+                  kind: 'tool-result', seq: event.seq, time: event.time,
+                  callId: call.data.callId, call: { name: call.data.name, argsRaw: call.data.arguments },
+                  callTime: call.time, content: event.data.message.content,
+                  isError: event.data.message.isError === true, subCalls: [],
+                  ...event.data.error === undefined ? {} : { error: event.data.error },
+                })
+              })
+              expect(views.map(view => view.state)).toEqual(['error', 'error', 'error', 'ok', 'error'])
+              expect(views.map(view => view.output)).toEqual(results.map(event => event.data.message.content
+                .flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')))
+              expect(results[3]!.data.meta).toEqual({ memoryWrite: { ok: true, id: 1 } })
+            }
             if (scenario.name === 'memory-automatic-long-query') {
               const events = parseSessionLog(actualLogs[0]!.content)
               const injections = events.filter(event => event.type === 'user/message'

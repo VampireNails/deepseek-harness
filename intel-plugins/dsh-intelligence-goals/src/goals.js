@@ -2,6 +2,7 @@ import { readFileSync,mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import {readJson,atomicText,writerSync,persistenceError} from '../../shared/json-store.js';
+import {intelError} from '../../shared/tool-error.js';
 
 function validData(data){
  if(!data||typeof data!=='object'||Array.isArray(data)||!Array.isArray(data.goals)||!Number.isSafeInteger(data.seq)||data.seq<0)return false;
@@ -86,7 +87,7 @@ export class GoalsStore {
 
   create(title, desc = "") {
     title = (title || "").trim();
-    if (!title) throw new Error("goal_create: title 不能为空");
+    if (!title) throw intelError('GOALS_INVALID_TITLE');
     return writerSync(this.dir,'GOALS',()=>{
     const data = this.load();
     if(!Number.isSafeInteger(data.seq+1))throw persistenceError('GOALS','ID_EXHAUSTED');
@@ -112,7 +113,7 @@ export class GoalsStore {
 
   _find(data, ref) {
     const r = (ref || "").trim().toLowerCase();
-    if (!r) return { error: "引用为空。请用 goal_list 查看现有目标后重试。" };
+    if (!r) return { error: "引用为空。请用 goal_list 查看现有目标后重试。",code:'GOALS_INVALID_REF' };
     for (const g of data.goals) {
       if (g.id.toLowerCase() === r) return { goal: g };
     }
@@ -120,12 +121,13 @@ export class GoalsStore {
     if (hits.length === 1) return { goal: hits[0] };
     if (hits.length > 1) {
       return {
+        code:'GOALS_AMBIGUOUS_REF',
         error:
           `「${ref}」匹配到多个目标，请用 id 精确指定：` +
           hits.map((g) => `${g.title}[${g.id}]`).join("、"),
       };
     }
-    return { error: `找不到引用为「${ref}」的目标。请用 goal_list 查看现有目标后重试。` };
+    return { error: `找不到引用为「${ref}」的目标。请用 goal_list 查看现有目标后重试。`,code:'GOALS_NOT_FOUND' };
   }
 
   // status: "active" | "closed" | "all"（默认 all）
@@ -138,11 +140,11 @@ export class GoalsStore {
 
   logProgress(ref, text) {
     text = (text || "").trim();
-    if (!text) throw new Error("goal_progress: text 不能为空");
+    if (!text) throw intelError('GOALS_INVALID_PROGRESS');
     return writerSync(this.dir,'GOALS',()=>{
     const data = this.load();
-    const { goal, error } = this._find(data, ref);
-    if (error) throw new Error(error);
+    const { goal, error, code } = this._find(data, ref);
+    if (error) throw intelError(code);
     goal.progress.push({ ts: ts(), text });
     this._save(data);
     return goal;
@@ -152,9 +154,9 @@ export class GoalsStore {
   close(ref) {
     return writerSync(this.dir,'GOALS',()=>{
     const data = this.load();
-    const { goal, error } = this._find(data, ref);
-    if (error) throw new Error(error);
-    if (goal.status !== "active") throw new Error(`${goal.title}[${goal.id}] 已经关闭`);
+    const { goal, error, code } = this._find(data, ref);
+    if (error) throw intelError(code);
+    if (goal.status !== "active") throw intelError('GOALS_ALREADY_CLOSED');
     goal.status = "closed";
     goal.closed = ts();
     this._save(data);

@@ -9,6 +9,7 @@ import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { defaultSessionsRoot, formatSummary } from "./src/aggregator.js";
 import { aggregateInWorker } from "./src/runner.js";
+import {tokenlogToolError} from '../shared/tool-error.js';
 
 export const name = "dsh-intelligence-tokenlog";
 export const inject = ["agents", "tools"];
@@ -50,7 +51,7 @@ export function apply(ctx, config) {
                 { sessionsRoot: retainedRoot, signal: exec.signal, timeoutMs: config.timeoutMs, decompressTimeoutMs: config.decompressTimeoutMs, automationIndex: config.automationIndex });
               return { text: formatSummary(agg, days) };
             } catch (e) {
-              throw new Error(e.message);
+              throw tokenlogToolError(e);
             }
           },
         })

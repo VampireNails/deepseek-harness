@@ -6,11 +6,14 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {withStoreWriter} from './persistence.js';
 
+/** Owner-created JSON publication/read failure; committed refers only to authoritative JSON. */
+export class JsonStoreError extends Error {}
+
 export function persistenceError(prefix,kind,error,committed=false){
  const code=`${prefix}_${kind}`;
  const reason=typeof error?.errno==='string'?error.errno:error?.code;
  const errno=typeof reason==='string'&&/^[A-Z0-9_]{1,80}$/.test(reason)?reason:undefined;
- return Object.assign(new Error(`${code}${committed?'：JSON 已提交；请读取确认，不要重复变更。':''}`),{code,committed,...(errno?{errno}:{})});
+ return Object.assign(new JsonStoreError(`${code}${committed?'：JSON 已提交；请读取确认，不要重复变更。':''}`),{code,committed,...(errno?{errno}:{})});
 }
 
 export function readJson(file,empty,validate,prefix){

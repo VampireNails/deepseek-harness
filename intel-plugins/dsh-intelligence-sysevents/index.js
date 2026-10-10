@@ -10,6 +10,7 @@
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { emitEvent, listEvents, SEVERITIES } from "./src/store.js";
+import {toolError} from '../shared/tool-error.js';
 
 export const name = "dsh-intelligence-sysevents";
 export const inject = ["agents", "tools"];
@@ -41,7 +42,7 @@ export function apply(ctx, config) {
               const ev = emitEvent(args);
               return { text: `事件已记录：[${ev.severity}] ${ev.type} ${ev.title}（id ${ev.id.slice(0, 8)}）` };
             } catch (e) {
-              return { text: `发射失败：${e.code??'SYSEVENTS_WRITE_FAILED'}` };
+              throw toolError(e,'SYSEVENTS_WRITE_FAILED');
             }
           },
         })
@@ -56,7 +57,8 @@ export function apply(ctx, config) {
           },
           output: { schema: { type: "json" }, render: (args, value) => textBlock(value.text) },
           execute: async (args) => {
-            const items = listEvents({ since: args.since || null, limit: args.limit || 50 });
+            let items;
+            try{items=listEvents({ since: args.since || null, limit: args.limit || 50 });}catch(e){throw toolError(e,'SYSEVENTS_READ_FAILED');}
             return { text: JSON.stringify(items, null, 1) };
           },
         })

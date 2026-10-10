@@ -1,5 +1,6 @@
 // tools.js — memory_write / memory_read / memory_search 三个模型工具
 import { defineTool } from "@deepseek-ai/dsh-tools";
+import {intelError,toolError} from '../../shared/tool-error.js';
 
 function jsonOutput(render) {
   return {
@@ -33,11 +34,12 @@ export function memoryWriteTool(retriever) {
       presentationMeta: (args, value) => ({ memoryWrite: value.ok ? { ok: true, id: value.id } : { ok: false } }),
     },
     execute: async (args) => {
+      if(!args.text.trim())throw intelError('MEMORY_INVALID_TEXT');
       try {
         const { id } = retriever.add({ text: args.text, kind: args.kind ?? "note" });
         return { ok: true, id, text: args.text.trim(), kind: args.kind ?? "note" };
       } catch (err) {
-        return { ok: false, error: String(err?.message ?? err) };
+        throw toolError(err,'MEMORY_WRITE_FAILED');
       }
     },
   });
@@ -54,9 +56,13 @@ export function memoryReadTool(retriever) {
       textBlock(value.found ? `#${value.id} [${value.kind}] ${value.text}` : `未找到 id=${args.id} 的记忆`)
     ),
     execute: async (args) => {
-      const row = retriever.get(args.id);
-      if (!row) return { found: false };
-      return { found: true, id: row.id, text: row.text, kind: row.kind, createdAt: row.created_at };
+      try {
+        const row = retriever.get(args.id);
+        if (!row) return { found: false };
+        return { found: true, id: row.id, text: row.text, kind: row.kind, createdAt: row.created_at };
+      } catch (err) {
+        throw toolError(err, 'MEMORY_READ_FAILED');
+      }
     },
   });
 }
@@ -78,8 +84,12 @@ export function memorySearchTool(retriever) {
       )
     ),
     execute: async (args) => {
-      const results = retriever.search(args.query, args.limit ?? 5);
-      return { results };
+      try {
+        const results = retriever.search(args.query, args.limit ?? 5);
+        return { results };
+      } catch (err) {
+        throw toolError(err, 'MEMORY_SEARCH_FAILED');
+      }
     },
   });
 }

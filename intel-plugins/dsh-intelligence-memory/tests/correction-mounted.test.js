@@ -43,7 +43,8 @@ test('mounted recall retains a late subject and reports bounded query rejection 
   const rejected = await ctx.tools.execute({callId:'recall-bounds-search',name:'memory_search',
     arguments:{query:overflow},signal:new AbortController().signal});
   assert.equal(rejected.isError, true);
-  assert.match(rejected.content[0].text, /maxQueryTerms=32/);
+  assert.equal(rejected.error.info.code, 'MEMORY_QUERY_TOO_LARGE');
+  assert.match(rejected.content[0].text, /MEMORY_QUERY_TOO_LARGE/);
   assert.equal((await recall('heliostat calibration handbook')).messages.length, 2);
 });
 
@@ -69,7 +70,8 @@ test('mounted recall and native search reject candidate byte overflow without pr
   assert.doesNotMatch(JSON.stringify(warnings[0].args), /opal|private-candidate-fixture/);
   const rejected = await execute('memory_search', { query: 'opal' });
   assert.equal(rejected.isError, true);
-  assert.match(rejected.content[0].text, /maxCandidateBytes=64/);
+  assert.equal(rejected.error.info.code, 'MEMORY_RECALL_TOO_LARGE');
+  assert.match(rejected.content[0].text, /MEMORY_RECALL_TOO_LARGE/);
   assert.doesNotMatch(rejected.content[0].text, /private-candidate-fixture/);
   const manager = ctx.get('memoryManagement');
   const big = manager.list().items.find(row => row.preview.includes('private-candidate-fixture'));
