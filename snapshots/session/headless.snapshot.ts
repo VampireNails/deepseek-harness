@@ -1244,11 +1244,14 @@ describe('headless recorded-session snapshots', () => {
                 ['call_memory_latin', 'heliostat calibration handbook'],
                 ['call_memory_chinese', '青铜齿轮装配规范'],
                 ['call_memory_unrelated', '没有找到相关记忆'],
+                ['call_memory_duplicate', '复用原记录，未新增版本或更新时间'],
               ]) {
                 const result = results.find(message => message.toolCallId === callId)
                 expect(result?.isError, callId).toBe(false)
                 expect(result?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(''), callId).toContain(text)
               }
+              const duplicate = results.find(message => message.toolCallId === 'call_memory_duplicate')
+              expect(duplicate?.content).toEqual([{ type: 'text', text: '已存在 #1：heliostat calibration handbook（复用原记录，未新增版本或更新时间）\n记忆容量：原文 2 条 / 54 UTF-8 字节；提示阈值：2 条 / 128 字节；已达到提示阈值（仍可写入）' }])
             }
             if (retainedToolInput !== undefined) {
               verifyToolResultWriterParity(primaryFixture, actualLogs[0]!.content)

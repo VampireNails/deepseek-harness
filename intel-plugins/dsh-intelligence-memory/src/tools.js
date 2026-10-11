@@ -11,11 +11,17 @@ function jsonOutput(render) {
 
 const textBlock = (text) => [{ type: "text", text }];
 
+function capacityText(value) {
+  if (!value.capacity) return '';
+  const c = value.capacity;
+  return `\n记忆容量：原文 ${c.rows} 条 / ${c.textBytes} UTF-8 字节；提示阈值：${c.warnMemoryRows || '关闭'} 条 / ${c.warnMemoryBytes || '关闭'} 字节${c.warning ? '；已达到提示阈值（仍可写入）' : ''}`;
+}
+
 export function memoryWriteTool(retriever) {
   return defineTool({
     name: "memory_write",
     description:
-      "记住一条长期记忆。当用户说\"记住…\"或明确要求记住偏好、事实、事件时调用。不要重复记录已存在的相同记忆。",
+      "记住一条长期记忆。当用户说\"记住…\"或明确要求记住偏好、事实、事件时调用。同会话、同类型且有效的完全相同正文复用原记录；不新增版本或更新时间。event 表示再次发生的事件，每次单独保留。来源未知时不自动合并。",
     parameters: {
       text: {
         type: "string",
@@ -29,15 +35,15 @@ export function memoryWriteTool(retriever) {
     },
     output: {
       ...jsonOutput((args, value) =>
-        textBlock(value.ok ? `已记住 #${value.id}：${value.text}` : `记录失败：${value.error}`)
+        textBlock((value.ok ? (value.deduplicated ? `已存在 #${value.id}：${value.text}（复用原记录，未新增版本或更新时间）` : `已记住 #${value.id}：${value.text}`) : `记录失败：${value.error}`) + capacityText(value))
       ),
       presentationMeta: (args, value) => ({ memoryWrite: value.ok ? { ok: true, id: value.id } : { ok: false } }),
     },
-    execute: async (args) => {
+    execute: async (args, exec) => {
       if(!args.text.trim())throw intelError('MEMORY_INVALID_TEXT');
       try {
-        const { id } = retriever.add({ text: args.text, kind: args.kind ?? "note" });
-        return { ok: true, id, text: args.text.trim(), kind: args.kind ?? "note" };
+        const { id, capacity, deduplicated } = retriever.add({ text: args.text, kind: args.kind ?? "note", sessionId: exec?.agent?.session.id ?? null });
+        return { ok: true, id, text: args.text.trim(), kind: args.kind ?? "note", ...(deduplicated ? { deduplicated: true } : {}), ...(capacity ? { capacity } : {}) };
       } catch (err) {
         throw toolError(err,'MEMORY_WRITE_FAILED');
       }
@@ -81,12 +87,13 @@ export function memorySearchTool(retriever) {
         value.results.length === 0
           ? "没有找到相关记忆"
           : value.results.map((r) => `#${r.id} [${r.kind}] ${r.text}`).join("\n")
-      )
+      ).map(block => ({ ...block, text: block.text + capacityText(value) }))
     ),
     execute: async (args) => {
       try {
         const results = retriever.search(args.query, args.limit ?? 5);
-        return { results };
+        const capacity = retriever.capacity();
+        return { results, ...(capacity ? { capacity } : {}) };
       } catch (err) {
         throw toolError(err, 'MEMORY_SEARCH_FAILED');
       }

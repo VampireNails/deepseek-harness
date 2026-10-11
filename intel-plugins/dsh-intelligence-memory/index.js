@@ -24,6 +24,8 @@ export const Config = z.object({
   dataDir: z.string().default(""),
   recallLimit: z.number().default(3),
   minQueryChars: z.number().default(2),
+  warnMemoryRows: z.number().min(0).max(Number.MAX_SAFE_INTEGER).step(1).default(0),
+  warnMemoryBytes: z.number().min(0).max(Number.MAX_SAFE_INTEGER).step(1).default(0),
   maxQueryChars: z.number().min(1).max(Number.MAX_SAFE_INTEGER).step(1).default(DEFAULT_QUERY_LIMITS.maxQueryChars),
   maxQueryTerms: z.number().min(1).max(Number.MAX_SAFE_INTEGER).step(1).default(DEFAULT_QUERY_LIMITS.maxQueryTerms),
   maxCandidates: z.number().min(1).max(Number.MAX_SAFE_INTEGER).step(1).default(DEFAULT_RANKING_LIMITS.maxCandidates),
@@ -73,6 +75,8 @@ export function apply(ctx, config) {
   const db = openStore(dataDir);
   ctx.effect(() => () => db.close());
   const retriever = new FtsRetriever(db, {
+    warnMemoryRows: cfg.warnMemoryRows ?? 0,
+    warnMemoryBytes: cfg.warnMemoryBytes ?? 0,
     maxQueryChars: cfg.maxQueryChars ?? DEFAULT_QUERY_LIMITS.maxQueryChars,
     maxQueryTerms: cfg.maxQueryTerms ?? DEFAULT_QUERY_LIMITS.maxQueryTerms,
     maxCandidates: cfg.maxCandidates ?? DEFAULT_RANKING_LIMITS.maxCandidates,

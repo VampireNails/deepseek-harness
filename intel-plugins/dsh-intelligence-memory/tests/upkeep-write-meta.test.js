@@ -11,9 +11,10 @@ test('native memory_write publishes the canonical successful ID for persisted ru
 
 test('failed native memory_write metadata cannot carry a fabricated ID or private error text',async()=>{
   const tool=memoryWriteTool({add(){throw Error('private database marker');}});
-  const value=await tool.execute({text:'anonymous fact'});
-  assert.equal(typeof tool.output.presentationMeta,'function');
-  const meta=tool.output.presentationMeta({},value);
-  assert.deepEqual(meta,{memoryWrite:{ok:false}});
-  assert.equal(JSON.stringify(meta).includes('private'),false);
+  await assert.rejects(tool.execute({text:'anonymous fact'}), error => {
+    assert.equal(error.code, 'MEMORY_WRITE_FAILED');
+    assert.equal(error.message.includes('private'), false);
+    return true;
+  });
+  assert.deepEqual(tool.output.presentationMeta({}, {ok:false}), {memoryWrite:{ok:false}});
 });

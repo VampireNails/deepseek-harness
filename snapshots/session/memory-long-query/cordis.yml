@@ -3,5 +3,7 @@
       name: ../../../intel-plugins/dsh-intelligence-memory/index.js
       config:
         dataDir: !!js dshHomePath('intel-memory')
+        warnMemoryRows: 2
+        warnMemoryBytes: 128
         recallLimit: 3
         minQueryChars: 2

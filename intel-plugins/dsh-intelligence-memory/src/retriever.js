@@ -62,6 +62,11 @@ function buildFtsQuery(query, limits, groups) {
 
 export class FtsRetriever {
   constructor(db, limits = {}) {
+    this.capacityLimits = { warnMemoryRows: 0, warnMemoryBytes: 0, ...limits };
+    for (const key of ['warnMemoryRows', 'warnMemoryBytes']) {
+      if (!Number.isSafeInteger(this.capacityLimits[key]) || this.capacityLimits[key] < 0)
+        throw new RangeError(`${key} must be a non-negative safe integer`);
+    }
     this.queryLimits = { ...DEFAULT_QUERY_LIMITS, ...limits };
     this.rankingLimits = { ...DEFAULT_RANKING_LIMITS, ...limits };
     this.rankingRatios = { ...DEFAULT_RANKING_RATIOS, ...limits };
@@ -80,6 +85,7 @@ export class FtsRetriever {
     this.db = db;
     this.validity=new MemoryValidity(db,spaceCjk);
     const active=this.validity.prepared?' AND NOT EXISTS (SELECT 1 FROM memory_state s WHERE s.memory_id=memories.id AND s.active=0)':'';
+    this.duplicateStmt = db.prepare('SELECT id FROM memories WHERE text=? AND kind=? AND session_id IS ?' + active + ' ORDER BY id LIMIT 1');
     this.insertStmt = db.prepare(
       "INSERT INTO memories (text, kind, created_at, session_id) VALUES (?, ?, ?, ?)"
     );
@@ -94,6 +100,7 @@ export class FtsRetriever {
     this.preferenceStmt = db.prepare(searchSql + 'AND ' + preferencePredicate(this.preferencePhrases.length) + ' ORDER BY bm25(memories_fts) LIMIT ?');
   }
 
+  /** Reuse active exact non-event originals from a known source session; unknown sources and events remain distinct. */
   add({ text, kind = "note", sessionId = null }) {
     if (typeof text !== "string" || text.trim().length === 0) {
       throw new Error("memory text must be a non-empty string");
@@ -103,11 +110,19 @@ export class FtsRetriever {
     const savepoint = "memory_add_" + randomUUID().replaceAll("-", "");
     this.db.exec("SAVEPOINT " + savepoint);
     try {
-      const r = this.insertStmt.run(clean, kind, Date.now(), sessionId);
-      const id = Number(r.lastInsertRowid);
-      this.ftsInsertStmt.run(id, spaceCjk(clean));
+      // Acquire SQLite's writer lock before the lookup, also inside caller transactions.
+      this.db.exec('UPDATE memories SET id=id WHERE 0');
+      const previous = typeof sessionId === 'string' && sessionId.length > 0 && kind !== 'event'
+        ? this.duplicateStmt.get(clean, kind, sessionId) : null;
+      let id = previous?.id;
+      if (id === undefined) {
+        const r = this.insertStmt.run(clean, kind, Date.now(), sessionId);
+        id = Number(r.lastInsertRowid);
+        this.ftsInsertStmt.run(id, spaceCjk(clean));
+      }
+      const capacity = this.capacity();
       this.db.exec("RELEASE " + savepoint);
-      return { id };
+      return { id, ...(previous ? { deduplicated: true } : {}), ...(capacity ? { capacity } : {}) };
     } catch (error) {
       try { this.db.exec("ROLLBACK TO " + savepoint + "; RELEASE " + savepoint); }
       catch (rollbackError) { throw new AggregateError([error, rollbackError], "memory write rollback failed"); }
@@ -118,6 +133,15 @@ export class FtsRetriever {
   get(id) {
     const row = this.getStmt.get(Number(id));
     return row ?? null;
+  }
+
+  /** Count retained originals and UTF8 text bytes; zero thresholds disable observation. */
+  capacity() {
+    const { warnMemoryRows, warnMemoryBytes } = this.capacityLimits;
+    if (!warnMemoryRows && !warnMemoryBytes) return undefined;
+    const row = this.db.prepare('SELECT count(*) AS rows, COALESCE(sum(length(CAST(text AS BLOB))),0) AS textBytes FROM memories').get();
+    return { ...row, warnMemoryRows, warnMemoryBytes,
+      warning: (warnMemoryRows > 0 && row.rows >= warnMemoryRows) || (warnMemoryBytes > 0 && row.textBytes >= warnMemoryBytes) };
   }
 
   /**

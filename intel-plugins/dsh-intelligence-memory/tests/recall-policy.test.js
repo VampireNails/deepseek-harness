@@ -1,0 +1,32 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {Context} from '@deepseek-ai/cordis';
+import ToolRuntime from '@deepseek-ai/dsh-tools';
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
+import Agents from '@deepseek-ai/dsh-agent';
+import SessionStore,{Session,SessionId} from '@deepseek-ai/dsh-session';
+import Projections from '@deepseek-ai/dsh-session-projection';
+import {scopeTarget} from '@deepseek-ai/dsh-scope';
+import * as Memory from '../index.js';
+
+for(const minQueryChars of [undefined,1,3])test(`recall policy uses last real user, excludes injected users and respects minQueryChars=${minQueryChars??'default'}`,async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'memory-policy-')),ctx=new Context();
+  t.after(async()=>{try{await ctx.fiber.dispose();}finally{rmSync(directory,{recursive:true});}});
+  await ctx.plugin(SessionStore);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime,{mode:'native'});await ctx.plugin(Agents);await ctx.plugin(Projections);
+  await ctx.plugin(Memory,{dataDir:directory,...minQueryChars===undefined?{}:{minQueryChars}});
+  await ctx.tools.execute({callId:'seed',name:'memory_write',arguments:{text:'用户偏好简洁中文'},signal:new AbortController().signal});
+  const session=Session.create(SessionId('policy-fixture'));session.append('turn/start',{turn:1});const agent={session};
+  const user=text=>({role:'user',content:[{type:'text',text}],source:{kind:'user'}});
+  const recall=messages=>ctx.waterfall(scopeTarget(agent,agent),'agent/pre-step',{agent,turn:1,step:1,messages,signal:new AbortController().signal},async()=>({kind:'allow',messages}));
+  assert.equal((await recall([user('简')])).messages.length,minQueryChars===1?2:1);
+  assert.equal((await recall([user('中文')])).messages.length,minQueryChars===3?1:2);
+  assert.equal((await recall([user('简洁中文')])).messages.length,2);
+  assert.equal((await recall([user('简洁中文'),user('unrelatedfixture')])).messages.length,2);
+  assert.equal((await recall([user('简洁中文'),{...user('unrelatedfixture'),source:{kind:'other-plugin'}}])).messages.length,3);
+  const searched=await ctx.tools.execute({callId:'single-character',name:'memory_search',arguments:{query:'简'},signal:new AbortController().signal});
+  assert.equal(searched.isError,false);assert.equal(searched.value.results.length,1);
+  assert.equal((await ctx.tools.execute({callId:'ascii-single',name:'memory_search',arguments:{query:'x'},signal:new AbortController().signal})).value.results.length,0);
+});

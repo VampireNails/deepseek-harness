@@ -21835,7 +21835,7 @@
         "packages/interaction/user-approval/src/index.ts#ApprovalPolicy"
       ],
       "sources": [
-        "packages/interaction/user-approval/src/index.ts:67"
+        "packages/interaction/user-approval/src/index.ts:68"
       ]
     },
     {
@@ -25174,7 +25174,7 @@
       },
       "names": [],
       "sources": [
-        "packages/interaction/user-approval/src/index.ts:40"
+        "packages/interaction/user-approval/src/index.ts:41"
       ]
     },
     {
