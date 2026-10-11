@@ -1,0 +1,11 @@
+version: 1
+scenario: approval-never
+profile: headless
+composition: approval-never
+recording: authored
+permission: danger-full-access
+header:
+  class: approval-never
+  pin: true
+workspace:
+  final: true

@@ -3882,6 +3882,12 @@ export interface Config {
    * prompting (the deterministic CI/unattended stance).
    */
   readonly policy?: ApprovalPolicy
+  /**
+   * Answerer wait in milliseconds; 0 disables the deadline. Expiry returns
+   * unavailable and withdraws the downstream question. Only the ask answerer
+   * phase is timed, independently of model and transport deadlines.
+   */
+  readonly waitTimeoutMs?: number
 }
 
 /**
@@ -3897,7 +3903,7 @@ export interface Config {
 export type ApprovalPolicy = 'ask' | 'never'
 ```
 
-Source: [`packages/interaction/user-approval/src/index.ts:135`](../packages/interaction/user-approval/src/index.ts)
+Source: [`packages/interaction/user-approval/src/index.ts:136`](../packages/interaction/user-approval/src/index.ts)
 
 <a id="deepseek-aidsh-web"></a>
 

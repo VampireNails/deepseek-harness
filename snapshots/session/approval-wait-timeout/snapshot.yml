@@ -1,0 +1,11 @@
+version: 1
+scenario: approval-wait-timeout
+profile: headless
+composition: approval-wait-timeout
+recording: authored
+permission: workspace-write
+header:
+  class: approval-wait-timeout
+  pin: true
+workspace:
+  final: true

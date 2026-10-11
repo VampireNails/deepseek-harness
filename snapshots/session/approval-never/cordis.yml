@@ -1,0 +1,8 @@
+- id: approval
+  config:
+    policy: never
+    waitTimeoutMs: 25
+
+- insert:
+    - id: approval-wait-answerer
+      name: ../../../packages/interaction/user-approval/tests/fixtures/wait-answerer.ts

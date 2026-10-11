@@ -1189,6 +1189,20 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (scenario.name === 'approval-wait-timeout' || scenario.name === 'approval-never') {
+              const events = parseSessionLog(actualLogs[0]!.content)
+              const asked = events.filter(event => event.type === 'approval/asked')
+              const decided = events.filter(event => event.type === 'approval/decided')
+              expect(asked).toHaveLength(1)
+              expect(decided).toHaveLength(1)
+              expect(decided[0]!.data).toEqual({
+                id: asked[0]!.data.id,
+                outcome: scenario.name === 'approval-never' ? 'rejected' : 'unavailable',
+              })
+              const results = events.filter(event => event.type === 'tool/result')
+              expect(results).toHaveLength(1)
+              expect(results[0]!.data.message.isError).toBe(true)
+            }
             if (scenario.name === 'intel-tool-errors') {
               const events = parseSessionLog(actualLogs[0]!.content)
               const results = events.filter(event => event.type === 'tool/result')

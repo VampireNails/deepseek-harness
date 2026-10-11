@@ -39,6 +39,119 @@ async function mounted(): Promise<Context> {
   return ctx
 }
 
+describe('approval answer wait deadline', () => {
+  it('withdraws a waiting question and releases its timer when the service is disposed', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(ApprovalService, { waitTimeoutMs: 25 })
+    const { agent } = fakeAgent()
+    let signal: AbortSignal | undefined
+    ctx.on('approval/request', (req) => { signal = req.signal; return new Promise<ApprovalOutcome>(() => {}) })
+    vi.useFakeTimers()
+    try {
+      const pending = ctx.approval.request(requestOf(agent))
+      await vi.advanceTimersByTimeAsync(1)
+      await fiber.dispose()
+      await expect(pending).resolves.toBe('cancelled')
+      expect(signal?.aborted).toBe(true)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers(); await fiber.dispose() }
+  })
+  it('validates integer timer bounds and preserves the disabled default', () => {
+    expect(ApprovalService.Config({})).toEqual({ policy: 'ask', waitTimeoutMs: 0 })
+    for (const waitTimeoutMs of [0, 1, 2147483647]) expect(ApprovalService.Config({ waitTimeoutMs }).waitTimeoutMs).toBe(waitTimeoutMs)
+    for (const waitTimeoutMs of [-1, 0.5, 2147483648, NaN, Infinity]) expect(() => ApprovalService.Config({ waitTimeoutMs })).toThrow()
+  })
+  it.each(['allowed-once', 'rejected'] as const)('cleans the timer and external listener after %s', async (outcome) => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(ApprovalService, { waitTimeoutMs: 25 })
+    const { agent, appended } = fakeAgent()
+    const external = new AbortController()
+    const removed = vi.spyOn(external.signal, 'removeEventListener')
+    ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>(outcome))
+    vi.useFakeTimers()
+    try {
+      await expect(ctx.approval.request(requestOf(agent, { signal: external.signal }))).resolves.toBe(outcome)
+      expect(vi.getTimerCount()).toBe(0)
+      expect(removed).toHaveBeenCalledWith('abort', expect.any(Function))
+      external.abort()
+      await vi.advanceTimersByTimeAsync(50)
+      expect(appended[1]?.data['outcome']).toBe(outcome)
+    } finally { vi.useRealTimers(); await fiber.dispose() }
+  })
+  it('keeps zero unlimited and never policy outside the answerer timer', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(ApprovalService, { waitTimeoutMs: 0 })
+    const { agent } = fakeAgent()
+    let answer!: (value: ApprovalOutcome) => void
+    ctx.on('approval/request', () => new Promise<ApprovalOutcome>((resolve) => { answer = resolve }))
+    vi.useFakeTimers()
+    try {
+      const pending = ctx.approval.request(requestOf(agent))
+      await vi.advanceTimersByTimeAsync(2147483647)
+      expect(vi.getTimerCount()).toBe(0)
+      answer('rejected')
+      await expect(pending).resolves.toBe('rejected')
+      setApprovalPolicy(agent.session, 'never')
+      ctx.approval.config = { policy: 'ask', waitTimeoutMs: 1 }
+      await expect(ctx.approval.request(requestOf(agent))).resolves.toBe('rejected')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers(); await fiber.dispose() }
+  })
+  it('isolates two deadlines and external abort from late answers', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(ApprovalService, { waitTimeoutMs: 25 })
+    const first = fakeAgent(), second = fakeAgent(), external = new AbortController()
+    const answers = new Map<Agent, (value: ApprovalOutcome) => void>()
+    const signals = new Map<Agent, AbortSignal | undefined>()
+    ctx.on('approval/request', (req) => { signals.set(req.agent, req.signal); return new Promise<ApprovalOutcome>((resolve) => { answers.set(req.agent, resolve) }) })
+    vi.useFakeTimers()
+    try {
+      const a = ctx.approval.request(requestOf(first.agent, { signal: external.signal }))
+      await vi.advanceTimersByTimeAsync(10)
+      const b = ctx.approval.request(requestOf(second.agent))
+      await vi.advanceTimersByTimeAsync(1)
+      external.abort()
+      await expect(a).resolves.toBe('cancelled')
+      expect(signals.get(first.agent)?.aborted).toBe(true)
+      expect(signals.get(second.agent)?.aborted).toBe(false)
+      answers.get(first.agent)?.('allowed-once')
+      await vi.advanceTimersByTimeAsync(24)
+      await expect(b).resolves.toBe('unavailable')
+      answers.get(second.agent)?.('allowed-once')
+      await Promise.resolve()
+      expect(first.appended[1]?.data['outcome']).toBe('cancelled')
+      expect(second.appended[1]?.data['outcome']).toBe('unavailable')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers(); await fiber.dispose() }
+  })
+  it('expires only the waiting answerer, revokes its signal and ignores late grants', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(ApprovalService, { waitTimeoutMs: 25 })
+    const { agent, appended } = fakeAgent()
+    let answer!: (value: ApprovalOutcome) => void
+    let downstream: AbortSignal | undefined
+    ctx.on('approval/request', (req) => {
+      downstream = req.signal
+      return new Promise<ApprovalOutcome>((resolve) => { answer = resolve })
+    })
+    vi.useFakeTimers()
+    try {
+      const pending = ctx.approval.request(requestOf(agent))
+      await vi.advanceTimersByTimeAsync(24)
+      expect(appended).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1)
+      const observed = await Promise.race([pending, Promise.resolve('still-waiting')])
+      expect(observed).toBe('unavailable')
+      expect(downstream?.aborted).toBe(true)
+      answer('allowed-once')
+      await Promise.resolve()
+      expect(appended.filter(e => e.type === 'approval/decided')).toHaveLength(1)
+      expect(appended[1]?.data['outcome']).toBe('unavailable')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers(); await fiber.dispose() }
+  })
+})
+
 function requestOf(agent: Agent, overrides: Partial<ApprovalRequest> = {}): ApprovalRequest {
   return { agent, toolName: 'echo', ...overrides }
 }

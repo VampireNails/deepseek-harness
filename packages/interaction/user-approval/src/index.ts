@@ -1,5 +1,6 @@
 /**
- * Service Definition for the approval capability seam, covering requests, cancellation, audit, and per-session policy. Missing
+ * Service Definition for the approval capability seam, covering requests,
+ * cancellation, answer deadlines, audit, and per-session policy. Missing
  * answerers fail closed; grants apply only to the requested action.
  * @module @deepseek-ai/dsh-user-approval
  */
@@ -140,6 +141,12 @@ export interface Config {
    * prompting (the deterministic CI/unattended stance).
    */
   readonly policy?: ApprovalPolicy
+  /**
+   * Answerer wait in milliseconds; 0 disables the deadline. Expiry returns
+   * unavailable and withdraws the downstream question. Only the ask answerer
+   * phase is timed, independently of model and transport deadlines.
+   */
+  readonly waitTimeoutMs?: number
 }
 
 /**
@@ -148,12 +155,16 @@ export interface Config {
  * changes to the model through the runtime-context snapshot and switch notices.
  */
 export class ApprovalService extends Service {
+  // Service.ctx follows the caller scope; pending waits belong to this plugin's lifetime.
+  private readonly lifetime: Context
   static Config: z<Config> = z.object({
     policy: z.union(['ask', 'never'] as const).default('ask'),
+    waitTimeoutMs: z.number().step(1).min(0).max(2147483647).default(0),
   })
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'approval')
+    this.lifetime = ctx
 
     const effective = (agent: Agent): ApprovalPolicy => this.effectivePolicy(agent.session)
 
@@ -196,7 +207,7 @@ export class ApprovalService extends Service {
 
   /**
    * Ask the composed answerers to decide one readonly same-process request.
-   * The service borrows the request, agent, session, and live signal directly.
+   * The service borrows the request, agent, and session. A positive wait deadline supplies a request-local withdrawal signal to answerers.
    * The request requires an open turn because the audit pair must be enclosed
    * by the durable log's commit/replay boundary; an idle ask rejects before
    * appending anything. The answerer phase always produces an outcome: an
@@ -273,13 +284,16 @@ export class ApprovalService extends Service {
     // documented promise that 'never' rejects deterministically regardless
     // of registration order — only the service's own request path can.
     if (this.effectivePolicy(session) === 'never') return 'rejected'
+    const waitTimeoutMs = this.config.waitTimeoutMs ?? 0
+    const withdrawal = waitTimeoutMs > 0 ? new AbortController() : undefined
+    const dispatched = withdrawal === undefined ? req : { ...req, signal: withdrawal.signal }
     // Enter the promise chain BEFORE dispatching: a listener that throws
     // SYNCHRONOUSLY (before its first await) must land in the same rejection
     // path as an async one — `Promise.resolve(call())` would let it escape
     // the containment into the caller.
     const answer: Promise<ApprovalOutcome> = Promise.resolve().then(
       () => this.ctx.waterfall(
-        scopeTarget(req.agent, req.agent), 'approval/request', req,
+        scopeTarget(req.agent, req.agent), 'approval/request', dispatched,
         () => Promise.resolve<ApprovalOutcome>('unavailable'),
       ),
     ).then(
@@ -290,18 +304,27 @@ export class ApprovalService extends Service {
       // tool call open — the seam contains its callbacks.
       () => 'unavailable',
     )
-    if (signal === undefined) return answer
+    if (signal === undefined && withdrawal === undefined) return answer
     return await new Promise<ApprovalOutcome>((resolve) => {
-      const onAbort = () => {
-        signal.removeEventListener('abort', onAbort)
-        resolve('cancelled')
-      }
-      signal.addEventListener('abort', onAbort, { once: true })
-      void answer.then((outcome) => {
-        signal.removeEventListener('abort', onAbort)
-        // After an abort won the race this resolve is a settled-promise no-op:
-        // the late answer is discarded by construction.
+      let settled = false
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const finish = (outcome: ApprovalOutcome, withdraw: boolean) => {
+        if (settled) return
+        settled = true
+        if (timer !== undefined) clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        void dispose()
         resolve(outcome)
+        if (withdraw) withdrawal?.abort(new Error('approval answer wait ended'))
+      }
+      const onAbort = () => {
+        finish('cancelled', true)
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      if (withdrawal !== undefined) timer = setTimeout(() => { finish('unavailable', true) }, waitTimeoutMs)
+      const dispose = this.lifetime.effect(() => () => { finish('cancelled', true) }, 'approval: pending answer')
+      void answer.then((outcome) => {
+        finish(outcome, false)
       })
     })
   }

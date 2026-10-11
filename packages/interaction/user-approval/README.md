@@ -39,17 +39,21 @@ The effective policy is the one set for the session, falling back to the configu
 - name: '@deepseek-ai/dsh-user-approval'
   config:
     policy: ask
+    waitTimeoutMs: 300000
 ```
 
 | Field | Default | Meaning |
 |---|---|---|
 | `policy` | `ask` | Default for sessions without an `approval/policy` override |
+| `waitTimeoutMs` | `0` | Answerer wait in integer milliseconds, from 0 to 2147483647; 0 keeps the wait unlimited |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-user-approval) is the exhaustive source for every accepted field and its JSDoc. `setPolicy(agent, policy)` switches a live agent and queues a "changed by the user" message for its next model step; `setApprovalPolicy(session, policy)` is the direct durable write path used by session initialization.
 
 ### Requesting a decision
 
 `request(req)` names the agent, tool, optional call id and reason, and an abort signal. It requires an open turn: an idle or between-turn caller throws before auditing anything. Aborting withdraws the question — the request settles `cancelled` and a late answer is discarded. A failure that prevents either audit append from committing rejects instead of returning an unlogged decision.
+
+A positive `waitTimeoutMs` starts when the `ask` policy dispatches the answerer, independently of model and HTTP deadlines. Expiry returns `unavailable` and aborts the request-local answerer signal, withdrawing pending Remote events. External abort remains `cancelled`; a late grant cannot replace either outcome. Settlement and service disposal release the timer and abort listener. The zero default preserves deployments that wait indefinitely; `never` still rejects before dispatch. An answerer must observe its signal to release its own resources.
 
 ### What the model and user see
 

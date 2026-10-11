@@ -39,17 +39,21 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-user-approval'
   config:
     policy: ask
+    waitTimeoutMs: 300000
 ```
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `policy` | `ask` | 没有 `approval/policy` 覆盖的会话的默认策略 |
+| `waitTimeoutMs` | `0` | 应答等待的整数毫秒数，范围为 0 到 2147483647；0 表示无限等待 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-user-approval)是每个受支持字段及其 JSDoc 的穷尽式真源。`setPolicy(agent, policy)` 切换运行中的 agent 的策略，并为它的下一个模型步骤排队一条「由用户更改」消息；`setApprovalPolicy(session, policy)` 是会话初始化使用的直接持久写入路径。
 
 ### 请求决定
 
 `request(req)` 指名 agent、工具、原因、可选的调用 id，以及一个中止信号。它要求当前处于尚未结束的轮次中：空闲或在轮次之间调用会在审计前抛出异常。中止会撤回问题——请求以 `cancelled` 结算，迟到的回答被丢弃。若任一审计事件在提交前失败，请求会被拒绝，而不会返回一项未记录的决定。
+
+正值 `waitTimeoutMs` 从 `ask` 策略分发应答者时开始计时，独立于模型与 HTTP 的期限。到期返回 `unavailable`，并中止该请求的应答者信号以撤回待处理 Remote 事件。外部中止仍为 `cancelled`；迟到的批准不能替换任一结果。结果结算与服务卸载会释放计时器和中止监听器。零默认值保留部署的无限等待行为；`never` 仍在分发前拒绝。应答者必须监听信号以释放其自身资源。
 
 ### 模型与用户看到什么
 
