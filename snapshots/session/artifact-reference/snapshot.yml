@@ -1,0 +1,8 @@
+version: 1
+scenario: artifact-reference
+profile: headless
+composition: artifact-reference
+recording: authored
+header:
+  class: artifact-reference
+  pin: true

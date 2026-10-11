@@ -8,6 +8,7 @@ import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { withStoreWriter, atomicJson, publicationMetadata } from '../../shared/persistence.js';
+import {intelError} from '../../shared/tool-error.js';
 
 export const KINDS = { markdown: ".md", html: ".html", text: ".txt" };
 
@@ -31,7 +32,12 @@ function slug(title) {
 
 function normalizeKind(kind) {
   const k = String(kind || "markdown").toLowerCase();
-  return KINDS[k] ? k : "markdown";
+  return Object.hasOwn(KINDS, k) ? k : "markdown";
+}
+
+/** Version-pinned request for the paired HMC bridge; never a public HTTP URL. */
+function reference(id, version) {
+  return { version: 1, endpoint: 'muse/artifacts/get', args: { id, version } };
 }
 
 export class ArtifactStore {
@@ -118,8 +124,9 @@ export class ArtifactStore {
     let versions = meta.versions || [];
     if (!versions.length) {
       // 旧格式迁移：已有 artifact.ext 算作 v1
-      const old = join(d, "artifact" + ext);
-      if (existsSync(old)) versions = [{ v: 1, ts: meta.created_at || "", file: "artifact" + ext }];
+      const oldKind = typeof meta.kind === 'string' && Object.hasOwn(KINDS, meta.kind) ? meta.kind : kind;
+      const oldFile = "artifact" + KINDS[oldKind];
+      if (existsSync(join(d, oldFile))) versions = [{ v: 1, ts: meta.created_at || "", file: oldFile, kind: oldKind }];
     }
     const v = versions.length ? versions[versions.length - 1].v + 1 : 1;
     const fname = `v${v}${ext}`;
@@ -139,7 +146,7 @@ export class ArtifactStore {
       path: aid,
     });
     this._saveMeta(d, meta);
-    return { ...meta, ...identity };
+    return { ...meta, ...identity, reference: reference(aid, v) };
     });
   }
 
@@ -149,14 +156,17 @@ export class ArtifactStore {
     if (!d) return null;
     const m = this._loadMeta(d);
     if (!m) return null;
+    if (typeof m.kind !== 'string' || !Object.hasOwn(KINDS, m.kind)) throw intelError('ARTIFACT_INVALID_DATA');
     const ext = KINDS[m.kind] || ".md";
     const versions = m.versions || [];
     if (v == null) v = versions.length ? versions[versions.length - 1].v : 1;
     const f = this._versionFile(d, m, v, ext);
     if (!f) return null;
     const entry = versions.find(version => version.v === v);
+    if (entry?.kind !== undefined && (typeof entry.kind !== 'string' || !Object.hasOwn(KINDS, entry.kind))) throw intelError('ARTIFACT_INVALID_DATA');
+    const kind = entry?.kind ?? Object.keys(KINDS).find(kind => f.endsWith(KINDS[kind])) ?? m.kind;
     const versionIdentity = entry?.idempotencyKey ? publicationMetadata(entry) : entry?.references ? publicationMetadata({ references: entry.references, memoryDirectory: entry.memoryDirectory }) : {};
-    return { ...m, ...versionIdentity, kind: entry?.kind ?? m.kind, content: readFileSync(f, "utf8"), version: v, url: `/artifacts/${aid}` };
+    return { ...m, ...versionIdentity, kind, content: readFileSync(f, "utf8"), version: v, url: `/artifacts/${aid}`, reference: reference(aid, v) };
   }
 
   // 最新版内容的便捷读取入口（= get(aid)）。

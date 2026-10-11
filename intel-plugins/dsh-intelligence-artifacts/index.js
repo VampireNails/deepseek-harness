@@ -1,12 +1,12 @@
 // dsh-intelligence-artifacts —— Artifacts v2（复刻 Python 版 agent/artifacts.py）。
 //
 // 本插件只做工具层 + 元数据：artifact_save / artifact_get / artifact_versions / artifact_read，
-// HTML 产物在元数据中标注 kind=html，供上层（HMC）做沙盒 iframe 渲染。
+// HTML 产物在元数据中标注 kind=html，由 HMC 离线 WebView 预览。
 //
 // 边界（重要）：dsh 插件没有加 HTTP 路由的能力。FastAPI 原版的
 // /artifacts/{id}（展示页）、/api/artifacts/{id}/raw（HTML 原始内容）、/download、/versions
-// 路由在这里不复刻，渲染层留待 HMC PR 实现。本插件返回的 url（/artifacts/{id}）
-// 是为该渲染层预留的约定地址，当前没有对应的 HTTP 服务。
+// 路由在这里不复刻，HMC 已有认证读取和离线预览。本插件返回的 url（/artifacts/{id}）
+// 仅保留旧客户端兼容；reference 指向 HMC 已有的认证读取，不是 HTTP 链接。
 
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
@@ -20,7 +20,7 @@ export const Config = z.object({}).default({});
 
 const textBlock = (text) => [{ type: "text", text }];
 
-const metaLine = (m) => `产物：${m.title}（id=${m.id}，kind=${m.kind}，v${m.version}）\n展示链接：${m.url}`;
+const metaLine = (m) => `产物：${m.title}（id=${m.id}，kind=${m.kind}，v${m.version}）\n认证读取：muse/artifacts/get（id=${m.id}，version=${m.version}）；HMC「产物」中按 ID 打开并选择版本。`;
 
 export function apply(ctx, config) {
   const store = new ArtifactStore(artifactsDir());
@@ -43,9 +43,7 @@ export function apply(ctx, config) {
           execute: async (args) => {
             const identity = publicationIdentity('artifact', args.references, ctx.get?.('memoryReferences'));
             const m = store.save(args.title, args.content, args.kind || "markdown", identity);
-            const htmlNote =
-              m.kind === "html" ? "\n（HTML 产物：渲染层由 HMC 端沙盒 iframe 实现）" : "";
-            return { text: `产物已发布：${m.title}（v${m.version}）\n展示链接：${m.url}${htmlNote}` };
+            return { text: `产物已发布\n${metaLine(m)}`, reference: m.reference };
           },
         })
       );
@@ -61,7 +59,7 @@ export function apply(ctx, config) {
           execute: async (args) => {
             const m = store.get(args.id, args.version ?? null);
             if (!m) return { text: "未找到该产物" };
-            return { text: `${metaLine(m)}\n\n${m.content}` };
+            return { text: `${metaLine(m)}\n\n${m.content}`, reference: m.reference };
           },
         })
       );
@@ -87,7 +85,7 @@ export function apply(ctx, config) {
           execute: async (args) => {
             const m = store.read(args.id);
             if (!m) return { text: "未找到该产物" };
-            return { text: `产物「${m.title}」（v${m.version}，kind=${m.kind}）\n\n${m.content}` };
+            return { text: `${metaLine(m)}\n\n${m.content}`, reference: m.reference };
           },
         })
       );

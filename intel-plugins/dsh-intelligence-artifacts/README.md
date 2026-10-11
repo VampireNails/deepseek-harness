@@ -10,7 +10,7 @@ Artifacts live under $DSH_HOME/intel-artifacts, defaulting to ~/.dsh/intel-artif
 
 Publishing tools validate optional `references` against existing memory IDs before saving. The Linux [task runner](../../intel/task-runner/README.md) attaches its task, run and date identity; each version retains its own identity and references. Repeating a publication returns its existing version, while a conflicting title, content, kind or identity is rejected. Store writes are serialized across processes and metadata is replaced atomically. Manual saves still append versions by title and do not invent a runner identity.
 
-The plugin supplies tools and metadata, without HTTP rendering routes. Its /artifacts/{id} URL is a presentation convention, not evidence that a server serves that address. HMC obtains artifacts through its authenticated bridge and owns display and export behavior.
+The plugin supplies tools and metadata, without HTTP rendering routes. Save/get/read results add `reference={version:1,endpoint:"muse/artifacts/get",args:{id,version}}` for consumers of the paired HMC bridge; the version is pinned. Consumers check the supported reference version and exact endpoint before submitting its bounded args through authenticated `/v1/rpc`. The reference grants no access and contains no credentials. Existing ID-only reads select latest. Store `url=/artifacts/{id}` remains a legacy identifier; tool text gives the ID and version and directs HMC users to the artifact reader and version selector instead of advertising an unserved link. HMC owns its offline HTML preview; no automatic JSON-reference handler in Android is implied.
 
 ## Installation
 

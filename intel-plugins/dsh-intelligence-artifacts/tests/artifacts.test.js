@@ -11,6 +11,40 @@ function freshStore() {
   return { store, dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
+test('mixed historical versions without kind match their file type and reject invalid explicit kind',()=>{
+  const {store,dir,cleanup}=freshStore();
+  try{
+    const first=store.save('Mixed','<html>first</html>','html');store.save('Mixed','second','text');
+    const file=join(dir,first.id,'meta.json'),meta=JSON.parse(readFileSync(file,'utf8'));
+    delete meta.versions[0].kind;writeFileSync(file,JSON.stringify(meta));
+    assert.equal(store.get(first.id,1).kind,'html');assert.equal(store.get(first.id).kind,'text');
+    assert.deepEqual(store.get(first.id,1).reference,first.reference);
+    for(const kind of ['PRIVATE_BAD_KIND',null,['html'],{},42]){
+      meta.versions[0].kind=kind;writeFileSync(file,JSON.stringify(meta));
+      assert.throws(()=>store.get(first.id,1),e=>e.code==='ARTIFACT_INVALID_DATA'&&!e.message.includes('PRIVATE_BAD_KIND'));
+    }
+    delete meta.versions[0].kind;
+    for(const kind of [null,['text'],{},42]){
+      meta.kind=kind;writeFileSync(file,JSON.stringify(meta));
+      assert.throws(()=>store.get(first.id),e=>e.code==='ARTIFACT_INVALID_DATA');
+    }
+  }finally{cleanup();}
+});
+
+test('changing kind after a legacy single-file publication preserves its pinned first version',()=>{
+  const {store,dir,cleanup}=freshStore();
+  try{
+    const id='legacy-mixed',root=join(dir,id);mkdirSync(root);
+    writeFileSync(join(root,'meta.json'),JSON.stringify({id,title:'Legacy mixed',kind:'html',created_at:'first'}));
+    writeFileSync(join(root,'artifact.html'),'<html>first</html>');
+    const first=store.get(id),second=store.save('Legacy mixed','second','text');
+    assert.equal(second.id,id);assert.equal(second.version,2);
+    const pinned=store.get(first.reference.args.id,first.reference.args.version);
+    assert.equal(pinned.content,first.content);assert.equal(pinned.kind,'html');
+    assert.equal(store.get(id).kind,'text');
+  }finally{cleanup();}
+});
+
 test("首次保存：返回 id/title/kind/version/url，落盘 v1 文件", () => {
   const { store, dir, cleanup } = freshStore();
   try {

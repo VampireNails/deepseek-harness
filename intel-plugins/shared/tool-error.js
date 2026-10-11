@@ -3,6 +3,7 @@ import { HarnessError } from '@deepseek-ai/dsh-llm';
 import {JsonStoreError} from './json-store.js';
 
 const messages = {
+ ARTIFACT_INVALID_DATA:'产物版本类型无效；请修复元数据后读取。',
  CRON_INVALID_SCHEDULE:'时间描述无效；请使用每天9点、每5分钟或30分钟后等支持的说法。',
  CRON_INVALID_NAME:'任务名称不能为空。',
  CRON_INVALID_PROMPT:'任务内容（prompt）不能为空。',
