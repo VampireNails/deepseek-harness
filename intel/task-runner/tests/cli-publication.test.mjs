@@ -8,6 +8,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { FeedStore } from '../../../intel-plugins/dsh-intelligence-feed/src/feed.js';
 import { startUpkeepServer } from '../../../intel-plugins/dsh-intelligence-evolution/src/upkeep-socket.js';
+import {measureRuns} from '../measure.mjs';
 
 const linux = { skip: process.platform !== 'linux' };
 const cli = fileURLToPath(new URL('../cli.mjs', import.meta.url));
@@ -195,6 +196,24 @@ function exited(result, code) {
   assert.equal(result.signal, null, result.stderr);
   assert.equal(result.status, code, result.stderr);
 }
+
+test('mechanical daily summary reconciles real CLI publication, reuse and missing-output failure without counting quiet as a model run',linux,async t=>{
+  const published=await fixture(t,'publish');exited(published.run(),0);exited(published.run(),0);
+  const [post]=published.posts(),date=post.runDate;
+  const rows=await published.audit();
+  const failed=await fixture(t,'memory-only');exited(failed.run(),65);rows.push(...await failed.audit());
+  const r=measureRuns(rows,date);
+  assert.equal(r.counts.completed,3);assert.equal(r.counts.succeeded,1);assert.equal(r.counts.failed,1);assert.equal(r.counts.reused,1);
+  assert.equal(r.runs.find(row=>row.status==='succeeded').runId,post.runId);
+  assert.equal(r.runs.find(row=>row.status==='reused').publishedRunId,post.runId);
+  assert.equal(r.runs.find(row=>row.status==='failed').code,'TASK_NO_VISIBLE_OUTPUT');
+  assert.equal(r.runs.find(row=>row.status==='failed').processExit,0);
+  assert.equal((await published.executions()).length,1);assert.equal((await failed.executions()).length,1);
+  assert.equal(published.posts().length,1);assert.deepEqual(post.references,published.memories().map(row=>row.id));
+  const measured=spawnSync(process.execPath,[fileURLToPath(new URL('../measure.mjs',import.meta.url)),join(published.home,'intel-joblog','route-runs.jsonl'),date],{encoding:'utf8',timeout:10000});
+  exited(measured,0);assert.deepEqual(JSON.parse(measured.stdout),measureRuns(await published.audit(),date));
+  console.log('T18_REAL_CLI_MEASUREMENT '+JSON.stringify({date,counts:r.counts,runs:r.runs,persistedPosts:published.posts().map(({id,taskId,runId,runDate,references})=>({id,taskId,runId,runDate,references})),profileExecutions:2,paidProviderRequests:0}));
+});
 
 test('Linux CLI required output publishes real Feed content with trusted runner identity and memory reference', linux, async t => {
   const f = await fixture(t, 'publish');

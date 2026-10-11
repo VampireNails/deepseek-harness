@@ -72,11 +72,13 @@ test('successful fallback still requires its own persisted visible output and ru
     primary: { provider: 'primary-provider', model: 'primary-model' },
     fallback: { provider: 'fallback-provider', model: 'fallback-model' },
   }, tasks: { evolve_dreaming: { route: 'primary', fallback: 'fallback', retrySafe: true,
-    visibleOutput: 'required' } } };
+    visibleOutput: 'required' } }, fallback: { enabled: true, maxAttempts: 2, totalTimeoutMs: 2000 } };
   const executions = [], inspections = [], audit = [];
   const exit = await runTask(config, 'evolve_dreaming', undefined, async plan => {
     executions.push(plan);
-    return executions.length === 1 ? 1 : 0;
+    return executions.length === 1 ? {exit:1,receipt:{complete:true,sessions:1,steps:1,requests:1,
+      tools:0,outputs:0,retries:0,streamOutput:false,modelMatches:true,end:'error',
+      provider:plan.provider,model:plan.model,failure:{code:'QUOTA',status:402}}} : 0;
   }, entry => audit.push(entry), { ...metadata, timeZone: 'Asia/Shanghai',
     inspectVisibleOutputs: async plan => { inspections.push(plan); return []; } });
   assert.equal(executions.length, 2, 'Missing output must not cause another execution');

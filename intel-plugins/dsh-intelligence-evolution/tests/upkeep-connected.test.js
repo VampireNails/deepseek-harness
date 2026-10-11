@@ -112,7 +112,7 @@ async function fixtureDsh() {
     await appendFile(process.env.TEST_DISPATCH_FILE, JSON.stringify({
       taskId: process.env.INTEL_TASK_ID, runId: process.env.INTEL_RUN_ID,
       sessionId: session.id, messages: batch.messages, writeMeta: writeResult.meta,
-      genericIsError: writeResult.isError,
+      genericIsError: writeResult.isError, writeError: writeResult.error?.info,
     }) + '\n', { mode: 0o600 });
   } finally { try { await ctx.fiber.dispose(); } finally { retriever.close(); } }
 }
@@ -401,8 +401,9 @@ if (process.argv[2] === '--fixture-dsh') {
       assert.match(processed.stderr, /UPKEEP_RUN_UNVERIFIED/);
       const dispatch = JSON.parse((await readFile(f.dispatch, 'utf8')).trim());
       await assertPersistedTaskInput(f, dispatch);
-      assert.equal(dispatch.genericIsError, false, 'The actual tool body returns an ok:false canonical value');
-      assert.deepEqual(dispatch.writeMeta, { memoryWrite: { ok: false } });
+      assert.equal(dispatch.genericIsError, true, 'Native failure must persist isError without successful presentation metadata');
+      assert.equal(dispatch.writeMeta, undefined);
+      assert.equal(dispatch.writeError.code, 'MEMORY_WRITE_FAILED');
       assert.equal(inspectDatabase(join(f.memory, 'memory.db'), db => db.prepare('SELECT count(*) AS n FROM memories').get().n), 0);
       const state = await f.readState();
       assert.equal(state.cursors[f.id], 2);
