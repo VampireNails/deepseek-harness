@@ -799,6 +799,20 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
 @Remote('list') async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue>
 
 /**
+ * Discover irreversible stored-Session deletion independently of archival.
+ * @returns provider availability and the supported ownership scope.
+ */
+@Remote('deletionCapability') deletionCapability(): SessionDeletionCapability
+
+/**
+ * Delete one exact unowned stored Session through its persistence owner.
+ * @param request - complete identity; names and prefixes are never expanded.
+ * @param signal - cancellation before irreversible commitment.
+ * @returns physical deletion or explicit refusal/recovery state.
+ */
+@Remote('deleteSession') async deleteSession(request: SessionDeleteRequest, signal: AbortSignal): Promise<SessionDeleteValue>
+
+/**
  * Search visible Session content without resuming an Agent.
  * @param request - literal message-content query.
  * @param signal - cancellation for list and search reads.
@@ -934,7 +948,7 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
 @Remote({ mode: 'stream' }) control(signal: AbortSignal): AsyncIterable<SessionControlFrame>
 ```
 
-Types: [SessionId](core.md) · [SessionInspection](persistence.md) · [SessionSearchRequest](session-query.md)
+Types: [SessionDeleteRequest](persistence.md) · [SessionDeleteValue](persistence.md) · [SessionDeletionCapability](persistence.md) · [SessionId](core.md) · [SessionInspection](persistence.md) · [SessionSearchRequest](session-query.md)
 
 Source: [`packages/api/session-controller/src/index.ts`](../../packages/api/session-controller/src/index.ts)
 
@@ -1213,6 +1227,27 @@ Creation announcement during session publication. A synchronous throw vetoes and
 Types: [Scoped](scope.md)
 
 Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
+
+<a id="sessiondeletion-check--waterfall"></a>
+
+#### `session/deletion-check` — waterfall
+
+Validate plugin-owned durable objects before deleting a cold Session.
+
+```ts cordis-catalog
+/**
+ * Validate plugin-owned durable objects before deleting a cold Session.
+ * @mode waterfall
+ * @param inspection - exact log read under exclusive write ownership.
+ * @param checked - event types whose owners validated deletion admission.
+ * @param next - delegate to remaining durable-object owners.
+ */
+'session/deletion-check'(inspection: SessionInspection, checked: string[], next: () => Promise<'active-schedule' | undefined>): Promise<'active-schedule' | undefined>
+```
+
+Types: [SessionInspection](persistence.md)
+
+Source: [`packages/session/session-persistence/src/index.ts`](../../packages/session/session-persistence/src/index.ts)
 
 <a id="sessiondisposed--emit"></a>
 

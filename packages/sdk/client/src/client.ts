@@ -20,6 +20,8 @@ import {
   type InitializeResult,
   type SessionPromptParams,
   type SdkPromptContentBlock,
+  type SessionDeletionCapability,
+  type SessionDeletionResult,
 } from '@deepseek-ai/dsh-sdk-protocol'
 import { disposeRuntimeProcess } from './dispose.ts'
 import { resolveDshLaunch, type RuntimeProcessOptions } from './launch.ts'
@@ -295,6 +297,42 @@ export class HarnessClient {
       throw new SdkProtocolError(`session/prompt returned no message id: ${JSON.stringify(result)}`)
     }
     return result.messageId
+  }
+
+  /**
+   * Discover the selected profile's irreversible deletion provider.
+   * @returns availability and supported ownership scope.
+   */
+  async deletionCapability(): Promise<SessionDeletionCapability> {
+    const result = await this.request('session/deletionCapability', undefined)
+    if (!isRecord(result) || typeof result.available !== 'boolean' || result.scope !== 'cold-ordinary-session') {
+      throw new SdkProtocolError('invalid session deletion capability')
+    }
+    return { available: result.available, scope: result.scope }
+  }
+
+  /**
+   * Delete one complete cold Session identity. Transport loss requires read/retry;
+   * an SDK-created live Session remains writer-held until its owning runtime exits.
+   * @param sessionId - complete exact identity, never a name or prefix.
+   * @returns physical deletion, refusal, or recovery state.
+   */
+  async deleteSession(sessionId: string): Promise<SessionDeletionResult> {
+    const result = await this.request('session/deleteSession', { sessionId })
+    if (!isRecord(result) || result.sessionId !== sessionId) throw new SdkProtocolError('unknown session deletion outcome')
+    switch (result.status) {
+      case 'deleted': case 'not-found': case 'incomplete': case 'unknown':
+        return { status: result.status, sessionId }
+      case 'refused': {
+        const reason = result.reason
+        if (reason === 'unavailable' || reason === 'writer-held' || reason === 'live-owner'
+          || reason === 'active-schedule' || reason === 'unsupported-object' || reason === 'unsafe-storage') {
+          return { status: 'refused', sessionId, reason }
+        }
+        break
+      }
+    }
+    throw new SdkProtocolError('unknown session deletion outcome')
   }
 
   /**

@@ -68,6 +68,31 @@ async function makeHarness(storageDir: string) {
   return ctx
 }
 
+describe.runIf(process.platform === 'linux')('SDK persistent deletion', () => {
+  it('uses real JSONL storage, rejects its live owner, and never treats disposal as deletion', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-sdk-delete-'))
+    const ctx = await makeHarness(root)
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    const id = SessionId('sdk-delete-owned')
+    try {
+      expect(await server.handleRequest('session/deletionCapability', undefined)).toEqual({ available: true, scope: 'cold-ordinary-session' })
+      const owner = await ctx.agents.create({ sessionId: id, meta: { cwd: '/tmp' } })
+      await ctx.sessions.flush(owner.agent.session)
+      expect(await server.handleRequest('session/deleteSession', { sessionId: id })).toMatchObject({ status: 'refused', sessionId: id })
+      await owner.dispose()
+      expect(await ctx.sessionPersistence.stat(id)).toBeDefined()
+      expect(await server.handleRequest('session/deleteSession', { sessionId: id })).toEqual({ status: 'deleted', sessionId: id })
+      expect(await ctx.sessionPersistence.stat(id)).toBeUndefined()
+      expect(await server.handleRequest('session/deleteSession', { sessionId: id })).toEqual({ status: 'deleted', sessionId: id })
+      await expect(server.handleRequest('session/deleteSession', { sessionId: '../wrong' })).rejects.toThrow()
+    } finally {
+      await server.handleRequest('shutdown', undefined)
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
 /** Drive the owning service so test lifecycle events carry the real parent scope. */
 async function settleSubagent(
   ctx: Context,

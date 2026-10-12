@@ -15,7 +15,7 @@ from typing import Callable, TypeAlias, TypeVar
 from pydantic import BaseModel
 
 from .errors import JsonRpcError, TransportClosedError
-from .models import IncomingRequest, InitializeResponse, JsonObject, JsonValue, Notification
+from .models import IncomingRequest, InitializeResponse, JsonObject, JsonValue, Notification, SessionDeletionCapability, SessionDeletionResult
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 NotificationFilter: TypeAlias = Callable[[Notification], bool]
@@ -187,6 +187,17 @@ class HarnessClient:
             notification_subscription=notification_subscription,
         )
         return response.messageId
+
+    def deletion_capability(self) -> SessionDeletionCapability:
+        """Read the selected profile's deletion capability."""
+        return self.request("session/deletionCapability", None, response_model=SessionDeletionCapability)
+
+    def delete_session(self, session_id: str) -> SessionDeletionResult:
+        """Delete an exact cold identity; transport loss requires read/retry."""
+        result = self.request("session/deleteSession", {"sessionId": session_id}, response_model=SessionDeletionResult)
+        if result.sessionId != session_id or (result.status == "refused" and result.reason is None):
+            raise TypeError("unknown session deletion outcome")
+        return result
 
     def request(
         self,

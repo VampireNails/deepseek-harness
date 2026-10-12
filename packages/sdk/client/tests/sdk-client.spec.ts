@@ -27,6 +27,28 @@ import type { RuntimeProcessOptions } from '../src/launch.ts'
 
 const fakeRuntime = fileURLToPath(new URL('./fake-runtime.ts', import.meta.url))
 
+describe('persistent deletion response boundary', () => {
+  it('preserves recovery states and rejects missing or wrong-target acknowledgements', async () => {
+    const client = new HarnessClient()
+    const wire = vi.spyOn(client, 'request')
+    for (const status of ['deleted', 'not-found', 'incomplete', 'unknown'] as const) {
+      wire.mockResolvedValueOnce({ sessionId: 'exact', status })
+      expect(await client.deleteSession('exact')).toEqual({ sessionId: 'exact', status })
+    }
+    wire.mockResolvedValueOnce({ sessionId: 'exact', status: 'refused', reason: 'writer-held' })
+    expect(await client.deleteSession('exact')).toEqual({ sessionId: 'exact', status: 'refused', reason: 'writer-held' })
+    for (const value of [undefined, {}, { sessionId: 'neighbor', status: 'deleted' }, { sessionId: 'exact', status: 'refused' }]) {
+      wire.mockResolvedValueOnce(value)
+      await expect(client.deleteSession('exact')).rejects.toBeInstanceOf(SdkProtocolError)
+    }
+    wire.mockResolvedValueOnce({ available: false, scope: 'cold-ordinary-session' })
+    expect(await client.deletionCapability()).toEqual({ available: false, scope: 'cold-ordinary-session' })
+    wire.mockResolvedValueOnce({ available: 'true', scope: 'cold-ordinary-session' })
+    await expect(client.deletionCapability()).rejects.toBeInstanceOf(SdkProtocolError)
+    wire.mockRestore()
+  })
+})
+
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()

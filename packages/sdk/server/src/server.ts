@@ -13,6 +13,7 @@ import { admitEncodedImages, type EncodedImageAttachment, type ImageAttachmentRe
 import { createUserMessage, ReasoningEffortId, type ContentBlock, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
@@ -251,6 +252,17 @@ export class HarnessSdkJsonRpcServer {
         return this.initialize(params as unknown as InitializeParams)
       case 'session/prompt':
         return this.prompt(params as unknown as SessionPromptParams)
+      case 'session/deletionCapability':
+        if (params !== undefined && Object.keys(params).length > 0) throw new Error('deletion capability takes no arguments')
+        return { available: this.ctx.get('sessionPersistence')?.sessionDeletionAvailable === true, scope: 'cold-ordinary-session' }
+      case 'session/deleteSession': {
+        if (params === undefined || Object.keys(params).length !== 1 || typeof params.sessionId !== 'string'
+          || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(params.sessionId)) throw new Error('deletion requires one exact Session id')
+        const persistence = this.ctx.get('sessionPersistence')
+        const id = brandString<SessionId>(params.sessionId)
+        if (persistence?.sessionDeletionAvailable !== true) return { status: 'refused', sessionId: id, reason: 'unavailable' }
+        return persistence.deleteSession(id)
+      }
       case 'shutdown':
         return this.shutdown()
       default:

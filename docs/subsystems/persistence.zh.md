@@ -8,6 +8,8 @@
 
 ## `SessionHandle`——通向已存储会话的一条打开通道
 
+显式不可逆删除是独立的 `deleteSession` 操作，由 `sessionDeletionAvailable` 控制；仓库外提供方默认不可用。浏览器安全的 `SessionDeleteResult` 报告物理清理、拒绝、不完整清理或未知提交状态。`SessionDeleteRequest` 携带一个精确 `sessionId`；`SessionDeleteValue` 是结果别名；`SessionDeletionCapability` 携带 `available: boolean` 和范围 `cold-ordinary-session`。[JSONL 提供方](../../packages/session/session-persistence-jsonl/README.zh.md#irreversible-deletion-on-linux)负责 Linux 许可与恢复语义，[退役决策](../../.agents/notes/implemented/architecture/2026-10-13-explicit-session-retirement.zh.md)解释永久身份记录。
+
 每一次日志读写都经由句柄流动，绝不经由按 id 寻址的服务方法：句柄是跨进程写租约把守的唯一入口。读取会返回调用方独占的外层 slice，以及由生产者建立的 event value 别名状态。一种句柄类型同时服务两种访问——在 `read` 句柄上执行修改是运行时的 `SessionReadOnlyError`，而非类型层面的拆分——而进程内单写者所有权使得在已有活跃持有者时第二次 `open(id, 'write')` 以 `SessionAlreadyOwnedError` 拒绝。
 
 ```ts type-equiv
@@ -349,6 +351,19 @@ Visibility: a created session is observable through `stat`/`list`/`open` in this
 Freshness: once an `append` or `flush` resolves, reads started afterwards on this backend instance observe at least that prefix.
 
 ```ts cordis-catalog
+/**
+ * Delete one complete Session identity. Providers must exclude writers, remove
+ * every owned generation, and prevent same-id recreation after restart. Live
+ * ownership and unsupported objects refuse; shared assets remain untouched.
+ * `incomplete` means deletion committed but physical cleanup needs retry;
+ * `unknown` requires read/retry and never means success. Cancellation only
+ * applies before the irreversible commit. Default providers refuse.
+ * @param id - complete exact identity, never a name or prefix.
+ * @param signal - cancellation before deletion commits.
+ * @returns the independently observable deletion outcome.
+ */
+deleteSession(id: SessionId, signal?: AbortSignal): Promise<SessionDeleteResult>
+
 /**
  * Create a new stored session and take its write ownership.
  * @param header - the immutable header (id, version, cwd, lineage) to store.

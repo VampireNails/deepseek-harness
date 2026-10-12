@@ -51,6 +51,13 @@ Live-event write batching is not configuration: the batching window is the seam'
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-session-persistence-jsonl) is the exhaustive source for every accepted field and its JSDoc.
 
+<a id="irreversible-deletion-on-linux"></a>
+### Irreversible deletion on Linux
+
+`sessionDeletionAvailable` advertises `deleteSession(id, signal)` only on Linux. The supported scope is an ordinary cold Session whose owner has released its persistence writer; finishing or cancelling a turn alone does not release ownership. The provider refuses live Sessions and their attached subagent descendants, active durable reminders, subagent objects, ambiguous identities, links, shared files, unknown directory entries, and unsupported storage. With Schedule events, the Schedule provider must be mounted to check their actual durable fold. No automatic cancellation or disposal occurs.
+
+Deletion holds the existing writer claim and flock, validates every canonical generation, fsyncs a root-wide retirement record, then unlinks only the recorded generations and fsyncs their directory. It preserves the lock inode, shared artifacts, memory, caches, and other Sessions. The retained record blocks reads, listing and same-ID recreation after a restart, including cleanup interrupted by a process crash. `deleted` acknowledges physical removal; `not-found` means no stored target or retirement record; `refused` leaves the target intact; `incomplete` means retirement committed but physical cleanup needs retry; `unknown` cannot establish commitment. Retry the same full ID after reconnecting; absence from a list does not prove physical cleanup. Cancellation before commitment leaves data intact; cancellation after commitment does not interrupt cleanup. This requires trusted local filesystem ownership and directory fsync support; it does not defend against a privileged process replacing directories outside the Host locking protocol.
+
 ### On-disk layout
 
 Each session gets a session-owned directory under a readable project directory. Every canonical generation starts with a physical header whose version equals its filename. The current format stores one physical row per durable event; the frozen v0 and v1 readers also understand their historical packed Assistant-delta rows. The current format stores `isSeeded` in the header and derives the inherited cut from the last tagged `session/end-seed` marker, while historical codecs translate their numeric `seedLength`. The format catalog completes that translation before a handle exposes current logical values. Current storage records use the lossless source-event representation described below:

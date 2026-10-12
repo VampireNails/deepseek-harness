@@ -8,6 +8,8 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionEvent, SessionHeader, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import type { SessionDeleteResult } from '@deepseek-ai/dsh-session/types'
+export type { SessionDeleteResult } from '@deepseek-ai/dsh-session/types'
 import type { SessionHandle, SessionAccess } from './handle.ts'
 import type { SessionPersistenceRevision } from './revision.ts'
 
@@ -110,6 +112,16 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionPersistence: SessionPersistence
   }
+  interface Events {
+    /**
+     * Validate plugin-owned durable objects before deleting a cold Session.
+     * @mode waterfall
+     * @param inspection - exact log read under exclusive write ownership.
+     * @param checked - event types whose owners validated deletion admission.
+     * @param next - delegate to remaining durable-object owners.
+     */
+    'session/deletion-check'(inspection: SessionInspection, checked: string[], next: () => Promise<'active-schedule' | undefined>): Promise<'active-schedule' | undefined>
+  }
 }
 
 /**
@@ -135,6 +147,25 @@ declare module '@deepseek-ai/cordis' {
 export abstract class SessionPersistence extends Service {
   /** Process-local instance identity, stable through Context proxies and distinct after service replacement. */
   readonly identity: symbol = Symbol('sessionPersistence')
+
+  /** Whether this backend implements irreversible deletion of unowned stored Sessions. */
+  get sessionDeletionAvailable(): boolean { return false }
+
+  /**
+   * Delete one complete Session identity. Providers must exclude writers, remove
+   * every owned generation, and prevent same-id recreation after restart. Live
+   * ownership and unsupported objects refuse; shared assets remain untouched.
+   * `incomplete` means deletion committed but physical cleanup needs retry;
+   * `unknown` requires read/retry and never means success. Cancellation only
+   * applies before the irreversible commit. Default providers refuse.
+   * @param id - complete exact identity, never a name or prefix.
+   * @param signal - cancellation before deletion commits.
+   * @returns the independently observable deletion outcome.
+   */
+  deleteSession(id: SessionId, signal?: AbortSignal): Promise<SessionDeleteResult> {
+    signal?.throwIfAborted()
+    return Promise.resolve({ status: 'refused', sessionId: id, reason: 'unavailable' })
+  }
 
   constructor(ctx: Context) {
     super(ctx, 'sessionPersistence')

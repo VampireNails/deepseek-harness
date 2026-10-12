@@ -38,6 +38,9 @@ import type {
   SessionControlFrame,
   SessionCreateRequest,
   SessionCreateValue,
+  SessionDeleteRequest,
+  SessionDeleteValue,
+  SessionDeletionCapability,
   SessionFollowFrame,
   SessionFollowRequest,
   SessionForkRequest,
@@ -251,6 +254,40 @@ export class SessionController extends TypertRemoteService {
   @Remote('list')
   async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
     return { items: await this.listState.list(signal) }
+  }
+
+  /**
+   * Discover irreversible stored-Session deletion independently of archival.
+   * @returns provider availability and the supported ownership scope.
+   */
+  @Remote('deletionCapability')
+  deletionCapability(): SessionDeletionCapability {
+    return { available: this.ctx.get('sessionPersistence')?.sessionDeletionAvailable === true, scope: 'cold-ordinary-session' }
+  }
+
+  /**
+   * Delete one exact unowned stored Session through its persistence owner.
+   * @param request - complete identity; names and prefixes are never expanded.
+   * @param signal - cancellation before irreversible commitment.
+   * @returns physical deletion or explicit refusal/recovery state.
+   */
+  @Remote('deleteSession')
+  async deleteSession(request: SessionDeleteRequest, signal: AbortSignal): Promise<SessionDeleteValue> {
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence?.sessionDeletionAvailable !== true) return { status: 'refused', sessionId: request.sessionId, reason: 'unavailable' }
+    const result = await persistence.deleteSession(request.sessionId, signal)
+    if (result.status === 'deleted') {
+      try {
+        for (const workspace of this.ctx.workspaceRegistry.list()) await workspace.detachSession(request.sessionId)
+        await this.ctx.workspaceRegistry.unarchiveSession(request.sessionId)
+        await this.ctx.workspaceRegistry.unpinSession(request.sessionId)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`deleted Session bookkeeping needs retry: ${String(error)}`)
+        return { status: 'incomplete', sessionId: request.sessionId }
+      }
+      this.ctx.emit('api-session/removed', request.sessionId)
+    }
+    return result
   }
 
   /**

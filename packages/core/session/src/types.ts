@@ -19,6 +19,12 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 /** Identifies one session in the store (and its persistence artifacts). */
 export type SessionId = Branded<'SessionId'>
 
+/** Physical deletion outcome; missing acknowledgements and transport errors remain unknown to callers. */
+export type SessionDeleteResult<Id extends string = SessionId> =
+  | { readonly status: 'deleted' | 'not-found'; readonly sessionId: Id }
+  | { readonly status: 'refused'; readonly sessionId: Id; readonly reason: 'unavailable' | 'writer-held' | 'live-owner' | 'active-schedule' | 'unsupported-object' | 'unsafe-storage' }
+  | { readonly status: 'incomplete' | 'unknown'; readonly sessionId: Id }
+
 /**
  * Brand a string as a {@link SessionId}.
  * @param id - the raw session id string.

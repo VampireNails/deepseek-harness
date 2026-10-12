@@ -32,6 +32,10 @@ print(result.final_response)
 
 `DeepSeekHarness` starts lazily and reuses its runtime until `close()` or context-manager exit. The initial profile handshake has an independent 30-second default bound through `initialize_timeout_seconds`; ordinary turns remain unbounded unless `request_timeout_seconds` is set. A timeout names the selected profile and includes retained runtime diagnostics. `cwd` is the agent workspace; `runtime_cwd` independently selects the subprocess working directory. Both become absolute before launch. `provider`, `model`, optional `reasoning_effort`, and optional positive `max_tokens` are sent during JSON-RPC initialization. `base_url` and `api_key` explicitly override `DEEPSEEK_BASE_URL` and `DEEPSEEK_API_KEY` in the child environment.
 
+## Persistent deletion
+
+`HarnessClient.deletion_capability()` discovers Linux cold-Session deletion; `delete_session(session_id)` returns `SessionDeletionResult` with `deleted`, `not-found`, `refused`, `incomplete` or `unknown`. A mismatched identity or a refusal without a reason raises `TypeError`, and malformed protocol values never acknowledge deletion. Turn completion or cancellation does not release the runtime's Agent writer: close the owning runtime, then delete the cold identity from a fresh runtime. Reconnect and retry the exact ID after transport failure; absence from a list cannot confirm physical cleanup. The [storage contract](../../packages/session/session-persistence-jsonl/README.md#irreversible-deletion-on-linux) owns admission and irreversible retirement.
+
 ## Customize plugins
 
 Persistent customization belongs to a `dsh` profile. Initialize the shipped SDK profile and install an external bundle with the runtime wheel's `dsh` command:

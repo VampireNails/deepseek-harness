@@ -27,6 +27,10 @@ English | [中文](README.zh.md)
 
 Use this client when TypeScript code must drive a complete Harness runtime from another process and you can name the runtime executable explicitly. The common path is minimal: construct a `DeepSeekHarness` with a launch spec, run prompts, and close it so the child process is always reaped.
 
+### Persistent deletion
+
+`HarnessClient.deletionCapability()` discovers Linux cold-Session deletion. `deleteSession(sessionId)` accepts one full identity and preserves `deleted`, `not-found`, `refused`, `incomplete` and `unknown` outcomes; malformed or wrong-target replies raise `SdkProtocolError`. A turn ending or cancellation does not release an SDK-owned Agent's writer. Close its owning runtime before deleting that cold identity from a fresh runtime. Transport failure requires reconnecting and retrying the exact ID; listing absence alone cannot confirm physical cleanup. The [storage contract](../../session/session-persistence-jsonl/README.md#irreversible-deletion-on-linux) defines ownership and irreversible retirement.
+
 ### Running agent turns with DeepSeekHarness
 
 ```ts

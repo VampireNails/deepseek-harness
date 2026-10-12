@@ -32,6 +32,10 @@ print(result.final_response)
 
 `DeepSeekHarness` 延迟启动运行时，并在调用 `close()` 或退出上下文管理器前复用该进程。首次 profile 握手通过 `initialize_timeout_seconds` 使用独立的 30 秒默认上限；普通轮次在未设置 `request_timeout_seconds` 时仍不设上限。超时诊断会指明所选 profile，并包含保留的运行时诊断。`cwd` 是 agent workspace；`runtime_cwd` 独立选择子进程工作目录。两者都会在启动前转成绝对路径。`provider`、`model`、可选的 `reasoning_effort` 和可选的正整数 `max_tokens` 通过 JSON-RPC 初始化发送。`base_url` 与 `api_key` 会显式覆盖子进程环境中的 `DEEPSEEK_BASE_URL` 与 `DEEPSEEK_API_KEY`。
 
+## 持久删除
+
+`HarnessClient.deletion_capability()` 发现 Linux 冷会话删除能力；`delete_session(session_id)` 返回 `SessionDeletionResult`，结果为 `deleted`、`not-found`、`refused`、`incomplete` 或 `unknown`。身份不匹配或拒绝结果缺少原因时抛出 `TypeError`，协议值格式错误不会确认删除。turn 完成或取消不会释放 runtime 的 Agent 写句柄：先关闭拥有者 runtime，再从新 runtime 删除冷身份。传输失败后重连并重试同一精确 ID；列表中缺失不能确认物理清理。[存储契约](../../packages/session/session-persistence-jsonl/README.zh.md#irreversible-deletion-on-linux)负责许可与不可逆退役语义。
+
 ## 自定义插件
 
 持久自定义属于 `dsh` profile。使用运行时 wheel 包提供的 `dsh` 命令初始化随附的 SDK profile，并安装外部 bundle：

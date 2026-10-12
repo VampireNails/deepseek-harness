@@ -1887,6 +1887,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'visible Session summaries ordered by activity.',
       },
       {
+        signature: '@Remote(\'deletionCapability\') deletionCapability(): SessionDeletionCapability',
+        description: 'Discover irreversible stored-Session deletion independently of archival.',
+        parameters: [],
+        returns: 'provider availability and the supported ownership scope.',
+      },
+      {
+        signature: '@Remote(\'deleteSession\') async deleteSession(request: SessionDeleteRequest, signal: AbortSignal): Promise<SessionDeleteValue>',
+        description: 'Delete one exact unowned stored Session through its persistence owner.',
+        parameters: [{ name: 'request', description: 'complete identity; names and prefixes are never expanded.' }, { name: 'signal', description: 'cancellation before irreversible commitment.' }],
+        returns: 'physical deletion or explicit refusal/recovery state.',
+      },
+      {
         signature: '@Remote(\'search\') search(request: SessionSearchRequest, signal: AbortSignal): Promise<SessionSearchValue>',
         description: 'Search visible Session content without resuming an Agent.',
         parameters: [{ name: 'request', description: 'literal message-content query.' }, { name: 'signal', description: 'cancellation for list and search reads.' }],
@@ -2033,6 +2045,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'readonly identity: symbol = Symbol(\'sessionPersistence\')',
         description: 'Process-local instance identity, stable through Context proxies and distinct after service replacement.',
         parameters: [],
+      },
+      {
+        signature: 'deleteSession(id: SessionId, signal?: AbortSignal): Promise<SessionDeleteResult>',
+        description: 'Delete one complete Session identity. Providers must exclude writers, remove every owned generation, and prevent same-id recreation after restart. Live ownership and unsupported objects refuse; shared assets remain untouched. `incomplete` means deletion committed but physical cleanup needs retry; `unknown` requires read/retry and never means success. Cancellation only applies before the irreversible commit. Default providers refuse.',
+        parameters: [{ name: 'id', description: 'complete exact identity, never a name or prefix.' }, { name: 'signal', description: 'cancellation before deletion commits.' }],
+        returns: 'the independently observable deletion outcome.',
       },
       {
         signature: 'abstract create(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionHandle>',
@@ -4085,6 +4103,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Creation announcement during session publication.',
     description: 'Creation announcement during session publication. A synchronous throw vetoes and rolls back with a paired disposal; detach requested during dispatch is deferred. A returned-promise rejection is logged but cannot retroactively veto this synchronous boundary. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only sessions entered through that agent\'s context.',
     parameters: [{ name: 'session', description: 'the session just entered and announced.' }],
+  },
+  {
+    name: 'session/deletion-check',
+    mode: 'waterfall',
+    signature: '\'session/deletion-check\'(inspection: SessionInspection, checked: string[], next: () => Promise<\'active-schedule\' | undefined>): Promise<\'active-schedule\' | undefined>',
+    summary: 'Validate plugin-owned durable objects before deleting a cold Session.',
+    description: 'Validate plugin-owned durable objects before deleting a cold Session.',
+    parameters: [{ name: 'inspection', description: 'exact log read under exclusive write ownership.' }, { name: 'checked', description: 'event types whose owners validated deletion admission.' }, { name: 'next', description: 'delegate to remaining durable-object owners.' }],
   },
   {
     name: 'session/disposed',
@@ -6281,6 +6307,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionCreateValue',
     declaration: 'export interface SessionCreateValue {\n    readonly sessionId: SessionId;\n    readonly agentPreset?: string;\n}',
+  },
+  {
+    name: 'SessionDeleteRequest',
+    declaration: 'export interface SessionDeleteRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'SessionDeleteResult',
+    declaration: 'export type SessionDeleteResult<Id extends string = SessionId> = {\n    readonly status: \'deleted\' | \'not-found\';\n    readonly sessionId: Id;\n} | {\n    readonly status: \'refused\';\n    readonly sessionId: Id;\n    readonly reason: \'unavailable\' | \'writer-held\' | \'live-owner\' | \'active-schedule\' | \'unsupported-object\' | \'unsafe-storage\';\n} | {\n    readonly status: \'incomplete\' | \'unknown\';\n    readonly sessionId: Id;\n};',
+  },
+  {
+    name: 'SessionDeleteValue',
+    declaration: 'export type SessionDeleteValue = SessionDeleteResult;',
   },
   {
     name: 'SessionEvent',

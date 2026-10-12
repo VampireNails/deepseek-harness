@@ -21751,7 +21751,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:206"
+        "packages/core/session/src/types.ts:212"
       ]
     },
     {
@@ -21853,7 +21853,7 @@
         "packages/core/session/src/types.ts#SessionSeq"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:32"
+        "packages/core/session/src/types.ts:38"
       ]
     },
     {
@@ -22397,7 +22397,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:204"
+        "packages/core/session/src/types.ts:210"
       ]
     },
     {
@@ -29391,7 +29391,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:427"
+        "packages/core/session/src/types.ts:433"
       ]
     },
     {
@@ -29717,7 +29717,7 @@
         "packages/core/session/src/types.ts#SessionHeader"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:94"
+        "packages/core/session/src/types.ts:100"
       ]
     },
     {
@@ -30917,7 +30917,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:341"
+        "packages/core/session/src/types.ts:347"
       ]
     },
     {
@@ -31642,7 +31642,7 @@
         "packages/core/session/src/types.ts#TurnEndCancelCause"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:196"
+        "packages/core/session/src/types.ts:202"
       ]
     },
     {
@@ -35023,7 +35023,7 @@
         "packages/core/session/src/types.ts#SurfaceOp"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:462"
+        "packages/core/session/src/types.ts:468"
       ]
     },
     {
@@ -35996,7 +35996,7 @@
         "packages/core/session/src/types.ts#OptionalSessionSeq"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:65"
+        "packages/core/session/src/types.ts:71"
       ]
     },
     {
@@ -44568,7 +44568,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:193"
+        "packages/core/session/src/types.ts:199"
       ]
     },
     {
@@ -44608,7 +44608,7 @@
         "packages/workflow/workflow/src/types.ts#WorkflowRunId"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:396",
+        "packages/api/session-controller/src/types.ts:404",
         "packages/attachment/attachment/src/brand.ts:6",
         "packages/compaction/compaction/src/brand.ts:4",
         "packages/core/session/src/types.ts:20",
@@ -47881,7 +47881,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:311"
+        "packages/core/session/src/types.ts:317"
       ]
     },
     {
@@ -48757,7 +48757,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:375"
+        "packages/core/session/src/types.ts:381"
       ]
     },
     {
@@ -48796,7 +48796,7 @@
         "packages/core/session/src/types.ts#RequestHeaderReason"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:273"
+        "packages/core/session/src/types.ts:279"
       ]
     },
     {
@@ -49710,7 +49710,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:355"
+        "packages/core/session/src/types.ts:361"
       ]
     },
     {
@@ -49814,7 +49814,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:221"
+        "packages/core/session/src/types.ts:227"
       ]
     },
     {
@@ -58191,7 +58191,7 @@
       },
       "names": [],
       "sources": [
-        "packages/api/session-controller/src/types.ts:401"
+        "packages/api/session-controller/src/types.ts:409"
       ]
     },
     {
@@ -58691,7 +58691,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:330"
+        "packages/core/session/src/types.ts:336"
       ]
     },
     {
@@ -58718,7 +58718,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:191"
+        "packages/core/session/src/types.ts:197"
       ]
     },
     {
@@ -58768,7 +58768,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:192"
+        "packages/core/session/src/types.ts:198"
       ]
     },
     {
@@ -59797,7 +59797,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:212"
+        "packages/core/session/src/types.ts:218"
       ]
     },
     {
@@ -65332,7 +65332,7 @@
         "packages/core/session/src/types.ts#EpochHeader"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:240"
+        "packages/core/session/src/types.ts:246"
       ]
     },
     {
@@ -69451,7 +69451,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:383",
+        "packages/core/session/src/types.ts:389",
         "packages/core/tools/src/types.ts:24"
       ]
     },
@@ -70339,7 +70339,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:214",
+        "packages/core/session/src/types.ts:220",
         "packages/llm/llm/src/types.ts:160"
       ]
     },
@@ -70574,7 +70574,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:390"
+        "packages/core/session/src/types.ts:396"
       ]
     },
     {
@@ -70645,7 +70645,7 @@
         "packages/interaction/commands/src/types.ts#CommandSource"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:190",
+        "packages/core/session/src/types.ts:196",
         "packages/interaction/commands/src/types.ts:75",
         "packages/interaction/commands/src/types.ts:79",
         "packages/llm/llm/src/message.ts:111",
@@ -71028,7 +71028,7 @@
         "packages/core/session/src/types.ts#RequestContext"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:254"
+        "packages/core/session/src/types.ts:260"
       ]
     },
     {
@@ -72259,7 +72259,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:202"
+        "packages/core/session/src/types.ts:208"
       ]
     },
     {
@@ -73280,7 +73280,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:464"
+        "packages/core/session/src/types.ts:470"
       ]
     },
     {
@@ -82854,7 +82854,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:297"
+        "packages/core/session/src/types.ts:303"
       ]
     },
     {
@@ -82905,7 +82905,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:361"
+        "packages/core/session/src/types.ts:367"
       ]
     },
     {
@@ -83620,7 +83620,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:196"
+        "packages/core/session/src/types.ts:202"
       ]
     },
     {
@@ -83753,7 +83753,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:228"
+        "packages/core/session/src/types.ts:234"
       ]
     },
     {
@@ -86682,8 +86682,8 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:299",
-        "packages/core/session/src/types.ts:301"
+        "packages/core/session/src/types.ts:305",
+        "packages/core/session/src/types.ts:307"
       ]
     },
     {
@@ -86750,7 +86750,7 @@
         "packages/api/session-controller/src/types.ts#ModelSelection"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:100"
+        "packages/api/session-controller/src/types.ts:108"
       ]
     },
     {
@@ -87025,7 +87025,7 @@
         "packages/core/session/src/types.ts#TurnEndReason"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:232"
+        "packages/core/session/src/types.ts:238"
       ]
     },
     {
@@ -90406,7 +90406,7 @@
       },
       "names": [],
       "sources": [
-        "packages/core/session/src/types.ts:288",
+        "packages/core/session/src/types.ts:294",
         "packages/deliverables/workspace-changes/src/types.ts:106"
       ]
     },

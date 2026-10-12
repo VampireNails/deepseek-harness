@@ -8,6 +8,8 @@ The seam is a [capability seam](../../.agents/notes/implemented/architecture/202
 
 ## `SessionHandle` — one open channel onto a stored session
 
+Explicit irreversible deletion is a separate `deleteSession` operation guarded by `sessionDeletionAvailable`; out-of-tree providers default to unavailable. Its browser-safe `SessionDeleteResult` reports physical cleanup, refusal, incomplete cleanup or unknown commitment. `SessionDeleteRequest` carries one exact `sessionId`; `SessionDeleteValue` aliases the result; `SessionDeletionCapability` carries `available: boolean` and scope `cold-ordinary-session`. The [JSONL provider](../../packages/session/session-persistence-jsonl/README.md#irreversible-deletion-on-linux) owns Linux admission and recovery semantics, while the [retirement decision](../../.agents/notes/implemented/architecture/2026-10-13-explicit-session-retirement.md) explains permanent identity records.
+
 Every log read and write flows through a handle, never through id-addressed service methods: the handle is the single door the cross-process write lease guards. A read returns a caller-owned outer slice and the producer-established aliasing state of its event values. One handle type serves both accesses — a mutation on a `read` handle is a runtime `SessionReadOnlyError` rather than a typed split — and in-process single-writer ownership makes a second `open(id, 'write')` reject with `SessionAlreadyOwnedError` while an owner is active.
 
 ```ts type-equiv
@@ -349,6 +351,19 @@ Visibility: a created session is observable through `stat`/`list`/`open` in this
 Freshness: once an `append` or `flush` resolves, reads started afterwards on this backend instance observe at least that prefix.
 
 ```ts cordis-catalog
+/**
+ * Delete one complete Session identity. Providers must exclude writers, remove
+ * every owned generation, and prevent same-id recreation after restart. Live
+ * ownership and unsupported objects refuse; shared assets remain untouched.
+ * `incomplete` means deletion committed but physical cleanup needs retry;
+ * `unknown` requires read/retry and never means success. Cancellation only
+ * applies before the irreversible commit. Default providers refuse.
+ * @param id - complete exact identity, never a name or prefix.
+ * @param signal - cancellation before deletion commits.
+ * @returns the independently observable deletion outcome.
+ */
+deleteSession(id: SessionId, signal?: AbortSignal): Promise<SessionDeleteResult>
+
 /**
  * Create a new stored session and take its write ownership.
  * @param header - the immutable header (id, version, cwd, lineage) to store.

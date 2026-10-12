@@ -115,5 +115,15 @@ export interface HarnessSdkNotificationMap {
 export interface HarnessSdkRequestMap {
   'initialize': { params: InitializeParams; result: InitializeResult }
   'session/prompt': { params: SessionPromptParams; result: SessionPromptResult }
+  'session/deletionCapability': { params: undefined; result: SessionDeletionCapability }
+  'session/deleteSession': { params: { sessionId: string }; result: SessionDeletionResult }
   'shutdown': { params: undefined; result: Record<string, never> }
 }
+
+/** Discovery of irreversible deletion; live SDK Sessions still hold write ownership. */
+export interface SessionDeletionCapability {
+  readonly available: boolean
+  readonly scope: 'cold-ordinary-session'
+}
+/** Exact physical deletion outcome shared by SDK clients and the Host storage owner. */
+export type SessionDeletionResult = import('@deepseek-ai/dsh-session/types').SessionDeleteResult<string>

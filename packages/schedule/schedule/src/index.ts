@@ -13,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 import type { SessionActivity } from '@deepseek-ai/dsh-workspace'
 import { flushSchedulePersistence } from './persistence.ts'
 import { scheduleProjectionDefinition } from './projection.ts'
+import { foldScheduleEvents } from './domain.ts'
 import { ScheduleRuntime } from './runtime.ts'
 import { registerScheduleTools } from './tools.ts'
 import { runScheduleTransaction } from './transaction.ts'
@@ -66,6 +67,12 @@ interface OwnedRuntime {
  * block when they fire.
  */
 export function apply(ctx: Context): void {
+  ctx.on('session/deletion-check', async (inspection, checked, next) => {
+    const active = foldScheduleEvents(inspection.events, inspection.inheritedEventCount).active
+    checked.push('schedule/change')
+    const rest = await next()
+    return active.length > 0 ? 'active-schedule' : rest
+  })
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.register(scheduleProjectionDefinition)
   })

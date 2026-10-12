@@ -51,6 +51,13 @@ kind: "package-reference"
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-session-persistence-jsonl)是每个受支持字段及其 JSDoc 的穷尽式真源。
 
+<a id="irreversible-deletion-on-linux"></a>
+### Linux 上的不可逆删除
+
+`sessionDeletionAvailable` 仅在 Linux 上声明支持 `deleteSession(id, signal)`。支持范围为拥有者已释放持久化写句柄的普通冷会话；结束或取消 turn 本身不会释放所有权。提供方拒绝活动会话及其仍挂载的子代理后代、活动持久提醒、子代理对象、身份歧义、链接、共享文件、未知目录项和不受支持的存储。日志包含 Schedule 事件时，必须挂载 Schedule 提供方以核验实际持久日志的折叠结果。删除不会自动取消或 dispose 对象。
+
+删除持有现有写入声明与 flock，验证每个规范 generation，将根级永久退役记录 fsync 到磁盘，然后仅 unlink 记录中的 generation 并 fsync 其目录。锁 inode、共享产物、记忆、缓存和其他会话均保留。永久记录在重启后仍阻止读取、列表发现和同 ID 重建，包括进程崩溃中断的清理。`deleted` 确认物理文件已删除；`not-found` 表示存储目标和退役记录均不存在；`refused` 保留目标；`incomplete` 表示退役已提交但物理清理需重试；`unknown` 无法确定是否提交。重新连接后使用同一完整 ID 重试；列表中不可见不能证明物理清理已完成。提交前取消保留数据；提交后取消不会打断清理。此契约要求可信本地文件系统所有权及目录 fsync 支持；不防御特权进程绕过 Host 锁协议替换目录。
+
 ### 磁盘布局
 
 每个会话在可读项目目录下获得一个会话自有目录。每个规范 generation 都以版本与文件名一致的物理 header 开始。当前格式为每个持久事件存储一行；冻结的 v0 与 v1 reader 也能理解其历史 packed Assistant delta 行。当前格式在 header 中存储 `isSeeded`，并从最后一个带标记的 `session/end-seed` 推导 inherited cut；历史 codec 则转换其数字 `seedLength`。格式 catalog 会在句柄暴露当前逻辑值之前完成该转换。当前存储记录使用下文所述的无损来源序列表示：

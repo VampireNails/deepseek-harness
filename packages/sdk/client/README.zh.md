@@ -27,6 +27,10 @@ kind: "package-library"
 
 当 TypeScript 代码需要从另一进程驱动完整 Harness 运行时、且你能显式指名运行时可执行文件时，使用本客户端。常用路径极简：用启动规格构造 `DeepSeekHarness`，运行提示词，然后关闭它，使子进程总能被回收。
 
+### 持久删除
+
+`HarnessClient.deletionCapability()` 发现 Linux 冷会话删除能力。`deleteSession(sessionId)` 接受一个完整身份，并保留 `deleted`、`not-found`、`refused`、`incomplete` 和 `unknown` 结果；格式错误或目标不匹配的应答抛出 `SdkProtocolError`。turn 结束或取消不会释放 SDK 拥有的 Agent 写句柄。先关闭其 runtime，再从新 runtime 删除该冷身份。传输失败后需重连并重试同一精确 ID；仅在列表中缺失不能确认物理清理。[存储契约](../../session/session-persistence-jsonl/README.zh.md#irreversible-deletion-on-linux)定义所有权与不可逆退役。
+
 ### 用 DeepSeekHarness 运行 agent 轮次
 
 ```ts

@@ -22,7 +22,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import {
   SessionPersistence, SessionPersistenceRevision, SessionFormatUnsupportedError,
   SessionPersistenceCorruptionError,
-  SessionAlreadyExistsError, SessionPersistenceNotFoundError,
+  SessionAlreadyExistsError, SessionAlreadyOwnedError, SessionPersistenceNotFoundError,
   assertStoredId, materializeCreateHeader, sessionFormatVersionRefusal, validateStoredEvents,
   type SessionAccess, type SessionHandle,
   type SessionHandleReadResult,
@@ -30,7 +30,9 @@ import {
   type SessionPersistenceListOptions, type SessionPersistenceOpenOptions,
   type SessionPersistenceSnapshot, type SessionPersistenceStatOptions,
   type SessionPersistenceRevision as PersistenceRevision,
+  type SessionDeleteResult,
 } from '@deepseek-ai/dsh-session-persistence'
+import { JsonlSessionDeletion } from './deletion.ts'
 import { JsonlBackendTracker, JsonlSessionHandle, type StorageHandleState } from './storage.ts'
 import { SessionWriteLease } from './lease.ts'
 import { SESSION_FORMAT_VERSION, SessionId as makeSessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
@@ -266,6 +268,7 @@ class JsonlSessionPersistence extends SessionPersistence {
   private readonly coldLogMemo = new Map<SessionId, StoredLog>()
   /** One joinable decode/migration operation per selected historical Session file revision. */
   private readonly migrationPreparations = new Map<SessionId, MigrationPreparation>()
+  private readonly deletion: JsonlSessionDeletion
 
   constructor(ctx: Context, public config: Config) {
     super(ctx)
@@ -278,6 +281,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     }
     // Resolve once so later process.cwd() changes cannot split one backend across roots.
     this.root = resolve(config.root)
+    this.deletion = new JsonlSessionDeletion(this.root)
     this.compression = config.compression ?? DEFAULT_COMPRESSION
     this.generationFormat = {
       currentVersion: sessionFormatCatalog.currentVersion,
@@ -319,6 +323,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     toHeaderLine(snapshot, options?.inheritedEventCount)
     const inheritedEventCount = SessionLogOffset(options?.inheritedEventCount ?? 0)
     await this.ensureRootEncoding()
+    if (await this.deletion.directory(snapshot.id) !== undefined) throw new SessionAlreadyExistsError(snapshot.id)
     options?.signal?.throwIfAborted()
     if (this.tracker.hasPending(snapshot.id) || await this.findLog(snapshot.id, options?.signal) !== undefined) {
       throw new SessionAlreadyExistsError(snapshot.id)
@@ -415,6 +420,91 @@ class JsonlSessionPersistence extends SessionPersistence {
         throw new AggregateError([failure, releaseFailure], `session "${id}": write open failed and its lock release failed`)
       }
       throw failure
+    }
+  }
+
+  override get sessionDeletionAvailable(): boolean { return process.platform === 'linux' }
+
+  /**
+   * Retire one unowned ordinary Session and remove all its canonical generations.
+   * Writer claims and flock cover the final identity check and irreversible marker.
+   * A retry resumes physical cleanup from that exact marker. No directory or
+   * lock inode is removed; unknown entries, links, and subagent objects refuse.
+   * @param id - complete stored Session identity.
+   * @param signal - cancellation before marker publication.
+   * @returns explicit deletion, refusal, or recovery state.
+   */
+  override async deleteSession(id: SessionId, signal?: AbortSignal): Promise<SessionDeleteResult> {
+    signal?.throwIfAborted()
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(id)) return { status: 'refused', sessionId: id, reason: 'unsafe-storage' }
+    if (!this.sessionDeletionAvailable) return { status: 'refused', sessionId: id, reason: 'unavailable' }
+    try { this.tracker.claimWrite(id) } catch (error: unknown) {
+      if (error instanceof SessionAlreadyOwnedError) return { status: 'refused', sessionId: id, reason: 'writer-held' }
+      throw error
+    }
+    let lease: SessionWriteLease | undefined
+    const progress = { committed: false }
+    try {
+      const retired = await this.deletion.directory(id)
+      const selected = retired === undefined ? await this.findLog(id, signal) : undefined
+      const dir = retired ?? (selected === undefined ? undefined : dirname(selected.sourcePath))
+      if (dir === undefined) return { status: 'not-found', sessionId: id }
+      await this.deletion.inspect(dir)
+      lease = await this.acquireLease(id, undefined, dir)
+      if (retired === undefined) {
+        const current = await this.findLog(id, signal)
+        if (current?.sourcePath !== selected?.sourcePath) return { status: 'refused', sessionId: id, reason: 'unsafe-storage' }
+        const stored = await this.requireStoredLog(id, signal)
+        if (stored.meta.origin === 'subagent') return { status: 'refused', sessionId: id, reason: 'unsupported-object' }
+        const checked: string[] = []
+        const refusal = await this.ctx.waterfall('session/deletion-check', {
+          meta: stored.meta, events: stored.events, inheritedEventCount: stored.inheritedEventCount,
+        }, checked, () => Promise.resolve(undefined))
+        if (refusal !== undefined) return { status: 'refused', sessionId: id, reason: refusal }
+        const hasSchedules = stored.events.some((event: { readonly type: string }) => event.type === 'schedule/change')
+        if (hasSchedules && !checked.includes('schedule/change')) {
+          return { status: 'refused', sessionId: id, reason: 'unsupported-object' }
+        }
+        for (const file of await this.deletion.inspect(dir)) {
+          const version = parseGenerationLogFilename(file, this.compression)
+          if (version === undefined) return { status: 'refused', sessionId: id, reason: 'unsafe-storage' }
+          const generation = { sourcePath: join(dir, file), sourceVersion: version, currentPath: join(dir, file) }
+          const header = await this.readGenerationHeader(generation, id, signal)
+          if (header === undefined) return { status: 'refused', sessionId: id, reason: 'unsafe-storage' }
+        }
+      }
+      const sessions = this.ctx.get('sessions')?.list() ?? []
+      const owned = new Set<SessionId>([id])
+      let changed = true
+      while (changed) {
+        changed = false
+        for (const session of sessions) {
+          if (session.header.origin === 'subagent' && session.header.parentSession !== undefined
+            && owned.has(session.header.parentSession) && !owned.has(session.id)) {
+            owned.add(session.id)
+            changed = true
+          }
+        }
+      }
+      if (sessions.some(session => owned.has(session.id))) return { status: 'refused', sessionId: id, reason: 'live-owner' }
+      signal?.throwIfAborted()
+      await this.deletion.commit(id, dir, () => { progress.committed = true }, signal)
+      this.coldLogMemo.delete(id)
+      return { status: 'deleted', sessionId: id }
+    } catch (error: unknown) {
+      if (error instanceof SessionAlreadyOwnedError) return { status: 'refused', sessionId: id, reason: 'writer-held' }
+      if (progress.committed) return { status: 'incomplete', sessionId: id }
+      try {
+        if (await this.deletion.directory(id) !== undefined) return { status: 'unknown', sessionId: id }
+      } catch (recordError: unknown) {
+        // A malformed or unreadable marker cannot establish whether retirement committed.
+        this.ctx.logger.warn(`session deletion state unavailable: ${String(recordError)}`)
+        return { status: 'unknown', sessionId: id }
+      }
+      signal?.throwIfAborted()
+      return { status: 'refused', sessionId: id, reason: 'unsafe-storage' }
+    } finally {
+      try { await lease?.release() } finally { this.tracker.releaseClaim(id) }
     }
   }
 
@@ -833,6 +923,7 @@ class JsonlSessionPersistence extends SessionPersistence {
    * @returns the current artifact path, or `undefined` while only a historical generation exists.
    */
   async resolveCurrentLog(id: SessionId, signal?: AbortSignal): Promise<string | undefined> {
+    if (await this.deletion.directory(id) !== undefined) throw new SessionPersistenceNotFoundError(id)
     await this.ensureRootEncoding()
     signal?.throwIfAborted()
     const selected = await this.findLog(id, signal)
@@ -932,7 +1023,14 @@ class JsonlSessionPersistence extends SessionPersistence {
     // Refuse an opposite-encoding artifact before the lock's mkdir publishes
     // the session directory — the last moment the directory can be absent.
     await this.rejectOppositeArtifact(header.cwd, header.id)
-    return this.acquireLease(header.id, header.cwd)
+    const lease = await this.acquireLease(header.id, header.cwd)
+    try {
+      if (await this.deletion.directory(header.id) !== undefined) throw new SessionPersistenceNotFoundError(header.id)
+      return lease
+    } catch (error: unknown) {
+      await lease.release()
+      throw error
+    }
   }
 
   /** Decode complete frames and retain complete JSONL records from a torn final frame. */
@@ -1073,6 +1171,7 @@ class JsonlSessionPersistence extends SessionPersistence {
       if (header === undefined) {
         continue
       }
+      if (await this.deletion.directory(header.id) !== undefined) continue
       if (ids.has(header.id)) {
         throw new Error(`duplicate JSONL session id "${header.id}" appears in multiple project directories`)
       }
@@ -1484,6 +1583,7 @@ class JsonlSessionPersistence extends SessionPersistence {
 
   /** Find the unique authoritative generation for an id across project directories. */
   private async findLog(id: SessionId, signal?: AbortSignal): Promise<ResolvedJsonlGeneration | undefined> {
+    if (await this.deletion.directory(id) !== undefined) return undefined
     const matches: ResolvedJsonlGeneration[] = []
     for (const project of await this.listProjectDirs(signal)) {
       signal?.throwIfAborted()

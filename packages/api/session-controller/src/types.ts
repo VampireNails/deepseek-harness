@@ -11,6 +11,14 @@ import type { SessionId, SessionSeqCursor } from '@deepseek-ai/dsh-session/types
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { SessionDeleteResult } from '@deepseek-ai/dsh-session/types'
+
+/** Exact irreversible deletion request; the Host rechecks all storage ownership. */
+export interface SessionDeleteRequest { readonly sessionId: SessionId }
+/** Physical deletion outcome, including refused, incomplete, and unknown states. */
+export type SessionDeleteValue = SessionDeleteResult
+/** Provider discovery; currently supports unowned cold ordinary Sessions on Linux. */
+export interface SessionDeletionCapability { readonly available: boolean; readonly scope: 'cold-ordinary-session' }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
