@@ -44,6 +44,15 @@ export const TASK_LABELS = {
   goal_review: "目标进展审查",
   goal_act: "目标自主执行",
   other: "其他",
+  evolve_dreaming: "深夜复盘",
+  evolve_skill_review: "技能审查",
+  evolve_studying: "学习",
+  evolve_ideas: "想法整理",
+  evolve_goal_review: "目标进展审查",
+  evolve_goal_act: "目标自主执行",
+  memory_upkeep: "记忆整理",
+  upkeep: "记忆整理",
+  morning: "晨间简报",
 };
 
 // 从首条 user/message 文本识别任务
@@ -145,7 +154,7 @@ function attributionIndex(sessionsRoot, explicit) {
   } catch (error) { db?.close(); throw Error('TOKENLOG_METADATA_INVALID'); }
 }
 function taskIdentity(rows, index) {
-  const header = rows.find(ev => ev.version === 4 && typeof ev.id === 'string' && !ev.type);
+  const header = rows.find(ev => ev.version === 4 && typeof ev.id === 'string' && ev.type === 'session');
   const identity = header && header.id.length <= 1024 ? index?.find(header.id) : undefined;
   if (identity) {
     const {task_id: id, run_id: run, run_date: date} = identity;
@@ -164,7 +173,7 @@ function taskIdentity(rows, index) {
 export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7, decompress = defaultDecompress, options = {}) {
   const result = {days, sessions:0, skipped:0, byTask:{}, byDay:{}, byModel:{},
     taskUsage:{available:true,classificationAvailable:true,scopeAvailable:false}, availability:{status:'complete'}, details:zero()};
-  const cutoff = Date.now() - days * 24 * 3600 * 1000;
+  const scanTime = Date.now(), cutoff = scanTime - days * 24 * 3600 * 1000;
   let dirs;
   try { dirs = readdirSync(sessionsRoot, {withFileTypes:true}).filter(e => e.isDirectory()).map(e => e.name).sort(); }
   catch { throw Error('TOKENLOG_SOURCE_UNAVAILABLE'); }
@@ -187,7 +196,7 @@ export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7
         throw Error('TOKENLOG_DECOMPRESS_FAILED');
       }
       const rows = events(text); if (!rows.length) throw Error('TOKENLOG_LOG_INVALID');
-      const header = rows.find(ev => ev.version === 4 && typeof ev.id === 'string' && !ev.type);
+      const header = rows.find(ev => ev.version === 4 && typeof ev.id === 'string' && ev.type === 'session');
       if (header) {
         const fingerprint = createHash('sha256').update(JSON.stringify(rows)).digest('hex'), previous = roots.get(header.id);
         if (previous !== undefined) { if (previous !== fingerprint) throw Error('TOKENLOG_DUPLICATE_CONFLICT'); continue; }
@@ -203,7 +212,7 @@ export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7
         if (ev.type !== 'assistant/message' || !ev.data?.usage) continue;
         const counts = usage(ev.data.usage);
         if (!Number.isSafeInteger(ev.time) || !Number.isFinite(new Date(ev.time).getTime())) throw Error('TOKENLOG_LOG_INVALID');
-        if (ev.time < cutoff) continue;
+        if (ev.time < cutoff || ev.time > scanTime) continue;
         add(sessionCounts,counts); bump(result.byDay,dayKey(ev.time),counts,1);
         if (!models.has(model)) models.set(model,zero()); add(models.get(model),counts);
       }
