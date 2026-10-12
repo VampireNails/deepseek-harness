@@ -1,0 +1,134 @@
+[
+  {
+    "mode": "quota-success",
+    "diagnostic": {
+      "version": 1,
+      "category": "success",
+      "code": "OK",
+      "result": "completed",
+      "attempts": 2,
+      "retryReason": "pre-execution-rejection",
+      "provider": "deepseek-official",
+      "model": "deepseek-pro",
+      "actualProvider": "deepseek-official",
+      "actualModel": "deepseek-pro"
+    }
+  },
+  {
+    "mode": "quota",
+    "diagnostic": {
+      "version": 1,
+      "category": "quota",
+      "code": "MODEL_QUOTA",
+      "result": "rejected",
+      "attempts": 2,
+      "retryReason": "attempt-limit",
+      "provider": "deepseek-official",
+      "model": "deepseek-pro",
+      "actualProvider": "deepseek-official",
+      "actualModel": "deepseek-pro",
+      "providerCode": "QUOTA",
+      "httpStatus": 402
+    }
+  },
+  {
+    "mode": "rate",
+    "diagnostic": {
+      "version": 1,
+      "category": "rate-limit",
+      "code": "MODEL_RATE_LIMIT",
+      "result": "rejected",
+      "attempts": 2,
+      "retryReason": "attempt-limit",
+      "provider": "deepseek-official",
+      "model": "deepseek-pro",
+      "actualProvider": "deepseek-official",
+      "actualModel": "deepseek-pro",
+      "providerCode": "RATE_LIMIT",
+      "httpStatus": 429
+    }
+  },
+  {
+    "mode": "auth",
+    "diagnostic": {
+      "version": 1,
+      "category": "authentication",
+      "code": "MODEL_AUTHENTICATION",
+      "result": "unknown",
+      "attempts": 1,
+      "retryReason": "unsafe-or-unknown-result",
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "actualProvider": "deepseek-official",
+      "actualModel": "deepseek-flash",
+      "providerCode": "AUTH",
+      "httpStatus": 401
+    }
+  },
+  {
+    "mode": "service",
+    "diagnostic": {
+      "version": 1,
+      "category": "service",
+      "code": "MODEL_SERVICE",
+      "result": "unknown",
+      "attempts": 1,
+      "retryReason": "unsafe-or-unknown-result",
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "actualProvider": "deepseek-official",
+      "actualModel": "deepseek-flash",
+      "providerCode": "SERVER",
+      "httpStatus": 503
+    }
+  },
+  {
+    "mode": "network",
+    "diagnostic": {
+      "version": 1,
+      "category": "network",
+      "code": "MODEL_NETWORK",
+      "result": "unknown",
+      "attempts": 1,
+      "retryReason": "unsafe-or-unknown-result",
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "actualProvider": "deepseek-official",
+      "actualModel": "deepseek-flash",
+      "providerCode": "TRANSPORT"
+    }
+  },
+  {
+    "mode": "partial",
+    "diagnostic": {
+      "version": 1,
+      "category": "rate-limit",
+      "code": "MODEL_RATE_LIMIT",
+      "result": "partial",
+      "attempts": 1,
+      "retryReason": "unsafe-or-unknown-result",
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "actualProvider": "deepseek-official",
+      "actualModel": "deepseek-flash",
+      "providerCode": "RATE_LIMIT"
+    }
+  },
+  {
+    "mode": "effect",
+    "diagnostic": {
+      "version": 1,
+      "category": "quota",
+      "code": "MODEL_QUOTA",
+      "result": "partial",
+      "attempts": 1,
+      "retryReason": "unsafe-or-unknown-result",
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "actualProvider": "deepseek-official",
+      "actualModel": "deepseek-flash",
+      "providerCode": "QUOTA",
+      "httpStatus": 402
+    }
+  }
+]

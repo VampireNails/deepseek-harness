@@ -14,6 +14,7 @@ import {JobLog} from '../../intel-plugins/dsh-intelligence-joblog/src/joblog.js'
 import {inspectVisibleOutputs} from './outputs.mjs';
 import {emitEvent} from '../../intel-plugins/dsh-intelligence-sysevents/src/store.js';
 import {validateReceipt} from './failure.mjs';
+import {taskDiagnostic} from '../../intel-plugins/shared/task-diagnostic.js';
 
 const here=dirname(fileURLToPath(import.meta.url));
 async function main(){
@@ -31,10 +32,18 @@ async function main(){
   const log=new JobLog(root,{scope:process.env.INTEL_JOBLOG_SCOPE??'production'});
   let identity={runId:randomUUID(),startedAt:new Date().toISOString()},taskExit,lastFinishExit,processSignal,finalRoute,completionAttempted=false;
   const scope=process.env.INTEL_JOBLOG_SCOPE??'production';
+  function completedDiagnostic(){
+    if(!finalRoute?.attempts)return undefined;
+    return taskDiagnostic({version:1,category:finalRoute.category??(finalRoute.exit===0?'success':'unknown'),
+      code:finalRoute.code??(finalRoute.exit===0?'OK':'TASK_RESULT_UNKNOWN'),result:finalRoute.result??(finalRoute.exit===0?'completed':'unknown'),
+      provider:finalRoute.provider,model:finalRoute.model,actualProvider:finalRoute.actualProvider,actualModel:finalRoute.actualModel,
+      attempts:finalRoute.attempts,retryReason:finalRoute.fallbackReason??'none',providerCode:finalRoute.providerCode,httpStatus:finalRoute.status});
+  }
   async function report(type,code,exitCode,exitCategory){
     try{emitEvent({type,severity:'high',title:type==='runner.lock_timeout'?'任务锁等待超时':'任务执行失败',
       detail:`taskId=${id}; runId=${identity.runId}; code=${code}`,
-      scope,source:'runner',taskId:id,runId:identity.runId,code,exitCode,exitCategory});}
+      scope,source:'runner',taskId:id,runId:identity.runId,code,exitCode,exitCategory,
+      ...(type==='task.failed'&&completedDiagnostic()?{diagnostic:completedDiagnostic()}:{})});}
     catch(error){
       const row={time:new Date().toISOString(),kind:'system-event-write-failed',taskId:id,runId:identity.runId,code:error.code??'SYSEVENTS_WRITE_FAILED',taskExit:exitCode};
       process.stderr.write(JSON.stringify(row)+'\n');
@@ -186,7 +195,7 @@ async function main(){
     }else exit=await runTask(config,id,rest.join(' '),execute,record,common);
     taskExit=exit;
     if(exit!==0)await reportExit(exit);
-    if(!quiet){completionAttempted=true;log._recordRun(id,exit===0?'ok':'fail',`reason=${finalRoute?.reason??'preflight'}; requested=${finalRoute?.provider??'none'}/${finalRoute?.model??'none'}; actual=${finalRoute?.actualProvider??'unknown'}/${finalRoute?.actualModel??'unknown'}; attempts=${finalRoute?.attempts??0}; fallback=${finalRoute?.fallbackReason??'none'}; code=${finalRoute?.code??'OK'}; exit ${exit}; runId=${identity.runId}; route-runs.jsonl`,identity);}
+    if(!quiet){completionAttempted=true;log._recordRun(id,exit===0?'ok':'fail',`reason=${finalRoute?.reason??'preflight'}; requested=${finalRoute?.provider??'none'}/${finalRoute?.model??'none'}; actual=${finalRoute?.actualProvider??'unknown'}/${finalRoute?.actualModel??'unknown'}; attempts=${finalRoute?.attempts??0}; fallback=${finalRoute?.fallbackReason??'none'}; code=${finalRoute?.code??'OK'}; exit ${exit}; runId=${identity.runId}; route-runs.jsonl`,{...identity,diagnostic:completedDiagnostic()});}
     if(exit!==0)log._alert(id,`task exit ${exit}; code=${finalRoute?.code??'TASK_EXIT_NONZERO'}; runId=${identity.runId}; inspect route-runs.jsonl`);
     process.exitCode=exit;
   }catch(error){

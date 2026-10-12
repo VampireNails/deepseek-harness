@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {homedir} from 'node:os';
 import {randomUUID,createHash} from 'node:crypto';
 import {withStoreWriter} from '../../shared/persistence.js';
+import {taskDiagnostic} from '../../shared/task-diagnostic.js';
 
 const MAX_SOURCE_BYTES=16*1024*1024;
 export const SEVERITIES=Object.freeze({low:'low',normal:'normal',high:'high'});
@@ -26,6 +27,7 @@ function readSource(file){
       !Number.isFinite(Date.parse(value.ts))||new Date(value.ts).toISOString()!==value.ts||
       !Object.hasOwn(SEVERITIES,value.severity)||typeof value.title!=='string'||typeof value.type!=='string'||
       (value.scope!==undefined&&!['production','test'].includes(value.scope)))throw fault('SYSEVENTS_INVALID_DATA');
+    if(value.diagnostic!==undefined){try{value.diagnostic=taskDiagnostic(value.diagnostic);}catch{throw fault('SYSEVENTS_INVALID_DATA');}}
     return value;
   });
 }
@@ -40,6 +42,7 @@ export function emitEvent(entry,dir=sysEventsDir()){
   const {type,severity,title,detail}=entry??{},scope=entry?.scope??process.env.INTEL_JOBLOG_SCOPE??'production';
   if(typeof type!=='string'||!type.trim()||typeof title!=='string'||!title.trim()||!['production','test'].includes(scope))throw fault('SYSEVENTS_INVALID_ENTRY');
   const fields={type:type.trim().slice(0,128),severity:Object.hasOwn(SEVERITIES,severity)?severity:'normal',title:title.trim().slice(0,256),detail:typeof detail==='string'?detail.trim().slice(0,2000):'',scope};
+  if(entry.diagnostic!==undefined){try{fields.diagnostic=taskDiagnostic(entry.diagnostic);}catch{throw fault('SYSEVENTS_INVALID_ENTRY');}}
   for(const key of ['source','taskId','runId','sessionId','scheduleId','exitCategory','code']){
     if(entry[key]===undefined)continue;
     if(typeof entry[key]!=='string'||!/^[a-zA-Z0-9_.:-]{1,128}$/.test(entry[key]))throw fault('SYSEVENTS_INVALID_ENTRY');

@@ -2,6 +2,8 @@
 
 English | [中文](README.zh.md)
 
+Runner failure events may include the same optional structured diagnostic as JobLog. The shared validator selects safe fields and rejects malformed present data; old events remain unchanged. Diagnostic fields report evidence rather than granting retry permission.
+
 System events persist exceptions for HMC's authenticated read-only `muse/system-events/list`. The plugin exposes emission and debugging tools plus a programmatic `sysevents` service. The runner and cron scheduler also use the same store directly, so failures do not require a working model or this plugin to be mounted.
 
 ## Storage and identity

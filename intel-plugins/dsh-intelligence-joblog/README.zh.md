@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文
 
+运行器完成记录可携带可选的版本化 `diagnostic` 对象。共享校验仅允许有界路线身份和已知类别、代码、结果、重试原因、尝试次数及 HTTP 状态，额外字段省略。历史和最新读取保留这些事实，损坏诊断拒绝，同一保留 run ID 下诊断冲突拒绝。缺少该对象的旧行保留原未知诊断。
+
 JobLog 使用 Node 内置 SQLite，在 `intel-joblog/job_history.sqlite` 保存完成的运行。每次完成包含稳定 `runId`、任务 ID、来源、UTC 完成时间、可选开始时间、状态、诊断详情和摘要。`historyLimit` 默认每个来源保留 200 次完成，接受 1–1000 的整数。最新完成在前；fail → fail → ok 保留两次失败直到保留策略淘汰，有限历史不能证明终身成功率。最后状态仍保存在 `job_runs.json` / `job_test_runs.json`；`job_alerts.md` 保留失败，`jobs.log` 最多保留 2000 行包装器日志。进程审计仍在 `route-runs.jsonl`。
 
 新记录明确携带 `production` 或 `test` 来源。`JobLog(dir, { scope: 'test' })` 与插件 `testRecords: true` 选择测试；普通写入默认生产。测试最后状态仍独立保存，同名任务不能覆盖生产。`readHistory()` 与工具默认只选择生产；`includeTests: true` 显式包含测试和来源未标注的旧快照。`readRuns()` 保留兼容的最后状态投影。任务名不决定来源。旧记录保留来源和原日期；旧 latest 条目覆盖前单独保留原快照，不虚构 run ID 或还原更早运行。读取筛选不重写来源文件，安装此功能不迁移生产数据。

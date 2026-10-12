@@ -81,7 +81,7 @@ async function fixture(t){
 }
 
 test('actual installed CLI/provider requests match primary and bounded fallback models; stable failures never replay unknown effects',linux,async t=>{
-  const f=await fixture(t),summaries=[];
+  const f=await fixture(t),summaries=[],diagnostics=[];
   for(const [mode,exit,category,count] of [['quota-success',0,undefined,2],['quota',1,'quota',2],['rate',1,'rate-limit',2],
     ['auth',1,'authentication',1],['service',1,'service',1],['network',1,'network',1],['partial',1,'rate-limit',1],['effect',1,'quota',2]]){
     const r=await f.run(mode,mode==='effect'?{tasks:{custom:{route:'primary',fallback:'backup',retrySafe:true}}}:{});
@@ -94,10 +94,17 @@ test('actual installed CLI/provider requests match primary and bounded fallback 
     assert.equal(r.finish.actualModel,r.requests.at(-1)?.model);
     const jobs=JSON.parse(await readFile(join(f.home,'intel-joblog','job_test_runs.json'),'utf8'));
     assert.equal(jobs.custom.runId,r.finish.runId);assert.equal(jobs.custom.scope,'test');
+    const diagnostic=jobs.custom.diagnostic;
+    assert.equal(diagnostic.category,category??'success');assert.equal(diagnostic.code,r.finish.code??'OK');
+    assert.equal(diagnostic.actualModel,r.requests.at(-1).model);assert.equal(diagnostic.attempts,r.finish.attempts);
+    assert.equal(diagnostic.retryReason,r.finish.fallbackReason??'none');
+    diagnostics.push({mode,diagnostic});
+    if(mode==='quota')console.log('DIAGNOSTIC_ROW '+JSON.stringify(jobs.custom));
     if(exit!==0){
       const events=(await readFile(join(f.home,'intel-system-events','events.test.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
       const current=events.filter(row=>row.runId===r.finish.runId);
       assert.equal(current.length,1);assert.equal(current[0].code,r.finish.code);assert.equal(current[0].exitCode,exit);
+      assert.deepEqual(current[0].diagnostic,diagnostic);
     }
     summaries.push({mode,exit,category:category??'success',models:r.requests.map(row=>row.model),attempts:r.finish.attempts});
     console.log('ACTUAL_REQUEST '+JSON.stringify(summaries.at(-1)));
@@ -115,6 +122,7 @@ test('actual installed CLI/provider requests match primary and bounded fallback 
   assert.ok(events.some(row=>row.code==='MODEL_QUOTA'&&row.runId));
   console.log('ACTUAL_REQUESTS '+JSON.stringify(summaries));
   assert.deepEqual(summaries,JSON.parse(await readFile(new URL('./expected/routing-requests.json',import.meta.url),'utf8')));
+  assert.deepEqual(diagnostics,JSON.parse(await readFile(new URL('./expected/routing-diagnostics.json',import.meta.url),'utf8')));
 });
 test('actual cross-provider fallback reaches pi-ai HTTP client and stale model plugin ID makes zero requests',linux,async t=>{
   const f=await fixture(t);

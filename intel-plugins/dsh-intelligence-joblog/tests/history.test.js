@@ -144,7 +144,7 @@ test('actual Linux permission failures expose only safe storage codes', {skip:pr
   const code=join(log.dir,'code'),sourceDir=join(code,'intel-plugins','dsh-intelligence-joblog','src'),shared=join(code,'intel-plugins','shared');
   mkdirSync(sourceDir,{recursive:true});mkdirSync(shared,{recursive:true});
   for(const name of ['joblog.js','history.js'])writeFileSync(join(sourceDir,name),readFileSync(new URL('../src/'+name,import.meta.url)),{mode:0o644});
-  writeFileSync(join(shared,'persistence.js'),readFileSync(new URL('../../shared/persistence.js',import.meta.url)),{mode:0o644});
+  for(const name of ['persistence.js','task-diagnostic.js'])writeFileSync(join(shared,name),readFileSync(new URL('../../shared/'+name,import.meta.url)),{mode:0o644});
   writeFileSync(join(code,'package.json'),' {"type":"module"}',{mode:0o644});
   writeFileSync(log.logFile,'old',{mode:0o400});writeFileSync(log.alertsFile,'old',{mode:0o400});
   const module='file://'+join(sourceDir,'joblog.js');

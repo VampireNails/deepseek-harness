@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import {randomUUID} from 'node:crypto';
 import {atomicWrite,persistRun,storedRows,storageError} from './history.js';
+import {taskDiagnostic} from '../../shared/task-diagnostic.js';
 
 export function joblogDir() {
   return join(process.env.DSH_HOME || join(homedir(), ".dsh"), "intel-joblog");
@@ -122,6 +123,9 @@ export class JobLog {
       typeof run.status !== 'string' || (run.detail !== undefined && typeof run.detail !== 'string') ||
       (run.scope !== undefined && !['production', 'test'].includes(run.scope))))
       throw Object.assign(new Error('JOBLOG_INVALID_DATA'), { code: 'JOBLOG_INVALID_DATA' });
+    for(const row of Object.values(runs))if(row.diagnostic!==undefined){
+      try{row.diagnostic=taskDiagnostic(row.diagnostic);}catch{throw storageError('JOBLOG_INVALID_DATA','latest');}
+    }
     return runs;
   }
 
@@ -165,11 +169,12 @@ export class JobLog {
     } catch(error) {throw storageError('JOBLOG_WRITE_FAILED','log',error);}
   }
 
-  _recordRun(jobId, status, detail, {runId=randomUUID(),startedAt,finishedAt=new Date().toISOString()}={}) {
+  _recordRun(jobId, status, detail, {runId=randomUUID(),startedAt,finishedAt=new Date().toISOString(),diagnostic:runDiagnostic}={}) {
     if(typeof jobId!=='string'||!jobId||jobId.length>256||typeof runId!=='string'||!runId||runId.length>256||!['ok','fail'].includes(status)||
       !Number.isFinite(Date.parse(finishedAt))||(startedAt!==undefined&&!Number.isFinite(Date.parse(startedAt))))throw storageError('JOBLOG_INVALID_DATA','completion');
     const raw=diagnostic(detail);
     const row={id:jobId,runId,last:finishedAt,finishedAt,...(startedAt?{startedAt}:{}),status,detail:raw.slice(0,2048),summary:raw.slice(0,200),detailTruncated:raw.length>2048,scope:this.scope};
+    if(runDiagnostic!==undefined){try{row.diagnostic=taskDiagnostic(runDiagnostic);}catch{throw storageError('JOBLOG_INVALID_DATA','completion');}}
     const file=this.scope==='test'?this.testRunsFile:this.runsFile;
     return persistRun(this.historyFile,row,this.historyLimit,()=>this._readRunFile(file),runs=>atomicWrite(file,JSON.stringify(runs,null,1)));
   }

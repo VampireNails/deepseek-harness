@@ -3,6 +3,7 @@ import {existsSync,lstatSync,openSync,closeSync,writeFileSync,renameSync,unlinkS
 import {dirname,join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {withStoreWriter} from '../../shared/persistence.js';
+import {taskDiagnostic} from '../../shared/task-diagnostic.js';
 
 export function storageError(code,operation,error){
   const errno=typeof error?.code==='string'&&/^[A-Z0-9_]{1,80}$/.test(error.code)?error.code:undefined;
@@ -56,7 +57,7 @@ export function persistRun(file,row,limit,readProjection,writeProjection){
     const previous=db.prepare('SELECT row FROM runs WHERE scope=? AND runId=?').get(row.scope,row.runId);
     if(previous){
       const old=JSON.parse(previous.row);
-      if(old.id!==row.id||old.status!==row.status||old.detail!==row.detail)
+      if(old.id!==row.id||old.status!==row.status||old.detail!==row.detail||JSON.stringify(old.diagnostic)!==JSON.stringify(row.diagnostic))
         throw storageError('JOBLOG_IDENTITY_COLLISION','completion');
       // A retry also repairs a failed legacy projection without counting another run.
       const projection=readProjection();
@@ -100,6 +101,7 @@ export function storedRows(file,table){
           !['ok','fail'].includes(value.status)||typeof value.finishedAt!=='string'||!Number.isFinite(Date.parse(value.finishedAt))||
           value.detail.length>2048||typeof value.summary!=='string'||value.summary.length>200||typeof value.detailTruncated!=='boolean')))
         throw storageError('JOBLOG_INVALID_DATA','history');
+      if(value.diagnostic!==undefined){try{value.diagnostic=taskDiagnostic(value.diagnostic);}catch{throw storageError('JOBLOG_INVALID_DATA','history');}}
       return value;
     });
   }catch(error){
