@@ -30,6 +30,19 @@ async function fixture(t){
   return {home,config,data,save,run,rows,models,events,prompt:join(dir,'prompt'),checklist:join(home,'intel-evolution','HEARTBEAT.md'),state:join(home,'intel-joblog','heartbeat','state.json')};
 }
 const linux={skip:process.platform!=='linux'};
+test('open heartbeat model circuit still probes new real source responses and never replays pending analysis',linux,async t=>{
+  const f=await fixture(t);f.config.circuit={enabled:true,threshold:1};
+  f.data.systemctl='ActiveState=failed\nSubState=failed\nNRestarts=0\nInvocationID=aaaa\n';await f.save();
+  const first=await f.run({TEST_EXIT:'9'});assert.equal(first.code,9,first.stderr);assert.equal(await f.models(),1);
+  const pending=await readFile(f.state,'utf8');
+  f.data.systemctl='ActiveState=active\nSubState=running\nNRestarts=0\nInvocationID=bbbb\n';await f.save();
+  const second=await f.run();assert.equal(second.code,78,second.stderr);assert.equal(await f.models(),1);
+  assert.equal(await readFile(f.state,'utf8'),pending);
+  const observed=(await f.rows()).at(-1);assert.equal(observed.kind,'heartbeat-circuit-open');
+  assert.equal(observed.modelExecutions,0);assert.equal(observed.scopeSignals.find(s=>s.source==='service').status,'healthy');
+  assert.equal((await f.events()).filter(e=>e.type==='task.circuit_open').length,1);
+  assert.equal((await f.events()).filter(e=>e.type==='task.failed').length,1);
+});
 test('healthy and reliably empty heartbeat skip with zero model completions or notifications',linux,async t=>{
   const f=await fixture(t);assert.equal((await f.run()).code,0);assert.equal((await f.run()).code,0);assert.equal(await f.models(),0);
   assert.equal(new JobLog(join(f.home,'intel-joblog')).readHistory().length,0);assert.deepEqual(await f.events(),[]);

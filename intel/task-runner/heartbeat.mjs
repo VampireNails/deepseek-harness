@@ -29,7 +29,7 @@ export function createHeartbeatStateStore(file){
  * @param options - Clock, validated config, safe capture, durable state, model dispatch and audit.
  * @returns Quiet outcome or original model exit, with safe signal/run identities.
  */
-export async function runHeartbeat({config,nowMs,source,stateStore,execute,record}){
+export async function runHeartbeat({config,nowMs,source,stateStore,execute,record,admit=async()=>true}){
   const previous=await stateStore.read();if(previous!==null)validate(previous);
   const cut=await source.capture();
   if(!cut||cut.version!==1||cut.complete!==true||cut.observedAtMs!==nowMs||!hash(cut.signalId)||!hash(cut.checklistId)||
@@ -41,6 +41,7 @@ export async function runHeartbeat({config,nowMs,source,stateStore,execute,recor
   const info={signalId:cut.signalId,checklistId:cut.checklistId,observedAtMs:nowMs,healthy:cut.healthy,scopeSignals:cut.signals.map(({source,id,status})=>({source,id,status})),clockRollback};
   const audit=async(kind,extra={})=>{const row={kind,...info,...extra};await record(row);return row;};
   const commit=async(backoffMs,pending=null)=>stateStore.write({version:1,signalId:cut.signalId,healthy:cut.healthy,lastNowMs:logicalNow,nextDueAtMs:logicalNow+backoffMs,backoffMs,pending});
+  if(!await admit())return await audit('heartbeat-circuit-open',{reason:'model-circuit-open',exit:78,modelExecutions:0});
   if(same&&previous.pending){await audit('heartbeat-unresolved',{runId:previous.pending.runId,reason:'previous-run-unresolved'});throw fail('HEARTBEAT_PREVIOUS_RUN_UNRESOLVED');}
   if(cut.empty||cut.healthy&&(!previous||same)){
     await commit(0);return await audit(cut.empty?'heartbeat-empty-checklist':same?'heartbeat-no-change':'heartbeat-healthy',{reason:cut.empty?'empty-checklist':same?'healthy-unchanged':'healthy-baseline',modelExecutions:0});

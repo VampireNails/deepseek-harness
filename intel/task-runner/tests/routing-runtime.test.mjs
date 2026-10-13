@@ -70,9 +70,9 @@ export function apply(ctx){ctx.effect(()=>ctx.on('session/event',(_,event)=>{
   const config={timeoutMs:12000,defaultRoute:'primary',routes:{primary:{provider:'deepseek-official',model:'deepseek-flash'},
     backup:{provider:'deepseek-official',model:'deepseek-pro'}},tasks:{custom:{route:'primary',fallback:'backup',retrySafe:false}},
     fallback:{enabled:true,maxAttempts:2,totalTimeoutMs:24000}};
-  async function run(nextMode,override={}){
+  async function run(nextMode,override={},argumentsOverride){
     mode=nextMode;requests=[];await writeFile(configFile,JSON.stringify({...config,...override}));
-    const child=spawn(process.execPath,[cli,'custom','isolated task'],{cwd:root,env:{...cleanEnv(),
+    const child=spawn(process.execPath,[cli,...argumentsOverride??['custom','isolated task']],{cwd:root,env:{...cleanEnv(),
       PATH:bin+':'+dirname(process.execPath)+':/usr/local/bin:/usr/bin:/bin',DSH_HOME:home,INTEL_JOBLOG_SCOPE:'test',
       INTEL_ROUTER_CONFIG:configFile,T06_FIXTURE_KEY:'local-provider-key',ROUTING_WRITE_CRASH:mode==='crash'?'1':'0'},stdio:['ignore','pipe','pipe']});
     let stdout='',stderr='';child.stdout.on('data',data=>stdout+=data);child.stderr.on('data',data=>stderr+=data);
@@ -85,6 +85,26 @@ export function apply(ctx){ctx.effect(()=>ctx.on('session/event',(_,event)=>{
   }
   return {run,home,marker,config};
 }
+
+test('installed profile opens after three final runs, pauses new requests and releases only the next schedule',linux,async t=>{
+  const f=await fixture(t),circuit={enabled:true,threshold:3};
+  let last;
+  for(let i=0;i<3;i++){
+    last=await f.run('quota',{circuit});assert.equal(last.exit,1,last.stderr);assert.equal(last.requests.length,2);
+    assert.equal(last.finish.attempts,2);
+  }
+  const file=join(f.home,'intel-joblog','circuits','test','custom.json');
+  const opened=JSON.parse(await readFile(file,'utf8'));
+  assert.equal(opened.failures,3);assert.equal(opened.openRunId,last.finish.runId);
+  const blocked=await f.run('success',{circuit});assert.equal(blocked.exit,78,blocked.stderr);assert.equal(blocked.requests.length,0);
+  const events=(await readFile(join(f.home,'intel-system-events','events.test.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(events.filter(e=>e.type==='task.circuit_open').length,1);
+  const release=await f.run('success',{circuit},['--release-circuit','custom',opened.openRunId]);
+  assert.equal(release.exit,0,release.stderr);assert.equal(release.requests.length,0);
+  const next=await f.run('success',{circuit});assert.equal(next.exit,0,next.stderr);assert.equal(next.requests.length,1);
+  assert.notEqual(next.finish.runId,opened.openRunId);assert.equal(JSON.parse(await readFile(file,'utf8')).failures,0);
+  console.log('CIRCUIT_GENERATED '+JSON.stringify(events.find(e=>e.type==='task.circuit_open')));
+});
 
 test('actual installed CLI/provider requests match primary and bounded fallback models; stable failures never replay unknown effects',linux,async t=>{
   const f=await fixture(t),summaries=[],diagnostics=[];

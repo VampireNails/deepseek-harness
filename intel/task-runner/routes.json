@@ -1,5 +1,6 @@
 {
   "timeoutMs": 600000,
+  "circuit": {"enabled": true, "threshold": 3},
   "defaultRoute": "flash",
   "routes": {
     "flash": {
