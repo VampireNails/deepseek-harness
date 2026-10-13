@@ -118,7 +118,7 @@ test('a SQLite commit-path failure rolls back without advancing the compatibilit
 test('concurrent Linux processes wait for the same database transaction and keep every completion',
   {skip:process.platform!=='linux'},async t=>{
   const log=fixture(t);log._recordRun('seed','ok','seed',{runId:'seed'});
-  const db=new DatabaseSync(log.historyFile);db.exec('BEGIN IMMEDIATE');
+  const db=new DatabaseSync(log.historyFile);db.exec('PRAGMA busy_timeout=5000');db.exec('BEGIN IMMEDIATE');
   const children=[],closed=[];
   t.after(async()=>{if(db.isOpen)db.close();for(const child of children)if(child.exitCode===null)child.kill();await Promise.all(closed);});
   const module=new URL('../src/joblog.js',import.meta.url).href;
