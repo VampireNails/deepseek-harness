@@ -49,7 +49,7 @@ export async function runUpkeep({config,nowMs,taskId,stateStore,source,execute,i
       try{receipt=await inspect({runId:previous.pending.runId,...previous.pending.taskId!==undefined?{taskId:previous.pending.taskId}:{}});}catch{throw fail('UPKEEP_PREVIOUS_RUN_UNRESOLVED');}
       if(!verified(receipt))throw fail('UPKEEP_PREVIOUS_RUN_UNRESOLVED');
       await commit(previous.pending.proposedCursors,0);
-      return await audit('upkeep-recovered',{batchHash:previous.pending.batchHash,writes:receipt.writeIds.length});
+      return await audit('upkeep-recovered',{batchHash:previous.pending.batchHash,writes:receipt.writeIds.length,modelExecutions:0});
     }
     if(previous&&nowMs<previous.nextDueAtMs)return await audit('upkeep-backoff',{nextDueAtMs:previous.nextDueAtMs});
     const cut=await source.capture({cursors:previous?.cursors??{},bootstrap:previous===null,

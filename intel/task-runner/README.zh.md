@@ -42,7 +42,7 @@ JobLog 完成记录携带与路由审计相同的 run ID 和开始时间，以�
 
 在 Linux 上运行 `node --test intel/task-runner/tests/*.test.mjs`。隔离的 CLI 测试使用假的 `dsh` 可执行文件，从不调用生产模型。
 
-`node intel/task-runner/measure.mjs /absolute/route-runs.jsonl YYYY-MM-DD` 最多读取 16 MiB 的普通 UTF-8 审计文件，并输出不含提示词的逐日汇总。它按精确的任务、run、日期身份配对，分别列出进程成功、失败、复用发布、待确认、孤立和歧义运行。明确测试记录保持排除；无日期的旧运行不分配日期，安静观测缺少 runDate 时按审计时间的 Asia/Shanghai 日期选择。安静计数是观测次数，仅明确的零模型回执证明零执行。损坏、不完整、变化、超限或非普通文件输入失败，不输出部分汇总。这一运维命令既不改变 dreaming 提示词，也不验证工具结果、生产产出质量或账单；重试或宣称改进前须保留原审计，检查指定运行及持久产出。
+`node intel/task-runner/measure.mjs /absolute/route-runs.jsonl YYYY-MM-DD` 最多读取 16 MiB 的普通 UTF-8 审计文件，并输出不含提示词的逐日汇总。它按精确的任务、run、日期身份配对，分别列出进程成功、失败、复用发布、待确认、孤立和歧义运行。明确测试记录保持排除；无日期的旧运行及未知 kind 不分配日期。已知观测缺少 runDate 时按审计时间的 Asia/Shanghai 日期选择。quiet 观测、熔断跳过与控制操作分别计数。熔断解除及仅检查回执的 upkeep 恢复为控制操作；仅明确的 modelExecutions=0 证明零模型回执，这些观测均不是已完成或成功的模型运行。损坏、不完整、变化、超限或非普通文件输入失败，不输出部分汇总。这一运维命令既不改变 dreaming 提示词，也不验证工具结果、生产产出质量或账单；重试或宣称改进前须保留原审计，检查指定运行及持久产出。
 
 `routes.json.heartbeat.enabled` 启用有界本地预检；缺少配置或为 `false` 时保留旧分发行为。已存在的空清单按 `heartbeat-empty-checklist` 停用；清单缺失、不可读或非空但不受支持时失败。支持的 [清单](../../intel-plugins/dsh-intelligence-evolution/HEARTBEAT.md) 对应服务状态/重启次数、精确 HMC 监听、磁盘和内存阈值、完整近期 journal 错误记录，以及 JobLog/路由历史。来源读取不启动模型，也不写来源数据。未知、截断、损坏或权限拒绝保留原安全代码，通过 runner 失败事件报告；不根据提示词关键词推测结果。近期旧 start 没有 run ID 时仍未确认；选中路由、JobLog 和告警时间晚于观测截止点时失败，不容许时钟偏移。旧来源保持未分类，显式测试行被排除，heartbeat 自身失败由 pending 检查点管理，避免自触发循环。
 

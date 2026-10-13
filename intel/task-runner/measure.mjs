@@ -3,6 +3,8 @@ import {resolve,isAbsolute} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 const quietKinds=new Set(['heartbeat-empty-checklist','heartbeat-no-change','heartbeat-healthy','heartbeat-backoff','upkeep-backoff','upkeep-no-signal','upkeep-bootstrap','upkeep-clock-rollback']);
+const skippedKinds=new Set(['heartbeat-circuit-open','heartbeat-circuit-unavailable','circuit-open']);
+const controlKinds=new Set(['circuit-released','upkeep-recovered']);
 const safeCode=value=>typeof value==='string'&&/^[A-Z0-9_]{1,80}$/.test(value)?value:'UNKNOWN';
 const identity=value=>typeof value==='string'&&/^[-a-zA-Z0-9._:]{1,256}$/.test(value);
 const calendarDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
@@ -15,20 +17,21 @@ const calendarDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(va
  */
 export function measureRuns(rows,date){
  if(!calendarDate(date)||!Array.isArray(rows))throw Error('MEASURE_INVALID_INPUT');
- const groups=new Map(),quiet={},counts={completed:0,succeeded:0,failed:0,reused:0,pending:0,orphan:0,ambiguous:0,legacyUnpaired:0,quiet:0,explicitTestRows:0};
+ const groups=new Map(),observations={quiet:{},skipped:{},control:{}},counts={completed:0,succeeded:0,failed:0,reused:0,pending:0,orphan:0,ambiguous:0,legacyUnpaired:0,quiet:0,skipped:0,control:0,explicitTestRows:0};
  let zeroModelReceipts=0,undatedRows=0;
  for(const row of rows){
   if(!row||typeof row!=='object'||Array.isArray(row))throw Error('MEASURE_INVALID_RECORD');
   if(row.runDate!==undefined&&!calendarDate(row.runDate))throw Error('MEASURE_INVALID_RECORD');
-  const quietDay=quietKinds.has(row.kind)&&typeof row.time==='string'&&Number.isFinite(Date.parse(row.time))?
+  const category=quietKinds.has(row.kind)?'quiet':skippedKinds.has(row.kind)?'skipped':controlKinds.has(row.kind)?'control':undefined;
+  const observedDay=category&&typeof row.time==='string'&&Number.isFinite(Date.parse(row.time))?
    new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(row.time)):undefined;
-  const selectedDate=row.runDate??quietDay;
+  const selectedDate=row.runDate??observedDay;
   if(selectedDate===undefined){undatedRows++;continue;}
   if(selectedDate!==date)continue;
   if(row.scope==='test'){counts.explicitTestRows++;continue;}
-  if(quietKinds.has(row.kind)){
-   if(row.scope!==undefined&&row.scope!=='production'||row.kind.startsWith('heartbeat-')&&row.taskId!=='heartbeat'||row.kind.startsWith('upkeep-')&&!['evolve_upkeep','memory_upkeep'].includes(row.taskId))throw Error('MEASURE_INVALID_RECORD');
-   counts.quiet++;quiet[row.kind]=(quiet[row.kind]??0)+1;
+  if(category){
+   if(row.scope!==undefined&&row.scope!=='production'||!identity(row.taskId)||row.kind.startsWith('heartbeat-')&&row.taskId!=='heartbeat'||row.kind.startsWith('upkeep-')&&!['evolve_upkeep','memory_upkeep'].includes(row.taskId)||row.modelExecutions!==undefined&&row.modelExecutions!==0)throw Error('MEASURE_INVALID_RECORD');
+   counts[category]++;observations[category][row.kind]=(observations[category][row.kind]??0)+1;
    if(row.modelExecutions===0)zeroModelReceipts++;
    continue;
   }
@@ -56,8 +59,8 @@ export function measureRuns(rows,date){
   }
   counts[r.status]++;runs.push(r);
  }
- return {version:1,date,counts,quiet,zeroModelReceipts,undatedRows,runs,
-  limitations:['Retained audit only; undated legacy runs are not assigned a date. Quiet rows use runDate or their audit time in Asia/Shanghai.','Process success is not verified tool success, publication quality or provider billing.','Quiet observations are not completed model runs; only explicit modelExecutions=0 is counted as a zero-model receipt.']};
+ return {version:1,date,counts,...observations,zeroModelReceipts,undatedRows,runs,
+  limitations:['Retained audit only; undated legacy runs and unfamiliar kinds are not assigned a date. Known observations use runDate or their audit time in Asia/Shanghai.','Process success is not verified tool success, publication quality or provider billing.','Quiet, skipped and control observations are not completed model runs; only explicit modelExecutions=0 is counted as a zero-model receipt.']};
 }
 
 /** Read a bounded regular audit file without creating state or following a final symlink. */

@@ -7,6 +7,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
 import {JobLog} from '../../../intel-plugins/dsh-intelligence-joblog/src/joblog.js';
+import {measureRuns} from '../measure.mjs';
 
 const linux={skip:process.platform!=='linux'};
 async function fixture(t){
@@ -48,4 +49,15 @@ test('unfinished or corrupt durable admission never executes or releases an old 
   assert.equal((await f.run({},['--release-circuit','custom','old-uncertain'])).code,1);
   assert.equal((await readFile(f.calls,'utf8')).trim().split('\n').length,1);
   await writeFile(f.state,'{broken');assert.match((await f.run()).stderr,/CIRCUIT_STATE_INVALID/);
+});
+test('actual isolated production-scope skip and release audits measure separately from failed model runs',linux,async t=>{
+  const f=await fixture(t);f.settings.circuit.threshold=1;await writeFile(f.config,JSON.stringify(f.settings));
+  const scope={INTEL_JOBLOG_SCOPE:'production'};
+  assert.equal((await f.run(scope)).code,1);assert.equal((await f.run(scope)).code,78);
+  const state=JSON.parse(await readFile(join(f.home,'intel-joblog','circuits','production','custom.json'),'utf8'));
+  assert.equal((await f.run(scope,['--release-circuit','custom',state.openRunId])).code,0);
+  const rows=(await readFile(join(f.home,'intel-joblog','route-runs.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+  const date=rows.find(r=>r.kind==='start').runDate,result=measureRuns(rows,date);
+  assert.equal(result.counts.failed,1);assert.equal(result.counts.succeeded,0);assert.equal(result.counts.completed,1);
+  assert.equal(result.counts.skipped,1);assert.equal(result.counts.control,1);assert.equal(result.zeroModelReceipts,2);assert.equal(result.undatedRows,0);
 });

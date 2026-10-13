@@ -9,7 +9,7 @@ import {measureRuns} from '../measure.mjs';
 const row=(kind,runId,extra={})=>({kind,runId,taskId:'evolve_dreaming',runDate:'2026-10-12',scope:'production',...extra});
 test('daily evidence pairs exact run identities and separates failed, pending and reused runs',()=>{
  const result=measureRuns([row('start','a'),row('finish','a',{exit:1,code:'PROVIDER_UNKNOWN'}),row('start','b'),row('finish','b',{exit:0}),row('start','c'),row('start','d'),row('already-published','d',{publishedRunId:'b'}),row('finish','d',{exit:0,reused:true}),row('finish','orphan',{exit:0})],'2026-10-12');
- assert.deepEqual(result.counts,{completed:3,succeeded:1,failed:1,reused:1,pending:1,orphan:1,ambiguous:0,legacyUnpaired:0,quiet:0,explicitTestRows:0});
+ assert.deepEqual(result.counts,{completed:3,succeeded:1,failed:1,reused:1,pending:1,orphan:1,ambiguous:0,legacyUnpaired:0,quiet:0,skipped:0,control:0,explicitTestRows:0});
  assert.equal(result.runs.find(r=>r.runId==='a').code,'PROVIDER_UNKNOWN');
  assert.equal(result.runs.find(r=>r.runId==='d').publishedRunId,'b');
 });
@@ -20,6 +20,19 @@ test('ambiguous records, incomplete legacy identity and explicit tests never inf
 test('quiet observations preserve zero execution counts without inventing model runs or quality',()=>{
  const r=measureRuns([row('heartbeat-healthy',undefined,{taskId:'heartbeat',runDate:undefined,time:'2026-10-11T16:01:00Z',reason:'healthy',modelExecutions:0}),row('upkeep-no-signal',undefined,{taskId:'evolve_upkeep'}),row('upkeep-backoff',undefined,{taskId:'evolve_upkeep'}),row('start','a'),row('finish','a',{exit:65,code:'TASK_NO_VISIBLE_OUTPUT',processExit:0})],'2026-10-12');
  assert.equal(r.counts.quiet,3);assert.equal(r.zeroModelReceipts,1);assert.equal(r.counts.failed,1);assert.equal(r.runs[0].processExit,0);assert.equal(r.counts.succeeded,0);
+});
+test('dated circuit skips and control observations remain zero-model receipts rather than completed runs',()=>{
+ const kinds=['heartbeat-circuit-open','heartbeat-circuit-unavailable','circuit-open','circuit-released','upkeep-recovered'];
+ const rows=kinds.map(kind=>({kind,time:'2026-10-13T16:15:00.000Z',scope:'production',taskId:kind.startsWith('heartbeat')?'heartbeat':kind.startsWith('upkeep')?'memory_upkeep':'custom',modelExecutions:0}));
+ const r=measureRuns(rows,'2026-10-14');
+ assert.equal(r.undatedRows,0);assert.equal(r.zeroModelReceipts,5);assert.equal(r.counts.completed,0);assert.equal(r.counts.succeeded,0);
+ assert.equal(r.counts.skipped,3);assert.equal(r.counts.control,2);assert.equal(r.counts.quiet,0);
+ assert.equal(measureRuns(rows,'2026-10-13').zeroModelReceipts,0);
+ const tests=measureRuns(rows.map(r=>({...r,scope:'test'})),'2026-10-14');assert.equal(tests.counts.explicitTestRows,5);assert.equal(tests.zeroModelReceipts,0);
+ assert.equal(measureRuns([{...rows[0],kind:'unknown-kind'}],'2026-10-14').undatedRows,1);
+ assert.equal(measureRuns([{...rows[4],modelExecutions:undefined}],'2026-10-14').zeroModelReceipts,0);
+ for(const extra of [{scope:'invalid'},{modelExecutions:1},{taskId:'other',kind:'heartbeat-circuit-open'},{taskId:'other',kind:'upkeep-recovered'}])
+  assert.throws(()=>measureRuns([{...rows[0],...extra}],'2026-10-14'));
 });
 test('invalid exits, inconsistent reuse and invalid scope cannot be counted as successful runs',()=>{
  for(const extra of [{exit:'0'},{exit:-1},{exit:256},{exit:0,processExit:1},{exit:0,reused:'true'},{exit:0,reused:true},{exit:0,scope:'invalid'}]){

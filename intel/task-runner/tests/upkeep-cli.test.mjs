@@ -56,6 +56,8 @@ writeFileSync(process.env.TEST_CAPTURE,JSON.stringify({runId:process.env.INTEL_R
   const recovered=await invoke(cli,env);assert.equal(recovered.code,0,recovered.stderr);
   assert.equal(captures,2);assert.equal(inspections,2);
   assert.equal(new JobLog(join(home,'intel-joblog')).readHistory().length,1,'read-only receipt recovery is not a new successful model run');
+  const recovery=(await readFile(join(home,'intel-joblog','route-runs.jsonl'),'utf8')).trim().split('\n').map(JSON.parse).at(-1);
+  assert.equal(recovery.kind,'upkeep-recovered');assert.equal(recovery.modelExecutions,0);
 });
 
 test('upkeep without a reachable configured source fails rather than falling back to the old search loop',async t=>{
