@@ -13,7 +13,7 @@ import {requestUpkeep} from '../../intel-plugins/dsh-intelligence-evolution/src/
 import {JobLog} from '../../intel-plugins/dsh-intelligence-joblog/src/joblog.js';
 import {inspectVisibleOutputs} from './outputs.mjs';
 import {emitEvent} from '../../intel-plugins/dsh-intelligence-sysevents/src/store.js';
-import {validateReceipt} from './failure.mjs';
+import {createRuntimeObserver} from './runtime-observer.mjs';
 import {taskDiagnostic} from '../../intel-plugins/shared/task-diagnostic.js';
 
 const here=dirname(fileURLToPath(import.meta.url));
@@ -110,30 +110,15 @@ async function main(){
       await writeFile(patch,JSON.stringify(patches));
       const remainingMs=Math.floor(plan.timeoutMs-(performance.now()-preparationStarted));
       if(remainingMs<=0)return {exit:124,processExit:null};
-      let receipt,buffer='',invalidReceipt=false,unsafe=false;
+      const observer=createRuntimeObserver(plan);
       const result=await new Promise((resolve,reject)=>{
         const child=spawn('dsh',['--profile','evolve','--patch',patch],{stdio:['pipe','inherit','pipe','pipe'],detached:true,
           env:{...process.env,INTEL_TASK_ID:plan.id,INTEL_RUN_ID:plan.runId,INTEL_RUN_DATE:plan.runDate,
             INTEL_RUNTIME_FD:'3',INTEL_RUN_ATTEMPT:String(plan.attempt),INTEL_ROUTE_PROVIDER:plan.provider,INTEL_ROUTE_MODEL:plan.model,
             INTEL_DISABLE_PROVIDER_RETRY:plan.disableProviderRetry?'1':'0'}});
         child.stderr.resume(); // Provider diagnostics may contain request data; safe codes come from the receipt.
-        child.stdio[3].setEncoding('utf8');
-        child.stdio[3].on('error',()=>{invalidReceipt=true;});
-        child.stdio[3].on('data',chunk=>{
-          if(invalidReceipt)return;
-          buffer+=chunk;
-          for(let end;(end=buffer.indexOf('\n'))>=0;){
-            const line=buffer.slice(0,end);buffer=buffer.slice(end+1);
-            if(Buffer.byteLength(line)>8192){invalidReceipt=true;break;}
-            try{
-              const next=validateReceipt(JSON.parse(line),plan);
-              if(!next){invalidReceipt=true;break;}
-              unsafe ||= next.tools>0||next.outputs>0||next.streamOutput||next.retries>0||next.sessions>1||next.steps>1;
-              receipt=next;
-            }catch(error){invalidReceipt=true;break;}
-          }
-          if(Buffer.byteLength(buffer)>8192)invalidReceipt=true;
-        });
+        child.stdio[3].on('error',()=>observer.invalidate());
+        child.stdio[3].on('data',chunk=>observer.push(chunk));
         let timedOut=false,inputError;
         const timer=setTimeout(()=>{timedOut=true;try{process.kill(-child.pid,'SIGTERM');}catch(error){if(error.code!=='ESRCH')reject(error);}},remainingMs);
         let killTimer;
@@ -153,7 +138,7 @@ async function main(){
         });
         child.stdin.end(plan.prompt+'\n');
       });
-      if(!invalidReceipt&&!buffer){result.receipt=receipt;if(unsafe&&receipt)result.receipt.streamOutput=true;}
+      Object.assign(result,observer.finish());
       if(result.receipt?.complete&&result.receipt.modelMatches===false){
         result.receipt.failure={code:'NO_MODEL'};result.exit=result.exit||1;
       }

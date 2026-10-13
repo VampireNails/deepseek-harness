@@ -4,6 +4,8 @@
 
 已完成的模型尝试在 JobLog 和最终失败事件中保存可选的结构化 `diagnostic`：安全类别/代码/结果、最终请求与实际提供方/模型、尝试次数、重试原因及已知提供方代码/HTTP 状态。这些字段仅供展示，不能授权重放。历史诊断缺失时保持未知，不把退出码或旧错误文字升级为可信拒绝。
 
+未知的非零退出区分 `TASK_RECEIPT_MISSING`（没有私有回执）、`TASK_RECEIPT_INVALID`（非法、过期、超长或未结束的行）与 `TASK_RECEIPT_INCOMPLETE`（观测合法但没有终态完成）。父进程每行最多复制 8 KiB，仅选择身份、计数、固定终态原因及已知失败事实。后续回执即使重置计数，之前观察到的工具或输出仍保留为部分结果证据。这些代码均不能证明提供方根因或允许重放。子进程 stdout 仍继承调用者的输出目的地；cron 将它和运行器审计输出重定向到现有任务日志。提供方 stderr 排空而不捕获、不填充；运维须单独限制现有 stdout 日志的访问并管理留存。
+
 任务最终失败发射 `task.failed`，携带 JobLog 的 run ID、安全代码和退出类别。事件写失败独立写入 stderr 与路由审计，保留任务原非零退出。事件或 JobLog 写错误不能把成功任务改记失败。真实锁超时发射 `runner.lock_timeout`，不创建已完成任务运行。routes 配置的 `lockTimeoutSeconds` 支持 1–610 秒，默认 610；私有获取标记区分 flock 冲突退出 75 与任务自身退出 75。正常 upkeep 准入/退避及成功任务不发失败事件。隔离、去重和源恢复见 [系统事件](../../intel-plugins/dsh-intelligence-sysevents/README.zh.md)。
 
 ChatGPT cron 路由显式为每个一次性进程使用 SSE。否则，已安装 SDK 的默认 WebSocket 缓存会在回复后继续保留进程五分钟。此单次调用 patch 不改变 web profile。路由的 `transport` 接受 `sse`、`websocket`、`websocket-cached` 或 `auto`；fallback 请求使用其自身路由的传输方式。

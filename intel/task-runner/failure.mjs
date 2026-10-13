@@ -14,7 +14,11 @@ export function classifyFailure(result){
   if(result.signal)return {code:'TASK_SIGNAL',category:'signal',result:'unknown',preExecution:false};
   if(result.exit===65)return {code:'TASK_NO_VISIBLE_OUTPUT',category:'no-visible-output',result:'completed',preExecution:false};
   const receipt=result.receipt;
-  if(!receipt?.complete)return {code:'TASK_RESULT_UNKNOWN',category:'unknown',result:'unknown',preExecution:false};
+  const partial=receipt&&(receipt.tools>0||receipt.outputs>0||receipt.streamOutput);
+  if(!receipt?.complete){
+    const receiptCodes={missing:'TASK_RECEIPT_MISSING',invalid:'TASK_RECEIPT_INVALID',incomplete:'TASK_RECEIPT_INCOMPLETE'};
+    return {code:receiptCodes[result.receiptStatus]??'TASK_RESULT_UNKNOWN',category:'unknown',result:partial?'partial':'unknown',preExecution:false};
+  }
   if(receipt.toolFailed)return {code:'TASK_TOOL_FAILED',category:'tool',result:'partial',preExecution:false};
   const failure=receipt.failure,category=codes[failure?.code]??'unknown';
   const code=category==='unknown'?'TASK_RESULT_UNKNOWN':category==='model-config'?'MODEL_CONFIG':'MODEL_'+category.toUpperCase().replaceAll('-','_');
@@ -34,10 +38,14 @@ export function classifyFailure(result){
 export function validateReceipt(value,plan){
   if(value?.version!==1||value.runId!==plan.runId||value.attempt!==plan.attempt||
     !['sessions','steps','requests','tools','outputs','retries'].every(key=>Number.isSafeInteger(value[key])&&value[key]>=0)||
-    typeof value.complete!=='boolean'||typeof value.streamOutput!=='boolean')return undefined;
+    typeof value.complete!=='boolean'||typeof value.streamOutput!=='boolean'||
+    value.end!==undefined&&!['completed','error','aborted','interrupted'].includes(value.end)||
+    value.toolFailed!==undefined&&typeof value.toolFailed!=='boolean')return undefined;
   if(value.failure!==undefined&&(typeof value.failure!=='object'||value.failure===null||
     typeof value.failure.code!=='string'||value.failure.status!==undefined&&(!Number.isInteger(value.failure.status)||value.failure.status<100||value.failure.status>599)))return undefined;
   const modelMatches=value.provider===plan.provider&&value.model===plan.model;
-  return {...value,modelMatches,provider:modelMatches?plan.provider:undefined,model:modelMatches?plan.model:undefined,
+  return {version:1,runId:plan.runId,attempt:plan.attempt,
+    ...Object.fromEntries(['sessions','steps','requests','tools','outputs','retries','complete','streamOutput','end','toolFailed'].filter(key=>value[key]!==undefined).map(key=>[key,value[key]])),
+    modelMatches,provider:modelMatches?plan.provider:undefined,model:modelMatches?plan.model:undefined,
     failure:value.failure?{code:Object.hasOwn(codes,value.failure.code)?value.failure.code:'UNKNOWN',status:value.failure.status}:undefined};
 }
