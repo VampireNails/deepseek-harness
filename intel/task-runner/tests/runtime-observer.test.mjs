@@ -41,6 +41,9 @@ test('incomplete and later reset observations never erase an observed side effec
   assert.equal(classifyFailure({exit:1,...observed}).preExecution,false);
   const incomplete=createRuntimeObserver(plan);incomplete.push(line({...receipt,complete:false,tools:1}));
   assert.equal(classifyFailure({exit:1,...incomplete.finish()}).result,'partial');
+  for(const process of [{exit:124},{exit:1,signal:'SIGKILL'}]){
+    const failure=classifyFailure({...process,...incomplete.finish()});assert.equal(failure.result,'partial');assert.equal(failure.preExecution,false);
+  }
   observer.push(Buffer.from('{bad\n'));
   const invalid=observer.finish();assert.equal(invalid.receiptStatus,'invalid');
   assert.equal(classifyFailure({exit:1,...invalid}).result,'partial');

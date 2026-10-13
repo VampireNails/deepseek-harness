@@ -37,10 +37,10 @@ async function fixture(t){
     res.writeHead(200,{'content-type':'text/event-stream'});
     const event=(type,data)=>res.write(`event: ${type}\ndata: ${JSON.stringify({type,...data})}\n\n`);
     event('message_start',{message:{id:'isolated-message',type:'message',role:'assistant',model:data.model,content:[],usage:{input_tokens:1,output_tokens:0}}});
-    const tool=['effect','tool-failure'].includes(mode)&&count===1;
+    const tool=['effect','tool-failure','crash'].includes(mode)&&count===1;
     event('content_block_start',{index:0,content_block:tool?{type:'tool_use',id:'isolated-tool',name:'bash',input:{}}:{type:'text',text:''}});
     if(tool)event('content_block_delta',{index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify({command:`printf effect > '${marker}'`,
-      ...(mode==='effect'?{description:'write isolated effect'}:{}),timeoutMs:1000})}});
+      ...(['effect','crash'].includes(mode)?{description:'write isolated effect'}:{}),timeoutMs:1000})}});
     else event('content_block_delta',{index:0,delta:{type:'text_delta',text:'isolated answer'}});
     if(mode==='partial'){
       event('error',{error:{type:'rate_limit_error',message:'quota'}});res.end();return;
@@ -53,11 +53,17 @@ async function fixture(t){
   server.listen(0,'127.0.0.1');await once(server,'listening');
   t.after(async()=>{for(const socket of sockets)socket.destroy();await new Promise(resolve=>server.close(resolve));});
   const url='http://127.0.0.1:'+server.address().port;
+  const crashPlugin=join(root,'crash.mjs');
+  await writeFile(crashPlugin,`export const name='isolated-write-crash';export const inject=['sessions'];
+export function apply(ctx){ctx.effect(()=>ctx.on('session/event',(_,event)=>{
+  if(process.env.ROUTING_WRITE_CRASH==='1'&&event.type==='tool/result')process.kill(process.pid,'SIGKILL');
+},{global:true}));}`);
   await writeFile(join(profile,'cordis.patch.yml'),JSON.stringify([
     {id:'llm-deepseek',config:{baseURL:url,apiKeyEnv:'T06_FIXTURE_KEY',thinking:'disabled',
       retryPolicy:{mode:'normal',maxRetries:2,retryableCodes:['RATE_LIMIT'],backoff:{initialDelayMs:1,maxDelayMs:1,jitterRatio:0}}}},
     {id:'llm-pi-ai',config:{providers:{'t06-pi':{baseURL:url,api:'anthropic-messages',apiKeyEnv:'T06_FIXTURE_KEY',models:[{id:'t06-model'}]}}}},
     {id:'session-title-llm',disabled:true},{id:'tools',config:{mode:'native'}},
+    {insert:[{id:'isolated-write-crash',name:crashPlugin}]},
   ]));
   await writeFile(join(bin,'dsh'),'#!/bin/sh\nexec /usr/local/bin/dsh "$@"\n',{mode:0o700});
   const configFile=join(root,'routes.json');
@@ -68,7 +74,7 @@ async function fixture(t){
     mode=nextMode;requests=[];await writeFile(configFile,JSON.stringify({...config,...override}));
     const child=spawn(process.execPath,[cli,'custom','isolated task'],{cwd:root,env:{...cleanEnv(),
       PATH:bin+':'+dirname(process.execPath)+':/usr/local/bin:/usr/bin:/bin',DSH_HOME:home,INTEL_JOBLOG_SCOPE:'test',
-      INTEL_ROUTER_CONFIG:configFile,T06_FIXTURE_KEY:'local-provider-key'},stdio:['ignore','pipe','pipe']});
+      INTEL_ROUTER_CONFIG:configFile,T06_FIXTURE_KEY:'local-provider-key',ROUTING_WRITE_CRASH:mode==='crash'?'1':'0'},stdio:['ignore','pipe','pipe']});
     let stdout='',stderr='';child.stdout.on('data',data=>stdout+=data);child.stderr.on('data',data=>stderr+=data);
     const timer=setTimeout(()=>child.kill('SIGKILL'),40000);
     const [exit,signal]=await once(child,'close');clearTimeout(timer);assert.equal(signal,null,stderr);
@@ -142,4 +148,16 @@ test('actual registered tool failure stays tool failure despite subsequent provi
   assert.equal(result.exit,1,result.stderr);assert.equal(result.finish.category,'tool');assert.equal(result.finish.code,'TASK_TOOL_FAILED');
   assert.equal(result.finish.attempts,1);assert.deepEqual(result.requests.map(row=>row.model),['deepseek-flash','deepseek-flash']);
   assert.equal(result.audit.some(row=>row.kind==='fallback'),false);
+});
+
+test('actual write then process crash preserves effects and diagnostic refusal across a new runner process',linux,async t=>{
+  const f=await fixture(t),result=await f.run('crash',{tasks:{custom:{route:'primary',fallback:'backup',retrySafe:true}}});
+  assert.equal(result.exit,1,result.stderr);assert.equal(await readFile(f.marker,'utf8'),'effect');
+  assert.equal(result.finish.code,'TASK_SIGNAL');assert.equal(result.finish.attempts,1);
+  assert.equal(result.finish.result,'partial');
+  assert.equal(result.audit.some(row=>row.kind==='fallback'),false);assert.equal(result.requests.length,1);
+  const next=await f.run('auth');assert.notEqual(next.finish.runId,result.finish.runId);
+  assert.equal(await readFile(f.marker,'utf8'),'effect');assert.equal(next.finish.attempts,1);
+  const events=(await readFile(join(f.home,'intel-system-events','events.test.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.ok(events.some(row=>row.runId===result.finish.runId&&row.diagnostic.code==='TASK_SIGNAL'));
 });

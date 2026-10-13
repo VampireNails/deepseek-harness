@@ -32,6 +32,7 @@ process.exitCode=7;
 `,{mode:0o700});
     const config=join(root,'routes.json');await writeFile(config,JSON.stringify({timeoutMs:1000,defaultRoute:'a',routes:{a:{provider:'p',model:'a'},b:{provider:'q',model:'b'}},
       tasks:{custom:{route:'a',fallback:'b',retrySafe:true}},fallback:{enabled:true,maxAttempts:2,totalTimeoutMs:2000}}));
+    const diagnostics=[];
     for(const mode of ['stale','malformed','partial','oversized','missing','incomplete','reset','sensitive','valid']){
       const result=spawnSync(process.execPath,[fileURLToPath(new URL('../cli.mjs',import.meta.url)),'custom','private'],{encoding:'utf8',timeout:10000,
         env:{...process.env,PATH:bin+':'+dirname(process.execPath)+':/usr/bin:/bin',DSH_HOME:home,INTEL_ROUTER_CONFIG:config,INTEL_JOBLOG_SCOPE:'test',T06_CHANNEL_MODE:mode}});
@@ -46,5 +47,8 @@ process.exitCode=7;
       assert.equal(jobs.custom.runId,finish.runId);assert.equal(event.runId,finish.runId);
       assert.equal(jobs.custom.diagnostic.code,finish.code);assert.deepEqual(jobs.custom.diagnostic,event.diagnostic);
       assert.doesNotMatch(JSON.stringify(rows)+JSON.stringify(event)+result.stderr,/PRIVATE_USER_CONTENT|sk-SECRET|\u001b/);
+      const {category,code,result:outcome,attempts,retryReason}=jobs.custom.diagnostic;
+      diagnostics.push({mode,category,code,result:outcome,attempts,retryReason});
     }
+    assert.deepEqual(diagnostics,JSON.parse(await readFile(new URL('./expected/receipt-diagnostics.json',import.meta.url),'utf8')));
   });

@@ -9,12 +9,12 @@ const codes={QUOTA:'quota',RATE_LIMIT:'rate-limit',AUTH:'authentication',MISSING
  * @returns A prompt-free stable classification with replay evidence.
  */
 export function classifyFailure(result){
-  if(result.launchCode)return {code:'TASK_LAUNCH_'+result.launchCode,category:'runner-error',result:'unknown',preExecution:false};
-  if(result.exit===124)return {code:'TASK_TIMEOUT',category:'timeout',result:'unknown',preExecution:false};
-  if(result.signal)return {code:'TASK_SIGNAL',category:'signal',result:'unknown',preExecution:false};
-  if(result.exit===65)return {code:'TASK_NO_VISIBLE_OUTPUT',category:'no-visible-output',result:'completed',preExecution:false};
   const receipt=result.receipt;
   const partial=receipt&&(receipt.tools>0||receipt.outputs>0||receipt.streamOutput);
+  if(result.launchCode)return {code:'TASK_LAUNCH_'+result.launchCode,category:'runner-error',result:'unknown',preExecution:false};
+  if(result.exit===124)return {code:'TASK_TIMEOUT',category:'timeout',result:partial?'partial':'unknown',preExecution:false};
+  if(result.signal)return {code:'TASK_SIGNAL',category:'signal',result:partial?'partial':'unknown',preExecution:false};
+  if(result.exit===65)return {code:'TASK_NO_VISIBLE_OUTPUT',category:'no-visible-output',result:'completed',preExecution:false};
   if(!receipt?.complete){
     const receiptCodes={missing:'TASK_RECEIPT_MISSING',invalid:'TASK_RECEIPT_INVALID',incomplete:'TASK_RECEIPT_INCOMPLETE'};
     return {code:receiptCodes[result.receiptStatus]??'TASK_RESULT_UNKNOWN',category:'unknown',result:partial?'partial':'unknown',preExecution:false};

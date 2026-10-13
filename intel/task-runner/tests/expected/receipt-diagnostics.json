@@ -1,0 +1,11 @@
+[
+  {"mode":"stale","category":"unknown","code":"TASK_RECEIPT_INVALID","result":"unknown","attempts":1,"retryReason":"unsafe-or-unknown-result"},
+  {"mode":"malformed","category":"unknown","code":"TASK_RECEIPT_INVALID","result":"unknown","attempts":1,"retryReason":"unsafe-or-unknown-result"},
+  {"mode":"partial","category":"unknown","code":"TASK_RECEIPT_INVALID","result":"unknown","attempts":1,"retryReason":"unsafe-or-unknown-result"},
+  {"mode":"oversized","category":"unknown","code":"TASK_RECEIPT_INVALID","result":"unknown","attempts":1,"retryReason":"unsafe-or-unknown-result"},
+  {"mode":"missing","category":"unknown","code":"TASK_RECEIPT_MISSING","result":"unknown","attempts":1,"retryReason":"unsafe-or-unknown-result"},
+  {"mode":"incomplete","category":"unknown","code":"TASK_RECEIPT_INCOMPLETE","result":"partial","attempts":1,"retryReason":"unsafe-or-unknown-result"},
+  {"mode":"reset","category":"quota","code":"MODEL_QUOTA","result":"partial","attempts":1,"retryReason":"unsafe-or-unknown-result"},
+  {"mode":"sensitive","category":"quota","code":"MODEL_QUOTA","result":"rejected","attempts":2,"retryReason":"attempt-limit"},
+  {"mode":"valid","category":"quota","code":"MODEL_QUOTA","result":"rejected","attempts":2,"retryReason":"attempt-limit"}
+]

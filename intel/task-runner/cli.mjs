@@ -77,9 +77,13 @@ async function main(){
       const config=JSON.parse(await readFile(process.env.INTEL_ROUTER_CONFIG??join(here,'routes.json'),'utf8')),lockTimeout=config.lockTimeoutSeconds??610;
       if(!Number.isSafeInteger(lockTimeout)||lockTimeout<1||lockTimeout>610)throw Error('invalid lockTimeoutSeconds');
       process.exitCode=await new Promise((resolve,reject)=>{
-      const child=spawn('flock',['--exclusive','--timeout',String(lockTimeout),'--conflict-exit-code','75',lock,process.execPath,fileURLToPath(import.meta.url),id,...rest],
+      const child=spawn('flock',['--no-fork','--exclusive','--timeout',String(lockTimeout),'--conflict-exit-code','75',lock,process.execPath,fileURLToPath(import.meta.url),id,...rest],
         {stdio:'inherit',env:{...process.env,INTEL_RUNNER_LOCK:lock,INTEL_RUNNER_ACQUIRED:marker}});
-      child.once('error',reject);child.once('close',(code,signal)=>resolve(code??(signal?1:0)));
+      const cancel=signal=>child.kill(signal);
+      const term=()=>cancel('SIGTERM'),interrupt=()=>cancel('SIGINT');
+      process.on('SIGTERM',term);process.on('SIGINT',interrupt);
+      const detach=()=>{process.off('SIGTERM',term);process.off('SIGINT',interrupt);};
+      child.once('error',error=>{detach();reject(error);});child.once('close',(code,signal)=>{detach();resolve(code??(signal?1:0));});
     });
       if(process.exitCode===75){
         let acquired=false;try{await readFile(marker);acquired=true;}catch(error){if(error.code!=='ENOENT')throw error;}
@@ -119,22 +123,26 @@ async function main(){
         child.stderr.resume(); // Provider diagnostics may contain request data; safe codes come from the receipt.
         child.stdio[3].on('error',()=>observer.invalidate());
         child.stdio[3].on('data',chunk=>observer.push(chunk));
-        let timedOut=false,inputError;
-        const timer=setTimeout(()=>{timedOut=true;try{process.kill(-child.pid,'SIGTERM');}catch(error){if(error.code!=='ESRCH')reject(error);}},remainingMs);
-        let killTimer;
-        child.once('spawn',()=>{killTimer=setTimeout(()=>{if(timedOut){try{process.kill(-child.pid,'SIGKILL');}catch(error){if(error.code!=='ESRCH')reject(error);}}},remainingMs+5000);});
+        let timedOut=false,inputError,cancelledSignal,killTimer;
+        const kill=signal=>{try{process.kill(-child.pid,signal);}catch(error){if(error.code!=='ESRCH')reject(error);}};
+        const terminate=signal=>{kill(signal);killTimer??=setTimeout(()=>kill('SIGKILL'),5000);};
+        const timer=setTimeout(()=>{timedOut=true;terminate('SIGTERM');},remainingMs);
+        const cancel=signal=>{cancelledSignal??=signal;terminate(signal);};
+        const term=()=>cancel('SIGTERM'),interrupt=()=>cancel('SIGINT');
+        process.on('SIGTERM',term);process.on('SIGINT',interrupt);
+        const detach=()=>{clearTimeout(timer);clearTimeout(killTimer);process.off('SIGTERM',term);process.off('SIGINT',interrupt);};
         child.stdin.on('error',error=>{
           if(error.code==='EPIPE')return;
           inputError=error;
-          try{process.kill(-child.pid,'SIGKILL');}catch(killError){if(killError.code!=='ESRCH')reject(killError);}
+          kill('SIGKILL');
         });
-        child.once('error',error=>{clearTimeout(timer);clearTimeout(killTimer);reject(error);});
+        child.once('error',error=>{detach();reject(error);});
         child.once('close',(code,signal)=>{
-          processSignal=signal;
-          clearTimeout(timer);clearTimeout(killTimer);
-          if(timedOut){try{process.kill(-child.pid,'SIGKILL');}catch(error){if(error.code!=='ESRCH'){reject(error);return;}}}
+          processSignal=cancelledSignal??signal;
+          detach();
+          if(timedOut||cancelledSignal)kill('SIGKILL');
           if(inputError){reject(inputError);return;}
-          resolve({exit:timedOut?124:code??(signal?1:0),processExit:code,signal});
+          resolve({exit:timedOut?124:cancelledSignal?1:code??(signal?1:0),processExit:code,signal:processSignal});
         });
         child.stdin.end(plan.prompt+'\n');
       });
