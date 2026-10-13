@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write intel/task-runner/README.md
-README.md: a89b6a127dfefbc44bab3b44a60150bd119b0ba7
-README.zh.md: 448bea18a666a2252c3a8025acd9c66815036534
+README.md: dbd88763222662f81c75629251db4ce6fe33d857
+README.zh.md: 24de258413def9790c307dddb2bf5f0b2efe1778

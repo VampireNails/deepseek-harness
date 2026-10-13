@@ -127,7 +127,10 @@ async function main(){
         const kill=signal=>{try{process.kill(-child.pid,signal);}catch(error){if(error.code!=='ESRCH')reject(error);}};
         const terminate=signal=>{kill(signal);killTimer??=setTimeout(()=>kill('SIGKILL'),5000);};
         const timer=setTimeout(()=>{timedOut=true;terminate('SIGTERM');},remainingMs);
-        const cancel=signal=>{cancelledSignal??=signal;terminate(signal);};
+        const cancel=signal=>{
+          if(timedOut)return;
+          cancelledSignal??=signal;clearTimeout(timer);terminate(signal);
+        };
         const term=()=>cancel('SIGTERM'),interrupt=()=>cancel('SIGINT');
         process.on('SIGTERM',term);process.on('SIGINT',interrupt);
         const detach=()=>{clearTimeout(timer);clearTimeout(killTimer);process.off('SIGTERM',term);process.off('SIGINT',interrupt);};

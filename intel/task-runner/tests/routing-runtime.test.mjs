@@ -115,8 +115,6 @@ test('actual installed CLI/provider requests match primary and bounded fallback 
     summaries.push({mode,exit,category:category??'success',models:r.requests.map(row=>row.model),attempts:r.finish.attempts});
     console.log('ACTUAL_REQUEST '+JSON.stringify(summaries.at(-1)));
   }
-  const timed=await f.run('timeout',{timeoutMs:5000,fallback:{enabled:true,maxAttempts:2,totalTimeoutMs:6000}});
-  assert.equal(timed.exit,124,timed.stderr);assert.equal(timed.requests.length,1);assert.equal(timed.finish.result,'unknown');
   for(const fallback of [undefined,{enabled:false}]){
     const r=await f.run('auth',{fallback});assert.equal(r.exit,1);assert.equal(r.requests.length,1);
   }
@@ -129,6 +127,13 @@ test('actual installed CLI/provider requests match primary and bounded fallback 
   console.log('ACTUAL_REQUESTS '+JSON.stringify(summaries));
   assert.deepEqual(summaries,JSON.parse(await readFile(new URL('./expected/routing-requests.json',import.meta.url),'utf8')));
   assert.deepEqual(diagnostics,JSON.parse(await readFile(new URL('./expected/routing-diagnostics.json',import.meta.url),'utf8')));
+});
+
+test('actual installed CLI timeout preserves one request and refuses fallback',linux,async t=>{
+  const f=await fixture(t),timed=await f.run('timeout',{timeoutMs:5000,fallback:{enabled:true,maxAttempts:2,totalTimeoutMs:6000}});
+  assert.equal(timed.exit,124,timed.stderr);assert.equal(timed.requests.length,1);assert.equal(timed.finish.result,'unknown');
+  assert.equal(timed.finish.code,'TASK_TIMEOUT');assert.equal(timed.finish.attempts,1);
+  assert.equal(timed.audit.some(row=>row.kind==='fallback'),false);
 });
 test('actual cross-provider fallback reaches pi-ai HTTP client and stale model plugin ID makes zero requests',linux,async t=>{
   const f=await fixture(t);
