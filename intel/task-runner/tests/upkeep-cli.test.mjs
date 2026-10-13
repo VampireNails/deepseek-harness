@@ -6,6 +6,7 @@ import {join,delimiter} from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {startUpkeepServer} from '../../../intel-plugins/dsh-intelligence-evolution/src/upkeep-socket.js';
+import {JobLog} from '../../../intel-plugins/dsh-intelligence-joblog/src/joblog.js';
 
 function invoke(cli,env,id='evolve_upkeep'){
   return new Promise((resolve,reject)=>{
@@ -51,6 +52,10 @@ writeFileSync(process.env.TEST_CAPTURE,JSON.stringify({runId:process.env.INTEL_R
   const audit=await readFile(join(home,'intel-joblog','route-runs.jsonl'),'utf8');
   for(const privateMarker of [message.text,message.messageId,message.sessionId])assert.equal(audit.includes(privateMarker),false);
   assert.equal((await stat(stateFile)).mode&0o777,0o600);
+  await writeFile(stateFile,JSON.stringify({...after,pending:{runId:sent.runId,taskId:sent.taskId,batchHash:'a'.repeat(64),proposedCursors:after.cursors}}),{mode:0o600});
+  const recovered=await invoke(cli,env);assert.equal(recovered.code,0,recovered.stderr);
+  assert.equal(captures,2);assert.equal(inspections,2);
+  assert.equal(new JobLog(join(home,'intel-joblog')).readHistory().length,1,'read-only receipt recovery is not a new successful model run');
 });
 
 test('upkeep without a reachable configured source fails rather than falling back to the old search loop',async t=>{

@@ -4,7 +4,11 @@ const fail=code=>Object.assign(Error(code),{code});
 const id=value=>typeof value==='string'&&/^[A-Za-z0-9_.:-]{1,128}$/.test(value);
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 
-/** Validate deployment failure threshold before task execution; absent config retains older deployments. */
+/**
+ * Validate deployment failure threshold before execution; absence retains older deployments.
+ * @param value - Optional deployment-owned circuit settings.
+ * @returns Enabled settings or null; invalid settings reject before dispatch.
+ */
 export function circuitConfig(value){
   if(value===undefined)return null;
   if(!object(value)||typeof value.enabled!=='boolean'||!Number.isSafeInteger(value.threshold)||value.threshold<1||value.threshold>1000||
@@ -12,7 +16,11 @@ export function circuitConfig(value){
   return value.enabled?value:null;
 }
 
-/** Reuse the owner-only fsynced JSON store under the existing task flock. */
+/**
+ * Reuse the owner-only fsynced JSON store under the existing task flock.
+ * @param file - Absolute private state file.
+ * @returns Durable read/write operations with circuit failure codes.
+ */
 export function createCircuitStateStore(file){
   const store=createUpkeepStateStore(file);
   const call=async fn=>{try{return await fn();}catch(error){throw fail(error.code?.startsWith('UPKEEP_')?error.code.replace('UPKEEP_','CIRCUIT_'):'CIRCUIT_STORAGE_FAILED');}};
