@@ -5,3 +5,4 @@
 {"kind":"heartbeat-backoff","reason":"same-anomaly-backoff","observedAtMs":103,"modelExecutions":0}
 {"kind":"heartbeat-signals","reason":"recovered","observedAtMs":104,"modelExecutions":0}
 {"kind":"heartbeat-processed","reason":"recovered","observedAtMs":104,"modelExecutions":1,"exit":0}
+{"kind":"heartbeat-circuit-open","reason":"model-circuit-open","observedAtMs":105,"modelExecutions":0,"exit":78}

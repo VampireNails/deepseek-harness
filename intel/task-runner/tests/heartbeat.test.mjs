@@ -39,6 +39,7 @@ test('pending persistence and admission audit failures prevent model dispatch',a
 });
 test('stable prompt-free heartbeat decision output matches the owner-local snapshot',async()=>{
   const f=fixture();f.observe(1,true);await f.run(100);await f.run(101);f.observe(2);await f.run(102);await f.run(103);f.observe(3,true);await f.run(104);
+  await f.run(105,{admit:async()=>false});
   const shown=f.rows.map(({kind,reason,observedAtMs,modelExecutions,exit})=>JSON.stringify({kind,reason,observedAtMs,...modelExecutions!==undefined?{modelExecutions}:{},...exit!==undefined?{exit}:{}})).join('\n')+'\n';
   assert.equal(shown,await readFile(new URL('./expected/heartbeat-decisions.txt',import.meta.url),'utf8'));
 });
