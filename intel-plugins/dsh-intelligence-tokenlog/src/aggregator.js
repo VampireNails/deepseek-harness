@@ -141,7 +141,7 @@ function dayKey(ms) {
 function taskIdentity(rows, header, headers, attribution) {
   const native = nativeIdentity(header, headers, attribution), scope = scopeIdentity(native, attribution);
   const {taskConflict, ...scopeFields} = scope;
-  if (native?.conflict || taskConflict) return {id:'unknown', classification:'conflict', source:'automation-index-v1', inferred:false, ...scopeFields};
+  if (native?.conflict || taskConflict) return {id:'unknown', classification:'conflict', source:native?.source??'automation-index-v1', inferred:false, ...scopeFields};
   if (native) return {id:native.task_id, classification:/^legacy-evidence:[a-f0-9]{64}$/.test(native.run_id)?'legacy-evidence':'native',
     source:'automation-index-v1', inferred:false, ...scopeFields};
   const first = rows.find(ev => ev.type === 'user/message');
@@ -157,7 +157,7 @@ function inheritedCut(rows, header) {
   if (!Number.isSafeInteger(cut) || cut < 0 || rows.some(ev => ev.type !== 'session' && (!Number.isSafeInteger(ev.seq) || ev.seq < 0))) throw Error('TOKENLOG_LOG_INVALID');
   return cut;
 }
-/** Read retained v4 root logs atomically; any unreadable log fails the entire scan. */
+/** Read retained v4 logs; source or metadata faults fail the scan without partial totals. */
 export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7, decompress = defaultDecompress, options = {}) {
   const result = {days, sessions:0, skipped:0, byTask:{}, byScope:{}, byDay:{}, byModel:{},
     taskUsage:{available:true,classificationAvailable:true,scopeAvailable:false,attributionVersion:2}, availability:{status:'complete'}, details:zero()};
@@ -202,8 +202,8 @@ export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7
       // Keep only aggregation events after hashing; do not retain complete transcripts across files.
       const retained = rows.filter(ev => ['session/end-seed','assistant/message','request/header'].includes(ev.type)).map(ev=>({
         type:ev.type,seq:ev.seq,time:ev.time,data:ev.type==='assistant/message'?{usage:ev.data?.usage}:
-          ev.type==='request/header'?{header:{config:ev.data?.header?.config}}:{inherited:ev.data?.inherited}}));
-      if (first) retained.unshift({type:'user/message',seq:first.seq,data:{content:[{text:first.data?.content?.[0]?.text}]}});
+          ev.type==='request/header'?{header:{config:{provider:ev.data?.header?.config?.provider,model:ev.data?.header?.config?.model}}}:{inherited:ev.data?.inherited}}));
+      if (first) retained.unshift({type:'user/message',seq:first.seq,data:{content:[{text:TASK_KEYWORDS.find(([,id])=>id===identifyTask(first.data?.content?.[0]?.text))?.[0]}]}});
       logs.push({rows:retained, header}); if (header) headers.set(header.id, header);
     }
     for (const {rows, header} of logs) {

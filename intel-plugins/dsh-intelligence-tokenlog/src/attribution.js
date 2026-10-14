@@ -45,18 +45,19 @@ export function readAttribution(sessionsRoot,{automationIndex,jobHistory}={}){
 /** Resolve exact subagent ancestry; ordinary forks do not inherit an automation identity. */
 export function nativeIdentity(header,headers,attribution,seen=new Set()){
   if(!header)return;
-  if(seen.has(header.id))return {conflict:true};
+  if(seen.has(header.id)||seen.size>=1024)return {conflict:true,source:'native-header'};
   seen.add(header.id);
   const direct=attribution.sessions.get(header.id);
   let parent;
   if(header.origin==='subagent')parent=nativeIdentity(headers.get(header.parentSession),headers,attribution,seen);
-  if(parent?.conflict||direct&&parent&&(direct.task_id!==parent.task_id||direct.run_id!==parent.run_id))return {conflict:true};
+  if(parent?.conflict)return parent;
+  if(direct&&parent&&(direct.task_id!==parent.task_id||direct.run_id!==parent.run_id))return {conflict:true,source:'automation-index-v1'};
   return direct??parent;
 }
 
 /** Match immutable task/run to committed scoped completion; absent/pruned/pending runs remain unknown. */
 export function scopeIdentity(identity,attribution){
-  if(identity?.conflict)return {scope:'unclassified',scopeStatus:'conflict',scopeSource:'automation-index-v1'};
+  if(identity?.conflict)return {scope:'unclassified',scopeStatus:'conflict',scopeSource:identity.source};
   const matches=identity&&attribution.runs.get(identity.run_id);
   if(!matches?.size)return {scope:'unclassified',scopeStatus:'unknown',scopeSource:'none'};
   const rows=[...matches.values()];
