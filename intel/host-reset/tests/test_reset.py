@@ -54,5 +54,11 @@ class EraseTests(unittest.TestCase):
     def test_root_or_source_ancestor_is_never_admitted(self):
         for path in ['/', str(self.root), str(self.source)]:
             with self.assertRaises(ValueError): worker.erase_data({**self.config, 'home': path})
+    def test_credential_path_cannot_delete_from_a_protected_source(self):
+        credential = self.source / '.env'
+        credential.write_text('preserved source-owned fixture')
+        with self.assertRaisesRegex(ValueError, 'HOST_RESET_PROTECTED_PATH'):
+            worker.erase_data({**self.config, 'credentialFiles': [str(credential)]})
+        self.assertTrue(credential.exists())
 
 if __name__ == '__main__': unittest.main()

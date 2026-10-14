@@ -125,6 +125,8 @@ class Manager:
                                    check=True, capture_output=True, timeout=15)
                     for name in ['key.pem', 'cert.pem']:
                         os.chmod(directory / name, 0o600)
+                        with open(directory / name, 'rb') as persisted:
+                            os.fsync(persisted.fileno())
                     self.save(operation)
                     self.listen(operation)
                 except Exception:

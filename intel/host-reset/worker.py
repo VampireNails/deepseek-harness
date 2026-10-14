@@ -53,8 +53,10 @@ def validate_data(config):
     canonical_directory(str(deployment / 'wrapper'))
     for value in config['credentialFiles']:
         path = Path(value)
-        if not path.is_absolute() or path.name != '.env' or any(p.is_symlink() for p in path.parents):
+        if not path.is_absolute() or path.name != '.env' or path.is_symlink() or any(p.is_symlink() for p in path.parents):
             raise ValueError('HOST_RESET_UNSAFE_CREDENTIAL_PATH')
+        if any(p == path or p in path.parents for p in protected):
+            raise ValueError('HOST_RESET_PROTECTED_PATH')
         if path.exists() and (path.is_symlink() or not path.is_file()):
             raise ValueError('HOST_RESET_UNSAFE_CREDENTIAL_PATH')
     return home, deployment, profile
