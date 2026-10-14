@@ -16,7 +16,12 @@ function read(file,limit,query){
   }catch{throw Error('TOKENLOG_METADATA_INVALID');}finally{db?.close();}
 }
 
-/** Snapshot existing identity and completion stores read-only; completion time never selects usage. */
+/**
+ * Snapshot existing identity and completion stores read-only; completion time never selects usage.
+ * @param sessionsRoot - Configured retained log directory.
+ * @param options - Optional existing automationIndex and jobHistory paths.
+ * @returns Immutable identity rows and deduplicated completion matches with source availability.
+ */
 export function readAttribution(sessionsRoot,{automationIndex,jobHistory}={}){
   const indexFile=automationIndex??(basename(sessionsRoot)==='--root--'&&basename(dirname(sessionsRoot))==='sessions'
     ?join(dirname(dirname(sessionsRoot)),'intel-joblog','automation-sessions.sqlite'):undefined);
@@ -42,7 +47,14 @@ export function readAttribution(sessionsRoot,{automationIndex,jobHistory}={}){
   return {sessions,runs,indexAvailable:identities!==undefined,scopeAvailable:history!==undefined};
 }
 
-/** Resolve exact subagent ancestry; ordinary forks do not inherit an automation identity. */
+/**
+ * Resolve exact subagent ancestry; ordinary forks do not inherit an automation identity.
+ * @param header - Physical v4 header, or absent for an unresolved parent.
+ * @param headers - Retained headers keyed by physical session ID.
+ * @param attribution - Read-only identity snapshot.
+ * @param seen - IDs visited by this ancestry walk.
+ * @returns Indexed task/run identity, explicit conflict, or absent identity.
+ */
 export function nativeIdentity(header,headers,attribution,seen=new Set()){
   if(!header)return;
   if(seen.has(header.id)||seen.size>=1024)return {conflict:true,source:'native-header'};
@@ -55,7 +67,12 @@ export function nativeIdentity(header,headers,attribution,seen=new Set()){
   return direct??parent;
 }
 
-/** Match immutable task/run to committed scoped completion; absent/pruned/pending runs remain unknown. */
+/**
+ * Match immutable task/run to committed scoped completion; absent/pruned/pending runs remain unknown.
+ * @param identity - Resolved native/audited task/run identity or lineage conflict.
+ * @param attribution - Read-only completion snapshot.
+ * @returns Separate scope status/source; disagreements about task identity also mark taskConflict.
+ */
 export function scopeIdentity(identity,attribution){
   if(identity?.conflict)return {scope:'unclassified',scopeStatus:'conflict',scopeSource:identity.source};
   const matches=identity&&attribution.runs.get(identity.run_id);
