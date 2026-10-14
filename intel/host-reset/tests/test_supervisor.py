@@ -50,6 +50,17 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaises(Conflict): self.prepare()
         self.assertFalse(value['backup'])
         self.assertEqual(self.calls, [])
+    def test_prepare_syncs_operation_parent_before_publishing_tls_ticket(self):
+        from unittest.mock import patch
+        from supervisor import sync_directory
+        synced = []
+        def record(path):
+            synced.append(path)
+            sync_directory(path)
+        with patch('supervisor.sync_directory', side_effect=record):
+            value = self.prepare()
+        self.assertIn(self.manager.operations, synced)
+        self.assertIn(self.manager.operations / value['operationId'], synced)
     def test_commit_deduplicates_and_completion_requires_worker_verification(self):
         value = self.prepare()
         args = {'operationId': value['operationId'], 'confirmation': 'RESET_ALL_NO_BACKUP'}

@@ -21,6 +21,26 @@ UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 PHASES = {'prepared', 'running', 'completed', 'failed', 'cancelled', 'acknowledged'}
 
 
+def sync_directory(path):
+    directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def durable_directory(path):
+    missing = []
+    parent = path
+    while not parent.exists():
+        missing.append(parent)
+        parent = parent.parent
+    path.mkdir(parents=True, mode=0o700, exist_ok=True)
+    for directory in missing:
+        sync_directory(directory)
+        sync_directory(directory.parent)
+
+
 def atomic(path, value):
     temporary = path.with_suffix('.tmp')
     with open(temporary, 'w', opener=lambda p, f: os.open(p, f, 0o600)) as out:
@@ -28,11 +48,7 @@ def atomic(path, value):
         out.flush()
         os.fsync(out.fileno())
     os.replace(temporary, path)
-    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(directory)
-    finally:
-        os.close(directory)
+    sync_directory(path.parent)
 
 
 def secure(path, directory=False):
@@ -52,9 +68,9 @@ class Manager:
         self.root = Path(config['stateRoot'])
         self.lock = threading.RLock()
         self.servers = {}
-        self.root.mkdir(parents=True, mode=0o700, exist_ok=True)
+        durable_directory(self.root)
         self.operations = self.root / 'operations'
-        self.operations.mkdir(mode=0o700, exist_ok=True)
+        durable_directory(self.operations)
         for directory in self.operations.iterdir():
             if not UUID.fullmatch(directory.name) or directory.is_symlink():
                 raise ValueError('HOST_RESET_UNSAFE_CONTROL')
@@ -128,10 +144,12 @@ class Manager:
                         with open(directory / name, 'rb') as persisted:
                             os.fsync(persisted.fileno())
                     self.save(operation)
+                    sync_directory(self.operations)
                     self.listen(operation)
                 except Exception:
                     # Only a newly allocated control directory; no business data exists here.
                     shutil.rmtree(directory)
+                    sync_directory(self.operations)
                     raise
             return {'version': 1, 'scope': SCOPE, 'deploymentId': operation['deploymentId'],
                     'operationId': identity, 'phase': operation['phase'], 'backup': False,
@@ -294,7 +312,7 @@ def main():
     state = Path(config['stateRoot'])
     if not state.is_absolute() or any(p.is_symlink() for p in [state, *state.parents]) or any(p == state or p in state.parents for p in [Path(config['home']), Path(config['deploymentRoot'])]):
         raise ValueError('HOST_RESET_UNSAFE_CONTROL')
-    state.mkdir(parents=True, mode=0o700, exist_ok=True)
+    durable_directory(state)
     secure(state, True)
     import fcntl
     singleton = open(state / 'supervisor.lock', 'a')
