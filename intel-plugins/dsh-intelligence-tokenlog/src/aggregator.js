@@ -198,7 +198,8 @@ export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7
         if (previous !== undefined) { if (previous !== fingerprint) throw Error('TOKENLOG_DUPLICATE_CONFLICT'); continue; }
         roots.set(header.id, fingerprint);
       }
-      const first = rows.find(ev => ev.type === 'user/message');
+      const ownedCut = inheritedCut(rows,header);
+      const first = rows.find(ev => ev.type === 'user/message' && ev.seq > ownedCut);
       // Keep only aggregation events after hashing; do not retain complete transcripts across files.
       const retained = rows.filter(ev => ['session/end-seed','assistant/message','request/header'].includes(ev.type)).map(ev=>({
         type:ev.type,seq:ev.seq,time:ev.time,data:ev.type==='assistant/message'?{usage:ev.data?.usage}:

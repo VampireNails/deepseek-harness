@@ -79,3 +79,13 @@ test('cyclic subagent ancestry is conflict, ordinary forks do not inherit task a
   const file=join(f.root,'fork','session.v4.jsonl.zstd');f.logs.set(file,JSON.stringify({type:'assistant/message',time:startMs,data:{usage:{inputTokens:1,outputTokens:1}}}));
   assert.throws(f.aggregate,/TOKENLOG_LOG_INVALID/);
 });
+test('an unmatched seeded fork cannot infer its own task from the inherited parent prompt',t=>{
+  const f=fixture(t);f.log('fork',{isSeeded:true,parentSession:'unavailable-parent'},[
+    {seq:2,type:'session/end-seed',time:startMs,data:{inherited:true}},
+    {seq:3,type:'assistant/message',time:startMs,data:{usage:{inputTokens:10,outputTokens:3}}}]);
+  const v=f.aggregate();assert.equal(Object.values(v.byTask)[0].classification,'unknown');assert.equal(v.byScope.unknown.sessions,1);
+});
+test('malformed completion data fails without heuristic fallback and recovers after the owned corrupt row is removed',t=>{
+  const f=fixture(t);f.log('a');f.identity('a','task_a','run-a');f.db.prepare('INSERT INTO runs VALUES(?,?,?)').run('production','run-a','{partial');
+  assert.throws(f.aggregate,/TOKENLOG_METADATA_INVALID/);f.db.exec('DELETE FROM runs');assert.equal(f.aggregate().byScope.unknown.sessions,1);
+});
