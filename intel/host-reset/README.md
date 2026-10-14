@@ -1,5 +1,7 @@
 # HMC full deployment reset
 
+English | [中文](README.zh.md)
+
 This opt-in Linux management service runs outside the DSH service cgroup. It accepts no client paths or shell commands. HMC exposes authenticated preparation; the separate operation TLS channel admits commit only after Android durably stores and verifies the operation connection. No business data or credentials are backed up.
 
 Install as root with `python3 intel/host-reset/install.py --config /private/manifest.json`. The root-owned mode-0600 manifest specifies `home`, `deploymentRoot`, `protectedRoots`, `credentialFiles`, `profileManifest`, `service`, `firstUseOverride`, `webPort`, `trustedHost`, `cronCommands`, `runnerEntrypoints`, `stateRoot`, `socket`, `progressHost` (IPv4), and `progressPort`. The installer allocates a deployment UUID and retains it across upgrades. The socket is `/run/hmc-host-reset/control.sock`; the control state must be outside every erased directory. HMC detects the root-private socket; unavailable installations advertise no reset capability.
