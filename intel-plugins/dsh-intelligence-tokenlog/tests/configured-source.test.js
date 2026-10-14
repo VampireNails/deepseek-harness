@@ -8,6 +8,8 @@ function mount(configuration){
   return {services,tools,close(){for(const dispose of disposers.reverse())dispose()}};
 }
 
+
+function withoutWindow(value){assert.equal(value.window.basis,'assistant-message-time');assert.equal(value.window.timeZone,'UTC');assert.equal(value.window.endExclusive,true);const {window,...counts}=value;return counts;}
 test('configured retained-log root is shared by the service and recorded tool rendering',async()=>{
   const root=await mkdtemp(join(tmpdir(),'tokenlog-configured-'));let mounted;
   try{
@@ -16,7 +18,7 @@ test('configured retained-log root is shared by the service and recorded tool re
     assert.equal(Config({sessionsRoot:root}).sessionsRoot,root);
     assert.throws(()=>Config({sessionsRoot:''}));
     assert.throws(()=>Config({sessionsRoot:5}));
-    const service=mounted.services.get('tokenlog');assert.deepEqual(await service.aggregate(undefined,1),{days:1,sessions:0,skipped:0,byTask:{},byDay:{},byModel:{},taskUsage:{available:true,classificationAvailable:true,scopeAvailable:false},availability:{status:'complete'},details:{input:0,output:0,messages:0,cacheRead:0,cacheWrite:0,cacheReadRecords:0,cacheWriteRecords:0}});
+    const service=mounted.services.get('tokenlog');assert.deepEqual(withoutWindow(await service.aggregate(undefined,1)),{days:1,sessions:0,skipped:0,byTask:{},byScope:{},byDay:{},byModel:{},taskUsage:{available:true,classificationAvailable:true,scopeAvailable:false,attributionVersion:2,indexAvailable:false,scopeCoverage:'unavailable'},availability:{status:'complete'},details:{input:0,output:0,messages:0,cacheRead:0,cacheWrite:0,cacheReadRecords:0,cacheWriteRecords:0}});
     const tool=mounted.tools.get('token_usage_summary'),value=await tool.execute({days:1},{signal:new AbortController().signal});
     assert.deepEqual(tool.output.render({days:1},value),[{type:'text',text:(await readFile(new URL('./expected/empty-retained-usage.txt',import.meta.url),'utf8')).trimEnd()}]);
     await assert.rejects(service.aggregate(join(root,'absent'),1),/TOKENLOG_SOURCE_UNAVAILABLE/);
@@ -28,6 +30,6 @@ test('an unspecified source uses DSH_HOME without opening another home',async()=
   let mounted;
   try{
     process.env.DSH_HOME=root;await mkdir(join(root,'sessions','--root--'),{recursive:true});mounted=mount({});
-    assert.deepEqual(await mounted.services.get('tokenlog').aggregate(undefined,1),{days:1,sessions:0,skipped:0,byTask:{},byDay:{},byModel:{},taskUsage:{available:true,classificationAvailable:true,scopeAvailable:false},availability:{status:'complete'},details:{input:0,output:0,messages:0,cacheRead:0,cacheWrite:0,cacheReadRecords:0,cacheWriteRecords:0}});
+    assert.deepEqual(withoutWindow(await mounted.services.get('tokenlog').aggregate(undefined,1)),{days:1,sessions:0,skipped:0,byTask:{},byScope:{},byDay:{},byModel:{},taskUsage:{available:true,classificationAvailable:true,scopeAvailable:false,attributionVersion:2,indexAvailable:false,scopeCoverage:'unavailable'},availability:{status:'complete'},details:{input:0,output:0,messages:0,cacheRead:0,cacheWrite:0,cacheReadRecords:0,cacheWriteRecords:0}});
   }finally{mounted?.close();if(previous===undefined)delete process.env.DSH_HOME;else process.env.DSH_HOME=previous;await rm(root,{recursive:true,force:true});}
 });

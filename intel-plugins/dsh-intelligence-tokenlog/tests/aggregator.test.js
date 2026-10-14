@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join,basename,dirname } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
@@ -58,7 +58,7 @@ test("parseSessionText：无 user/message 时任务为 other", () => {
 function mockDecompress(map) {
   return (file) => {
     if (map[file] === null) throw new Error("decompress boom");
-    return map[file];
+    return JSON.stringify({type:'session',version:4,id:basename(dirname(file)),isSeeded:false})+'\n'+map[file];
   };
 }
 

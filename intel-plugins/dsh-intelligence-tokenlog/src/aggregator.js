@@ -9,9 +9,9 @@
 
 import { execFileSync } from "node:child_process";
 import { readdirSync, lstatSync, openSync, closeSync } from "node:fs";
-import { join, resolve, dirname, basename } from "node:path";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { DatabaseSync } from "node:sqlite";
+import { readAttribution, nativeIdentity, scopeIdentity } from "./attribution.js";
 import { createHash } from "node:crypto";
 
 /** @returns Retained root-session log directory for the configured DSH home. */
@@ -136,53 +136,45 @@ function defaultDecompress(file, { deadline, decompressTimeoutMs = 5000 } = {}) 
 }
 function dayKey(ms) {
   const d = new Date(ms), p = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth()+1)}-${p(d.getUTCDate())}`;
 }
-function attributionIndex(sessionsRoot, explicit) {
-  const file = explicit ?? (basename(sessionsRoot) === '--root--' && basename(dirname(sessionsRoot)) === 'sessions'
-    ? join(dirname(dirname(sessionsRoot)), 'intel-joblog', 'automation-sessions.sqlite') : undefined);
-  if (!file) return;
-  let stat;
-  try { stat = lstatSync(file); } catch (error) { if (error.code === 'ENOENT') return; throw Error('TOKENLOG_METADATA_UNREADABLE'); }
-  if (!stat.isFile() || stat.size > 32 * 1024 * 1024) throw Error('TOKENLOG_METADATA_INVALID');
-  let db;
-  try {
-    db = new DatabaseSync(file, {readOnly:true});
-    if (db.prepare('PRAGMA user_version').get().user_version !== 1) throw Error('invalid version');
-    const find = db.prepare('SELECT task_id,run_id,run_date FROM automation_sessions WHERE session_id=?');
-    return {find: id => find.get(id), close: () => db.close()};
-  } catch (error) { db?.close(); throw Error('TOKENLOG_METADATA_INVALID'); }
-}
-function taskIdentity(rows, index) {
-  const header = rows.find(ev => ev.version === 4 && typeof ev.id === 'string' && ev.type === 'session');
-  const identity = header && header.id.length <= 1024 ? index?.find(header.id) : undefined;
-  if (identity) {
-    const {task_id: id, run_id: run, run_date: date} = identity;
-    if (!/^[a-z][a-z0-9_-]{0,79}$/.test(id) || typeof run !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(run) ||
-      typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date+'T00:00:00Z')) || new Date(date+'T00:00:00Z').toISOString().slice(0,10) !== date)
-      throw Error('TOKENLOG_METADATA_INVALID');
-    const classification = /^legacy-evidence:[a-f0-9]{64}$/.test(run) ? 'legacy-evidence' : 'native';
-    return {id, classification, source: 'automation-index-v1', inferred:false, scope:'unclassified'};
-  }
+function taskIdentity(rows, header, headers, attribution) {
+  const native = nativeIdentity(header, headers, attribution), scope = scopeIdentity(native, attribution);
+  const {taskConflict, ...scopeFields} = scope;
+  if (native?.conflict || taskConflict) return {id:'unknown', classification:'conflict', source:'automation-index-v1', inferred:false, ...scopeFields};
+  if (native) return {id:native.task_id, classification:/^legacy-evidence:[a-f0-9]{64}$/.test(native.run_id)?'legacy-evidence':'native',
+    source:'automation-index-v1', inferred:false, ...scopeFields};
   const first = rows.find(ev => ev.type === 'user/message');
-  const guess = identifyTask(first?.data?.content?.[0]?.text);
+  const guess = header?.origin === 'subagent' ? 'other' : identifyTask(first?.data?.content?.[0]?.text);
   return {id:guess === 'other' ? 'unknown' : guess, classification:guess === 'other' ? 'unknown' : 'heuristic',
-    source:guess === 'other' ? 'none' : 'first-user-keywords', inferred:guess !== 'other', scope:'unclassified'};
+    source:guess === 'other' ? 'none' : 'first-user-keywords', inferred:guess !== 'other', ...scopeFields};
+}
+function inheritedCut(rows, header) {
+  const markers = rows.filter(ev => ev.type === 'session/end-seed' && ev.data?.inherited === true);
+  if (!header?.isSeeded && markers.length || header?.isSeeded && !markers.length) throw Error('TOKENLOG_LOG_INVALID');
+  if (!markers.length) return -1;
+  const cut = markers.at(-1).seq;
+  if (!Number.isSafeInteger(cut) || cut < 0 || rows.some(ev => ev.type !== 'session' && (!Number.isSafeInteger(ev.seq) || ev.seq < 0))) throw Error('TOKENLOG_LOG_INVALID');
+  return cut;
 }
 /** Read retained v4 root logs atomically; any unreadable log fails the entire scan. */
 export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7, decompress = defaultDecompress, options = {}) {
-  const result = {days, sessions:0, skipped:0, byTask:{}, byDay:{}, byModel:{},
-    taskUsage:{available:true,classificationAvailable:true,scopeAvailable:false}, availability:{status:'complete'}, details:zero()};
-  const scanTime = Date.now(), cutoff = scanTime - days * 24 * 3600 * 1000;
+  const result = {days, sessions:0, skipped:0, byTask:{}, byScope:{}, byDay:{}, byModel:{},
+    taskUsage:{available:true,classificationAvailable:true,scopeAvailable:false,attributionVersion:2}, availability:{status:'complete'}, details:zero()};
+  const scanTime = Date.now(), cutoff = options.window?.startMs ?? scanTime - days * 24 * 3600 * 1000, endMs = options.window?.endMs ?? scanTime + 1;
+  if (!Number.isSafeInteger(cutoff) || !Number.isSafeInteger(endMs) || cutoff < 0 || endMs <= cutoff || endMs > scanTime + 1) throw Error('TOKENLOG_LOG_INVALID');
+  result.window = {startMs:cutoff,endMs,timeZone:'UTC',basis:'assistant-message-time',endExclusive:true};
   let dirs;
   try { dirs = readdirSync(sessionsRoot, {withFileTypes:true}).filter(e => e.isDirectory()).map(e => e.name).sort(); }
   catch { throw Error('TOKENLOG_SOURCE_UNAVAILABLE'); }
-  const index = attributionIndex(sessionsRoot, options.automationIndex), roots = new Map();
+  const attribution = readAttribution(sessionsRoot, options), roots = new Map(), logs = [], headers = new Map();
+  result.taskUsage.scopeAvailable = attribution.scopeAvailable;
+  result.taskUsage.indexAvailable = attribution.indexAvailable;
   function bump(bucket, key, value, sessions, identity) {
     if (!Object.hasOwn(bucket,key)) Object.defineProperty(bucket,key,{value:{...zero(), sessions:0, ...identity}, enumerable:true});
     add(bucket[key], value); bucket[key].sessions += sessions;
   }
-  try {
+  {
     for (const dir of dirs) {
       if (options.deadline !== undefined && Date.now() >= options.deadline) throw Error('TOKENLOG_TIMEOUT');
       const file = join(sessionsRoot, dir, 'session.v4.jsonl.zstd');
@@ -196,35 +188,51 @@ export function aggregateSessions(sessionsRoot = defaultSessionsRoot(), days = 7
         throw Error('TOKENLOG_DECOMPRESS_FAILED');
       }
       const rows = events(text); if (!rows.length) throw Error('TOKENLOG_LOG_INVALID');
-      const header = rows.find(ev => ev.version === 4 && typeof ev.id === 'string' && ev.type === 'session');
+      const header = rows[0];
+      if(header.type!=='session'||header.version!==4||typeof header.id!=='string'||!header.id||header.id.length>1024||
+        rows.slice(1).some(ev=>ev.type==='session')||header.origin!==undefined&&header.origin!=='subagent'||
+        header.parentSession!==undefined&&(typeof header.parentSession!=='string'||!header.parentSession||header.parentSession.length>1024)||
+        header.origin==='subagent'&&header.parentSession===undefined)throw Error('TOKENLOG_LOG_INVALID');
       if (header) {
         const fingerprint = createHash('sha256').update(JSON.stringify(rows)).digest('hex'), previous = roots.get(header.id);
         if (previous !== undefined) { if (previous !== fingerprint) throw Error('TOKENLOG_DUPLICATE_CONFLICT'); continue; }
         roots.set(header.id, fingerprint);
       }
-      const identity = taskIdentity(rows, index), sessionCounts = zero(), models = new Map();
+      const first = rows.find(ev => ev.type === 'user/message');
+      // Keep only aggregation events after hashing; do not retain complete transcripts across files.
+      const retained = rows.filter(ev => ['session/end-seed','assistant/message','request/header'].includes(ev.type)).map(ev=>({
+        type:ev.type,seq:ev.seq,time:ev.time,data:ev.type==='assistant/message'?{usage:ev.data?.usage}:
+          ev.type==='request/header'?{header:{config:ev.data?.header?.config}}:{inherited:ev.data?.inherited}}));
+      if (first) retained.unshift({type:'user/message',seq:first.seq,data:{content:[{text:first.data?.content?.[0]?.text}]}});
+      logs.push({rows:retained, header}); if (header) headers.set(header.id, header);
+    }
+    for (const {rows, header} of logs) {
+      const identity = taskIdentity(rows, header, headers, attribution), sessionCounts = zero(), models = new Map(), cut = inheritedCut(rows, header);
       let model = 'unknown';
       for (const ev of rows) {
         if (ev.type === 'request/header') {
           const config = ev.data?.header?.config;
           model = publicModelId(config?.provider) && publicModelId(config?.model) ? config.provider+'/'+config.model : 'unknown';
         }
-        if (ev.type !== 'assistant/message' || !ev.data?.usage) continue;
+        if (ev.type !== 'assistant/message' || !ev.data?.usage || ev.seq <= cut) continue;
         const counts = usage(ev.data.usage);
         if (!Number.isSafeInteger(ev.time) || !Number.isFinite(new Date(ev.time).getTime())) throw Error('TOKENLOG_LOG_INVALID');
-        if (ev.time < cutoff || ev.time > scanTime) continue;
+        if (ev.time < cutoff || ev.time >= endMs) continue;
         add(sessionCounts,counts); bump(result.byDay,dayKey(ev.time),counts,1);
         if (!models.has(model)) models.set(model,zero()); add(models.get(model),counts);
       }
       if (!sessionCounts.messages) continue;
       result.sessions++; add(result.details, sessionCounts);
       // Keep legacy keyword keys while native/audited identities cannot collide with guesses.
-      const key=identity.classification === 'heuristic' ? identity.id : identity.classification+':'+identity.id;
+      const baseKey=identity.classification === 'heuristic' ? identity.id : identity.classification+':'+identity.id;
+      const key=identity.scopeStatus === 'unknown' ? baseKey : baseKey+':'+(identity.scopeStatus === 'conflict'?'conflict':identity.scope);
       bump(result.byTask,key,sessionCounts,1,identity);
+      bump(result.byScope,identity.scopeStatus === 'known' ? identity.scope : identity.scopeStatus,sessionCounts,1);
       for (const [id,counts] of models) bump(result.byModel,id,counts,1);
     }
-  } finally { index?.close(); }
+  }
   if (options.deadline !== undefined && Date.now() >= options.deadline) throw Error('TOKENLOG_TIMEOUT');
+  result.taskUsage.scopeCoverage = !attribution.scopeAvailable ? 'unavailable' : result.byScope.unknown || result.byScope.conflict ? 'partial' : 'complete';
   return result;
 }
 function publicModelId(id) { return typeof id === 'string' && id.length <= 128 && /^[A-Za-z0-9][A-Za-z0-9._:@+-]*(?:\/[A-Za-z0-9][A-Za-z0-9._:@+-]*)*$/.test(id) && !/(?:^|\/)[A-Za-z]:/.test(id); }
@@ -252,7 +260,7 @@ export function formatSummary(agg, days) {
   lines.push("| 任务 | 会话数 | 输入 | 输出 |");
   lines.push("|---|---|---|---|");
   for (const [task, v] of tasks) {
-    lines.push(`| ${TASK_LABELS[v.id ?? task] || v.id || '未知任务'}（${({native:'原生身份','legacy-evidence':'历史证据',heuristic:'关键词推断',unknown:'未知'})[v.classification] || '旧版推断'}；范围未记录） | ${v.sessions} | ${fmt(v.input)} | ${fmt(v.output)} |`);
+    lines.push(`| ${TASK_LABELS[v.id ?? task] || v.id || '未知任务'}（${({native:'原生身份','legacy-evidence':'历史证据',heuristic:'关键词推断',unknown:'未知',conflict:'身份冲突'})[v.classification] || '旧版推断'}；${({production:'生产',test:'测试'})[v.scope] || (v.scopeStatus === 'conflict' ? '范围冲突' : v.scopeStatus === 'unknown' ? '范围未知' : '范围未记录')}） | ${v.sessions} | ${fmt(v.input)} | ${fmt(v.output)} |`);
   }
   if (!tasks.length) lines.push("|（无）| | | |");
   lines.push("");

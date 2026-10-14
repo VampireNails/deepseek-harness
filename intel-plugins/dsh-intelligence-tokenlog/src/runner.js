@@ -2,10 +2,10 @@ import { Worker } from "node:worker_threads";
 
 /** Scan outside the Host event loop; cancellation and timeout await worker exit. */
 export async function aggregateInWorker(days,
-  { sessionsRoot, signal, timeoutMs = 60000, decompressTimeoutMs = 5000, automationIndex } = {}) {
+  { sessionsRoot, signal, timeoutMs = 60000, decompressTimeoutMs = 5000, automationIndex, jobHistory, window } = {}) {
   if (signal?.aborted) throw new Error("TOKENLOG_CANCELLED");
   const worker = new Worker(new URL("./worker.js", import.meta.url), {
-    workerData: { days, sessionsRoot, deadline: Date.now() + timeoutMs, decompressTimeoutMs, automationIndex },
+    workerData: { days, sessionsRoot, deadline: Date.now() + timeoutMs, decompressTimeoutMs, automationIndex, jobHistory, window },
   });
   return new Promise((resolve, reject) => {
     let result;
