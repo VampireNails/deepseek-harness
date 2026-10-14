@@ -159,6 +159,26 @@ class ManagerTests(unittest.TestCase):
             state = json.loads(response.read())['value']
         self.assertTrue(state['hostVerified'])
         self.assertEqual(state['phase'], 'completed')
+    def test_idle_tls_connections_are_bounded_and_release_their_slots(self):
+        import socket
+        value = self.prepare()
+        port = self.manager.servers[value['operationId']].server_address[1]
+        context = ssl.create_default_context(cadata=value['progress']['certificate'])
+        connections = []
+        try:
+            for _ in range(16):
+                connections.append(context.wrap_socket(socket.create_connection(('127.0.0.1', port), timeout=2), server_hostname='127.0.0.1'))
+            with self.assertRaises((ssl.SSLError, ConnectionError)):
+                with socket.create_connection(('127.0.0.1', port), timeout=2) as raw:
+                    context.wrap_socket(raw, server_hostname='127.0.0.1')
+        finally:
+            for connection in connections:
+                connection.close()
+        for _ in range(50):
+            if self.manager.servers[value['operationId']].slots._value == 16:
+                break
+            time.sleep(0.02)
+        self.assertEqual(self.manager.servers[value['operationId']].slots._value, 16)
 
 
 if __name__ == '__main__': unittest.main()
