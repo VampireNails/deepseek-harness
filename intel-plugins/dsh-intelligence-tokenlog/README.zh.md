@@ -25,9 +25,9 @@ kind: "package-bundle"
 
 要把此组合包加入既有的 Linux `web` 与 `evolve` profile，并把 sysevents 组合包加入 `web`，请在仓库中运行 `node intel/hmc-observability.mjs <profiles-root> <new-backup-directory>`。辅助脚本保留 profile patch，并在修改前备份两份 manifest（元数据清单）。重启生产服务后加载新组合包。回滚时恢复备份的 manifest，仅移除 `links.json` 标记为 `created` 的链接，然后重启。HMC 从共享日志读取系统事件，与事件由哪个 profile 发出无关。它的 Android 用量页读取本组合包挂载的聚合服务，不创建会话或发起模型请求。
 
-`token_usage_summary(days)` 读取 Linux Host 保留的 `session.v4.jsonl.zstd` 日志，范围为 1–30 天，按任务、日期及提供商和模型汇总输入与输出 token。每条助手消息归属其前面的请求头，同一会话内的模型切换也会计入。缺失请求头时报告 `unknown`，不推定提供商。一个会话切换模型后，可以计入多个模型的会话数。任务身份来自只读 v1 自动任务索引，按 v4 实际存储的 `type: "session"` 日志头 ID 匹配，不依赖目录名、提示词或任务运行日期。原生身份与经审计的 `legacy-evidence:` 身份分别标注；首条用户文字关键词明确标为推断，未匹配日志保持未知。该索引没有生产/测试范围，因此任务行标为 `unclassified`；读取器不按名称或路径猜范围。
+`token_usage_summary(days)` 读取 Linux Host 保留的 `session.v4.jsonl.zstd` 日志，范围为 1–30 天，按任务、日期及提供商和模型汇总输入与输出 token。每条助手消息归属其前面的请求头，同一会话内的模型切换也会计入。缺失请求头时报告 `unknown`，不推定提供商。一个会话切换模型后，可以计入多个模型的会话数。任务身份来自只读 v1 自动任务索引，按 v4 实际存储的 `type: "session"` 日志头 ID 匹配，不依赖目录名、提示词或任务运行日期。原生身份与经审计的 `legacy-evidence:` 身份分别标注；首条用户文字关键词明确标为推断，未匹配日志保持未知。该索引不含范围。读取器以不可变的运行/任务 ID，在只读事务中关联既有 v1 `job_history.sqlite` 运行和最新完成记录；重复完成只计一次。只有精确且唯一的任务/运行匹配能确认 production/test 范围。缺失、待完成、已裁剪或经审计的旧运行保持 unknown；任务不匹配、范围冲突或子代理祖先循环保持 conflict。任务与范围是独立维度；任务行按范围拆分，`byScope` 保持每个记录 token 字段及实际存储的会话数守恒。不按名称或路径确认范围。新增的归属版本 2 字段声明来源可用性及完整/部分/不可用范围覆盖；启用本读取器前须升级旧消费方。
 
-时间窗口覆盖此前 `days × 24` 小时，可以跨更多自然日期。每个保留会话只累计窗口内的用量消息；日期采用 Host 进程本地时区，不采用索引的任务运行日期。任务会话数按唯一日志头 ID 分组，模型会话数可以重叠；原始每日 `sessions` 字段统计用量记录，不代表唯一会话数。工具与聚合服务均采用可选的 profile 配置 `sessionsRoot`；未设置时读取 `DSH_HOME` 下的 `sessions/--root--`，环境变量未设置时采用 `~/.dsh`。根目录缺失或无法读取时返回 `TOKENLOG_SOURCE_UNAVAILABLE`；既有空目录报告零用量。服务调用方可显式覆盖本次扫描的根目录。可选 `automationIndex` 指向已有身份索引；未设置时，标准 `sessions/--root--` 根目录选择同一 home 的 `intel-joblog/automation-sessions.sqlite`。索引缺失保留推断/未知分类；不可读或损坏索引使扫描失败。序号相同且完全一致的记录及头 ID 相同且内容一致的根日志只计一次；冲突重复使扫描失败。
+时间窗口覆盖此前 `days × 24` 小时，可以跨更多自然日期。每个保留会话只累计窗口内的用量消息；日期采用 UTC，不采用索引的任务运行日期。任务会话数按唯一日志头 ID 分组，模型会话数可以重叠；原始每日 `sessions` 字段统计用量记录，不代表唯一会话数。工具与聚合服务均采用可选的 profile 配置 `sessionsRoot`；未设置时读取 `DSH_HOME` 下的 `sessions/--root--`，环境变量未设置时采用 `~/.dsh`。根目录缺失或无法读取时返回 `TOKENLOG_SOURCE_UNAVAILABLE`；既有空目录报告零用量。服务调用方可显式覆盖本次扫描的根目录。可选 `automationIndex` 指向已有身份索引；未设置时，标准 `sessions/--root--` 根目录选择同一 home 的 `intel-joblog/automation-sessions.sqlite`。索引缺失保留推断/未知分类；不可读或损坏索引使扫描失败。序号相同且完全一致的记录及头 ID 相同且内容一致的根日志只计一次；冲突重复使扫描失败。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -35,7 +35,7 @@ kind: "package-bundle"
 <details>
 <summary>实现细节</summary>
 
-工具在 worker 中解压，保持 HTTPS 和事件投递可响应。profile 配置中的 `timeoutMs` 限制扫描总时长（默认 60000，允许 1–300000）。每次解压超过剩余扫描时长与 `decompressTimeoutMs` 中的较小值后被终止（后者默认 5000，允许 1–300000）。取消会等待当前有界解压及 worker 退出，不会立即完成。耗尽总时限会使扫描失败，不返回部分成功。错误仅暴露固定代码，区分 zstd 缺失/不可执行、解压、日志缺失/不可读、JSON/UTF8 损坏、重复冲突和元数据故障。读取器先检查压缩文件读取权限再调用 zstd；检查之后的权限变化仍可能报告解压失败。工具故障抛出，使注册执行器返回 `isError=true`。`ctx.get("tokenlog").aggregate(sessionsRoot, days, signal)` 返回 Promise；`format` 渲染结果。扫描只读日志，不发起模型请求。
+工具在 worker 中解压，保持 HTTPS 和事件投递可响应。profile 配置中的 `timeoutMs` 限制扫描总时长（默认 60000，允许 1–300000）。每次解压超过剩余扫描时长与 `decompressTimeoutMs` 中的较小值后被终止（后者默认 5000，允许 1–300000）。取消会等待当前有界解压及 worker 退出，不会立即完成。耗尽总时限会使扫描失败，不返回部分成功。错误仅暴露固定代码，区分 zstd 缺失/不可执行、解压、日志缺失/不可读、JSON/UTF8 损坏、重复冲突和元数据故障。读取器先检查压缩文件读取权限再调用 zstd；检查之后的权限变化仍可能报告解压失败。工具故障抛出，使注册执行器返回 `isError=true`。`ctx.get("tokenlog").aggregate(sessionsRoot, days, signal)` 返回 Promise；`format` 渲染结果。`automationIndex` 与 `jobHistory` 可选择既有身份/完成文件，未配置时在配置的 DSH home 下解析。扫描先固定左闭右开的时间范围，采用助手事件时间戳，按 UTC 日期分组。`aggregateSessions` 和 `aggregateInWorker` 还接受明确的 `window: {startMs,endMs}` 供隔离验证。文件 mtime、运行日期、完成日期和当前累计总量都不能选择窗口内用量。事件时间戳缺失时失败，不代入其他时钟。扫描只读日志，不发起模型请求。
 
 </details>
 
@@ -56,9 +56,11 @@ kind: "package-bundle"
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与延期工作
 
-报告统计保留的日志，不作为计费账本。不支持、缺失、不可读或损坏的保留文件使扫描失败，不返回部分成功。输入/输出保留互斥的未缓存输入/输出含义。缓存读取/写入 token 及包含各字段的记录数独立统计；缺缓存字段不代表零。用量记录数不能证明 HTTP 请求或尝试次数。Token 记录不能证明订阅使用权限、缓存价格或实际费用，因此报告不估算金额。其他代际的会话格式及单独存储的子会话日志不在本读取器的范围内。
+报告统计保留的日志，不作为计费账本。不支持、缺失、不可读或损坏的保留文件使扫描失败，不返回部分成功。输入/输出保留互斥的未缓存输入/输出含义。缓存读取/写入 token 及包含各字段的记录数独立统计；缺缓存字段不代表零。用量记录数不能证明 HTTP 请求或尝试次数。Token 记录不能证明订阅使用权限、缓存价格或实际费用，因此报告不估算金额。只扫描配置的保留目录，包含存储在其中的子会话日志。实际存储的 v4 ID 对内容一致的副本去重，矛盾副本使扫描失败。只有已验证的子代理父日志头才继承索引中的自动任务身份；普通分支会话保持自身身份。带种子的日志头必须有继承的 end-seed 标记，其前缀被排除；没有种子的 end-seed 标记仍保留实时用量。子会话自己的用量计一次，并作为独立的实际存储会话计数。其他会话代际和目录不在本来源内。
 
 <a id="dev-note"></a>
+工具失败将 worker 精确匹配的受支持 TOKENLOG_* 协议错误码保留到 error.info.code 与安全渲染正文。未知 worker 异常转换为 TOKENLOG_READ_FAILED。取消和超时仍为失败；成功总量、任务分类及费用不可用语义保持不变。
+
 ## 开发备注
 
 <details>
@@ -67,5 +69,3 @@ kind: "package-bundle"
 无。
 
 </details>
-
-工具失败将 worker 精确匹配的受支持 TOKENLOG_* 协议错误码保留到 error.info.code 与安全渲染正文。未知 worker 异常转换为 TOKENLOG_READ_FAILED。取消和超时仍为失败；成功总量、任务分类及费用不可用语义保持不变。
