@@ -33,6 +33,10 @@ The production launcher calls `checkInvariants` before starting the `web` profil
 
 A DeepSeek environment key or a structurally complete Codex OAuth grant satisfies the credential presence check. The grant is read from the versioned credentials document under `DSH_HOME` (otherwise the current user's `.dsh`), or the explicitly supplied check path. Comments, empty records and malformed YAML do not count. YAML errors and credential values are never returned. A stored grant does not establish current authorization, model entitlement or successful invocation; verify those through the Host model-access API.
 
+Missing or unset `HMC_CONFIG` produces a `[WARN]` naming the unavailable mobile port 43197 and allows web startup. Failed checks remain `ok: false`; consumers must exclude `severity: "warning"` from blocking failures and log warnings. The plugin follows the same rule.
+
+The versioned [production launcher](dsh-prod-start) installs at `/usr/local/bin/dsh-prod-start`. It reads `/etc/deepseek-harness/.env`, checks the actual HMC configuration path, logs warnings and starts `web` on 8080 with an isolated environment. Only that administrator-owned file may enable `DSH_FIRST_USE=1`: missing model credentials then warn while web/HMC remain available for setup. Remove that flag after configuring model access. Endpoint overrides and mock variables always block startup. Optional `DSH_TRUSTED_HOST` in the same file preserves the web hostname behind a proxy.
+
 </details>
 
 <a id="further-exploration"></a>

@@ -1,0 +1,60 @@
+#!/bin/bash
+# dsh-prod-start —— 生产 dsh 的唯一规范入口
+#
+# 构造性隔离：用 env -i 清空调用方 shell 的全部环境变量，
+# 只注入白名单变量，然后 exec dsh。这使得无论从哪个 shell、
+# 带着什么污染（DEEPSEEK_BASE_URL 等）手动启动，生产进程都
+# 不可能继承到测试/mock 环境。
+#
+# 纵深防御：dsh-intelligence-guard 插件（挂在 web profile 首位）
+# 会在启动时检查生产不变式，但只能 warn（上游限制，见第五轮审计 N1）；
+# 真正的 fail-closed 拦截在本脚本（上方案例）。插件是可观测的第二道。
+set -euo pipefail
+
+PROD_ENV_FILE="/etc/deepseek-harness/.env"
+HMC_CONFIG_FILE="/root/intel/hmc-prod/hmc-config.json"
+
+if [[ ! -f "$PROD_ENV_FILE" ]]; then
+  echo "dsh-prod-start: 生产 env 文件不存在: $PROD_ENV_FILE" >&2
+  exit 1
+fi
+# shellcheck disable=SC1090
+# 首次配置模式与 trusted host 只接受管理员维护的生产文件。
+export DSH_FIRST_USE=0
+DSH_TRUSTED_HOST=""
+unset DEEPSEEK_API_KEY DEEPSEEK_MODEL DSH_HOME
+set -a
+source "$PROD_ENV_FILE"
+set +a
+
+# fail-closed 断言（第五轮审计 N1）：插件 apply() 抛错只能产生 "did not activate"
+# warning，拦不住 dsh 启动（上游 requiredStartupEntryIds 硬编码，第三方插件加不进去）。
+# 真正的启动拦截只能发生在这里——入口脚本是唯一可控的 fail-closed 点。
+# 复用 guard 插件的 checkInvariants（单一事实来源），检查调用方环境（含已 source 的生产 .env）。
+GUARD_CHECK=$(HOME=/root DSH_HOME=/root/.dsh HMC_CONFIG="$HMC_CONFIG_FILE" node --input-type=module -e '
+import("/root/intel/dsh-fork/intel-plugins/dsh-intelligence-guard/index.js").then((m) => {
+  const issues = m.checkInvariants().filter((r) => !r.ok);
+  for (const w of issues.filter((r) => r.severity === "warning"))
+    console.error("dsh-prod-start: [WARN] " + w.name + ": " + w.detail);
+  const failures = issues.filter((r) => r.severity !== "warning");
+  if (failures.length > 0) {
+    for (const f of failures) console.error("dsh-prod-start: [GUARD] " + f.name + ": " + f.detail);
+    process.exit(1);
+  }
+}).catch((e) => { console.error("dsh-prod-start: guard 检查本身失败: " + e.message); process.exit(1); });
+' 2>&1) || { echo "$GUARD_CHECK" >&2; echo "dsh-prod-start: 生产环境契约违反，拒绝启动" >&2; exit 1; }
+if [[ -n "$GUARD_CHECK" ]]; then echo "$GUARD_CHECK" >&2; fi
+
+WEB_ARGS=()
+if [[ -n "$DSH_TRUSTED_HOST" ]]; then WEB_ARGS+=(--trusted-host "$DSH_TRUSTED_HOST"); fi
+
+exec env -i \
+  HOME=/root \
+  USER=root \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}" \
+  DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-chat}" \
+  HMC_CONFIG="$HMC_CONFIG_FILE" \
+  DSH_FIRST_USE="$DSH_FIRST_USE" \
+  DSH_TELEMETRY_DISABLED=1 \
+  /usr/local/bin/dsh --profile web --port 8080 "${WEB_ARGS[@]}" "$@"

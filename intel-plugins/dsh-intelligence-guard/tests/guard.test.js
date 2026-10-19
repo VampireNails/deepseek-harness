@@ -77,10 +77,48 @@ test("注释、空条目、缺少 payload 或错误 YAML 不构成 codex 凭证"
   }
 });
 
-test("HMC_CONFIG 指向不存在文件：fail", () => {
+test("HMC_CONFIG 缺失或文件不存在：warning，其他检查仍通过", () => {
+  for (const value of [undefined, "/tmp/no-such-file-xyz.json"]) {
+    const env = { ...cleanEnv(), HMC_CONFIG: value };
+    const rs = checkInvariants(env, NO_CREDS);
+    const hit = rs.find((r) => r.name.includes("HMC_CONFIG"));
+    assert.equal(hit.ok, false);
+    assert.equal(hit.severity, "warning");
+    assert.match(hit.detail, /43197/);
+    assert.ok(rs.filter((r) => !r.ok).every((r) => r.severity === "warning"));
+  }
+});
+
+test("首次配置允许模型凭据缺失，普通模式仍拒绝", () => {
+  const env = { ...cleanEnv(), DEEPSEEK_API_KEY: "", DSH_FIRST_USE: "1" };
+  const hit = checkInvariants(env, NO_CREDS).find((r) => r.name.includes("provider 凭证"));
+  assert.equal(hit.ok, false);
+  assert.equal(hit.severity, "warning");
+  for (const value of [undefined, "0", "true"]) {
+    const normal = checkInvariants({ ...env, DSH_FIRST_USE: value }, NO_CREDS);
+    assert.notEqual(normal.find((r) => r.name.includes("provider 凭证")).severity, "warning");
+  }
+});
+
+test("apply() 仅 warning 时记录日志并继续", (t) => {
+  const originalEnv = process.env;
+  process.env = { DSH_HOME: root + "/no-credentials", DSH_FIRST_USE: "1" };
+  t.after(() => { process.env = originalEnv; });
+  const lines = [];
+  t.mock.method(console, "warn", (line) => lines.push(line));
+  assert.doesNotThrow(() => apply({}, { enforce: true }));
+  assert.ok(lines.some((line) => /\[WARN\].*HMC_CONFIG.*43197/.test(line)));
+  assert.ok(lines.some((line) => /\[WARN\].*provider/.test(line)));
+});
+
+test("首次配置仍拒绝 mock 与端点污染", () => {
   const env = { ...cleanEnv(), HMC_CONFIG: "/tmp/no-such-file-xyz.json" };
-  const rs = checkInvariants(env, NO_CREDS);
-  assert.ok(!rs.find((r) => r.name.includes("HMC_CONFIG")).ok);
+  const rs = checkInvariants({ ...env, DSH_FIRST_USE: "1", MOCK_LLM: "1", DEEPSEEK_BASE_URL: "http://127.0.0.1:18099/v1" }, NO_CREDS);
+  for (const name of ["BASE_URL", "MOCK"]) {
+    const hit = rs.find((r) => r.name.includes(name));
+    assert.equal(hit.ok, false);
+    assert.notEqual(hit.severity, "warning");
+  }
 });
 
 test("MOCK 残留变量：fail", () => {

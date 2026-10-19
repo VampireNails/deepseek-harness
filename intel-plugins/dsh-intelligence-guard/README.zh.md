@@ -33,6 +33,10 @@ kind: "package-bundle"
 
 DeepSeek 环境密钥或结构完整的 Codex OAuth 授权记录均可满足凭据存在性检查。授权记录取自 `DSH_HOME` 下的版本化凭据文档（默认使用当前用户的 `.dsh`），或显式指定的检查路径。注释、空记录与格式错误的 YAML 不计入。检查不会返回 YAML 错误详情或凭据值。已存储的授权记录不能证明当前授权有效、模型使用权限或调用成功；这些事实须通过 Host 模型接入 API 验证。
 
+`HMC_CONFIG` 未设置或指向的文件缺失时，检查产生 `[WARN]`，明确手机端口 43197 不可用，并允许 web 启动。未通过的检查仍为 `ok: false`；调用者须从阻断项中排除 `severity: "warning"` 并记录 warning。插件遵循相同规则。
+
+版本化的[生产启动器](dsh-prod-start)安装于 `/usr/local/bin/dsh-prod-start`，读取 `/etc/deepseek-harness/.env`，检查实际 HMC 配置路径、输出 warning，并以隔离环境启动 8080 上的 `web`。仅该管理员维护的文件可启用 `DSH_FIRST_USE=1`：缺少模型凭据时改为 warning，web/HMC 保持可用以完成首次配置。配置模型接入后须移除该标记。端点覆盖和 mock 变量始终阻断启动。同文件的可选 `DSH_TRUSTED_HOST` 保留代理后的 web 主机名。
+
 </details>
 
 <a id="further-exploration"></a>

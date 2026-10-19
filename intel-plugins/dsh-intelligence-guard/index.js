@@ -29,7 +29,7 @@ export const Config = z.object({
   enforce: z.boolean().default(true),
 }).default({});
 
-// 生产环境不变式：返回 [{ ok, name, detail }]
+// 生产环境不变式：warning 不阻止启动，其余失败由启动器拒绝。
 export function checkInvariants(env = process.env, credPath = join(env.DSH_HOME || join(homedir(), ".dsh"), ".credentials.yaml")) {
   const results = [];
 
@@ -68,21 +68,24 @@ export function checkInvariants(env = process.env, credPath = join(env.DSH_HOME 
   }
   results.push({
     ok: hasDeepSeek || hasCodex,
+    severity: env.DSH_FIRST_USE === "1" ? "warning" : "error",
     name: "至少一个 LLM provider 凭证已配置",
     detail: (hasDeepSeek || hasCodex)
       ? `ok (${[hasDeepSeek && "deepseek", hasCodex && "openai-codex"].filter(Boolean).join("+")})`
-      : "生产 profile 必须有 LLM 凭证。检查 /etc/deepseek-harness/.env（DeepSeek）或 dsh OAuth 授权（ChatGPT）。",
+      : env.DSH_FIRST_USE === "1"
+        ? "首次配置模式：尚无模型凭据，web/HMC 继续启动；模型调用须先配置凭据，完成后移除 DSH_FIRST_USE。"
+        : "生产 profile 必须有 LLM 凭证。检查 /etc/deepseek-harness/.env（DeepSeek）或 dsh OAuth 授权（ChatGPT）。",
   });
 
-  // 3. HMC_CONFIG 指向的文件必须存在（HMC 生产依赖它）
+  // 3. HMC 缺配置时保留 web，并明确暴露手机通道不可用。
   const hmcConfig = env.HMC_CONFIG;
-  if (hmcConfig) {
-    results.push({
-      ok: existsSync(hmcConfig),
-      name: "HMC_CONFIG 文件存在",
-      detail: existsSync(hmcConfig) ? "ok" : `HMC_CONFIG=${hmcConfig} 不存在，HMC 服务起不来。`,
-    });
-  }
+  const hasHmcConfig = !!hmcConfig && existsSync(hmcConfig);
+  results.push({
+    ok: hasHmcConfig,
+    severity: "warning",
+    name: "HMC_CONFIG 文件存在",
+    detail: hasHmcConfig ? "ok" : `HMC_CONFIG=${hmcConfig || "(未设置)"} 不存在，手机通道 43197 不可用；web 继续启动。请恢复 HMC 配置并重启。`,
+  });
 
   // 4. 明显的测试残留：MOCK 标记
   const mockKeys = Object.keys(env).filter((k) =>
@@ -99,7 +102,11 @@ export function checkInvariants(env = process.env, credPath = join(env.DSH_HOME 
 
 export function apply(ctx, config) {
   if (config && config.enforce === false) return;
-  const failures = checkInvariants().filter((r) => !r.ok);
+  const issues = checkInvariants().filter((r) => !r.ok);
+  for (const warning of issues.filter((r) => r.severity === "warning")) {
+    console.warn(`[dsh-intelligence-guard] [WARN] ${warning.name}: ${warning.detail}`);
+  }
+  const failures = issues.filter((r) => r.severity !== "warning");
   if (failures.length > 0) {
     const lines = failures.map((f) => `  [FAIL] ${f.name}: ${f.detail}`);
     throw new Error(
