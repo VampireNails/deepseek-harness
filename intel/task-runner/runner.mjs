@@ -1,6 +1,7 @@
 import {TASKS} from '../../intel-plugins/dsh-intelligence-evolution/src/tasks.js';
 import {randomUUID} from 'node:crypto';
 import {classifyFailure} from './failure.mjs';
+import {processDiagnostic} from './process-diagnostic.mjs';
 
 /** Production cron aliases to the evolution module's template names. */
 export const TASK_ALIASES=Object.freeze({evolve_upkeep:'memory_upkeep',evolve_studying:'studying',
@@ -85,7 +86,7 @@ export async function runTask(config,id,customPrompt,execute,record,options={}){
         return 65;
       }
     }
-    await record({kind:'finish',...identity,exit,processExit:Object.hasOwn(result,'processExit')?result.processExit:exit,signal:result.signal,attempts,fallbackReason,...failure,
+    await record({kind:'finish',...identity,exit,processExit:Object.hasOwn(result,'processExit')?result.processExit:exit,signal:result.signal,attempts,fallbackReason,...failure,processDiagnostic:processDiagnostic(result),
       actualProvider:result.receipt?.provider,actualModel:result.receipt?.model});
     return exit;
   }
@@ -100,7 +101,7 @@ export async function runTask(config,id,customPrompt,execute,record,options={}){
     result=typeof raw==='number'?{exit:raw}:raw;
     if(!Number.isSafeInteger(result?.exit)||result.exit<0||result.exit>255)throw Error('invalid process result');
     failure=result.exit===0?undefined:classifyFailure(result);
-    await record({kind:'attempt',...info,provider:attempt.provider,model:attempt.model,attempt:attempt.attempt,exit:result.exit,...failure,
+    await record({kind:'attempt',...info,provider:attempt.provider,model:attempt.model,attempt:attempt.attempt,exit:result.exit,...failure,processDiagnostic:processDiagnostic(result),
       actualProvider:result.receipt?.provider,actualModel:result.receipt?.model});
     if(result.exit===0)break;
     const refusal=!enabled?'fallback-disabled':!plan.fallback?'fallback-unconfigured':attempt.attempt>=config.fallback.maxAttempts?'attempt-limit':

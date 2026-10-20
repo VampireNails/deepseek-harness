@@ -17,10 +17,11 @@ export function apply(ctx){
   let root,writeFailed=false;
   function save(){
     try{writeSync(3,JSON.stringify(state)+'\n');}
-    catch(error){writeFailed=true;}
+    catch(error){if(!writeFailed)process.stderr.write('INTEL_RUNTIME_FD_WRITE_FAILED\n');writeFailed=true;}
   }
   const selection=ctx.agentDefaultModel.currentSelection();
   const defaultMatches=selection.provider===expected.provider&&selection.model===expected.model;
+  save();
   ctx.effect(()=>ctx.on('session/created',session=>{
     state.sessions++;if(!root)root=session.id;else state.complete=false;save();
   },{global:true}));

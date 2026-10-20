@@ -124,7 +124,7 @@ test('actual installed CLI/provider requests match primary and bounded fallback 
     assert.equal(diagnostic.category,category??'success');assert.equal(diagnostic.code,r.finish.code??'OK');
     assert.equal(diagnostic.actualModel,r.requests.at(-1).model);assert.equal(diagnostic.attempts,r.finish.attempts);
     assert.equal(diagnostic.retryReason,r.finish.fallbackReason??'none');
-    diagnostics.push({mode,diagnostic});
+    diagnostics.push({mode,diagnostic,processObservation:r.finish.processDiagnostic.split(';').slice(0,3).join(';')});
     if(mode==='quota')console.log('DIAGNOSTIC_ROW '+JSON.stringify(jobs.custom));
     if(exit!==0){
       const events=(await readFile(join(f.home,'intel-system-events','events.test.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);

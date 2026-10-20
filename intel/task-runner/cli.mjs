@@ -14,6 +14,7 @@ import {JobLog} from '../../intel-plugins/dsh-intelligence-joblog/src/joblog.js'
 import {inspectVisibleOutputs} from './outputs.mjs';
 import {emitEvent} from '../../intel-plugins/dsh-intelligence-sysevents/src/store.js';
 import {createRuntimeObserver} from './runtime-observer.mjs';
+import {createStderrObserver} from './process-diagnostic.mjs';
 import {taskDiagnostic} from '../../intel-plugins/shared/task-diagnostic.js';
 import {circuitConfig,createCircuit,createCircuitStateStore} from './circuit.mjs';
 import {initializeSources,checkDeployment,checkProfile} from './deployment.mjs';
@@ -51,7 +52,7 @@ async function main(){
   }
   async function report(type,code,exitCode,exitCategory){
     try{emitEvent({type,severity:'high',title:type==='runner.lock_timeout'?'任务锁等待超时':'任务执行失败',
-      detail:`taskId=${id}; runId=${identity.runId}; code=${code}`,
+      detail:`taskId=${id}; runId=${identity.runId}; code=${code}${finalRoute?.processDiagnostic?'; '+finalRoute.processDiagnostic:''}`,
       scope,source:'runner',taskId:id,runId:identity.runId,code,exitCode,exitCategory,
       ...(type==='task.failed'&&completedDiagnostic()?{diagnostic:completedDiagnostic()}:{})});}
     catch(error){
@@ -137,12 +138,13 @@ async function main(){
       const remainingMs=Math.floor(plan.timeoutMs-(performance.now()-preparationStarted));
       if(remainingMs<=0)return {exit:124,processExit:null};
       const observer=createRuntimeObserver(plan);
+      const stderr=createStderrObserver();
       const result=await new Promise((resolve,reject)=>{
         const child=spawn('dsh',['--profile','evolve','--patch',patch],{stdio:['pipe','inherit','pipe','pipe'],detached:true,
           env:{...process.env,INTEL_TASK_ID:plan.id,INTEL_RUN_ID:plan.runId,INTEL_RUN_DATE:plan.runDate,
             INTEL_RUNTIME_FD:'3',INTEL_RUN_ATTEMPT:String(plan.attempt),INTEL_ROUTE_PROVIDER:plan.provider,INTEL_ROUTE_MODEL:plan.model,
             INTEL_DISABLE_PROVIDER_RETRY:plan.disableProviderRetry?'1':'0'}});
-        child.stderr.resume(); // Provider diagnostics may contain request data; safe codes come from the receipt.
+        child.stderr.on('data',chunk=>stderr.push(chunk));
         child.stdio[3].on('error',()=>observer.invalidate());
         child.stdio[3].on('data',chunk=>observer.push(chunk));
         let timedOut=false,inputError,cancelledSignal,killTimer;
@@ -172,6 +174,7 @@ async function main(){
         child.stdin.end(plan.prompt+'\n');
       });
       Object.assign(result,observer.finish());
+      result.stderr=stderr.finish();
       if(result.receipt?.complete&&result.receipt.modelMatches===false){
         result.receipt.failure={code:'NO_MODEL'};result.exit=result.exit||1;
       }
@@ -232,7 +235,7 @@ async function main(){
     }else{await prepare();exit=await runTask(config,id,rest.join(' '),execute,record,common);}
     taskExit=exit;
     if(exit!==0&&!quiet)await reportExit(exit);
-    if(!quiet){completionAttempted=true;log._recordRun(id,exit===0?'ok':'fail',`reason=${finalRoute?.reason??'preflight'}; requested=${finalRoute?.provider??'none'}/${finalRoute?.model??'none'}; actual=${finalRoute?.actualProvider??'unknown'}/${finalRoute?.actualModel??'unknown'}; attempts=${finalRoute?.attempts??0}; fallback=${finalRoute?.fallbackReason??'none'}; code=${finalRoute?.code??'OK'}; exit ${exit}; runId=${identity.runId}; route-runs.jsonl`,{...identity,diagnostic:completedDiagnostic()});}
+    if(!quiet){completionAttempted=true;log._recordRun(id,exit===0?'ok':'fail',`reason=${finalRoute?.reason??'preflight'}; requested=${finalRoute?.provider??'none'}/${finalRoute?.model??'none'}; actual=${finalRoute?.actualProvider??'unknown'}/${finalRoute?.actualModel??'unknown'}; attempts=${finalRoute?.attempts??0}; fallback=${finalRoute?.fallbackReason??'none'}; code=${finalRoute?.code??'OK'}; exit ${exit}; runId=${identity.runId}; route-runs.jsonl${finalRoute?.processDiagnostic?'; '+finalRoute.processDiagnostic:''}`,{...identity,diagnostic:completedDiagnostic()});}
     if(exit!==0&&!quiet)log._alert(id,`task exit ${exit}; code=${finalRoute?.code??'TASK_EXIT_NONZERO'}; runId=${identity.runId}; inspect route-runs.jsonl`);
     process.exitCode=exit;
   }catch(error){
