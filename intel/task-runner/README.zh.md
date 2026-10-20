@@ -20,6 +20,14 @@ ChatGPT cron 路由显式为每个一次性进程使用 SSE。否则，已安装
 
 此运行器从演进功能当前的 `TASKS` 模板中解析内置 cron 任务 ID。内置任务会忽略可选的旧提示词参数；自定义任务必须提供明确的提示词。`routes.json` 提供任务路由、默认提供方与模型，以及超时时间。运行器仅启动 `evolve` DSH profile，并显式传入模型 patch。它依赖已安装的 profile 依赖和正常的提供方凭据，不会安装提供方或图像工具。
 
+部署配置必须显式执行。重置后，仅重新配置所需的 `evolve` 安装，并合并[演进插件](../../intel-plugins/dsh-intelligence-evolution/README.zh.md)说明的 Host source 配置；不能为了通过检查恢复旧会话或 pending 检查点。`bash intel/bootstrap.sh` 只配置新 profile，写入前拒绝已有 profile 路径，并初始化缺失的随附清单。其 `web-intel` profile 持有 source；已有生产 `web` profile 须单独审查并合并 patch。Bootstrap 不启用 cron。
+
+运行 `DSH_HOME=/absolute/home bash intel/task-runner/run.sh --initialize-sources`，只发布缺失的 `intel-evolution/HEARTBEAT.md`。已有空清单退出配置和陌生清单保持原字节；路径别名被拒绝。随后以 cron wrapper 相同的 home 和路由配置运行 `--check-ready`。该命令检查九项路由、evolve 的十二个 bundle 及其启用的组合条目、六项真实健康来源和配置的 Host socket，模型请求数为零。当前安装 CLI 即使仅输出配置也会重写 profile 根文件，因此组合检查使用私有临时文件，原 profile 文件保持不变。`ready` 仅证明组合与来源健康，不证明提供方授权、运行时工具行为或允许启用 cron；这些须在获准的发布中另行验证。空清单返回 `inactive` 和退出码 78；profile 缺失/无效、bundle 不可用、能力停用、patch 损坏或来源失败均以稳定代码拒绝。
+
+随附路由设置 `requireReadyProfile: true`；模型分发在持久化 upkeep/heartbeat pending 之前检查 profile。健康安静路径、空输入初始化、pending 回执检查与熔断后的健康读取不依赖模型 profile。准备失败保留原检查点，修正配置无需删除状态。配置缺失/为 false 时保持旧部署行为。`run.sh` 仅在需要且可用时读取现有环境文件；`INTEL_RUNNER_ENV_FILE` 显式指定另一个可信 shell 环境文件，指定文件必须可读。初始化、诊断与零模型路径不要求 DeepSeek key。命令不安装凭据、不改变调度。
+
+route/latest 投影缺失仅在没有相矛盾的完成历史或告警时视为首用。已有完成记录却缺失投影时返回 `HEARTBEAT_HISTORY_INCOMPLETE`；已有空投影仍然有效。缺失文件、权限拒绝、损坏输入、末级符号链接、父级别名与观测到的文件替换均不能建立健康结论。所有历史痕迹同时被删除或两次采集之间的变化仍有观测边界。
+
 `route-runs.jsonl` 记录请求及运行时解析的 provider/model、模板、原进程退出码、信号、稳定失败类别和 fallback 原因，不记录提示词或凭据。额度、限流、鉴权、服务、网络、模型配置、工具和结果未知分别保留。退出码 1 及 provider/工具文字不能单独证明额度耗尽。provider stderr 只读取不转发，因为它可能包含请求数据。超时终止进程组，结果仍未知。
 
 JobLog 完成记录携带与路由审计相同的 run ID 和开始时间，以及最终退出码、选路原因、请求/实际选择、尝试次数和降级原因。未配置的自定义任务保留兼容默认路由，并显示 `unconfigured-task`；缺少实际身份时保持 `unknown`。`INTEL_JOBLOG_SCOPE=test` 显式隔离受控测试；缺省选择生产，其他值拒绝。JobLog 持久化错误以非零退出并按安全代码审计，不为已完成任务另造一条失败运行。保留策略、部分持久化、旧快照和备份要求见 [JobLog](../../intel-plugins/dsh-intelligence-joblog/README.zh.md)。

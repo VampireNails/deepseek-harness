@@ -12,6 +12,14 @@ function fixture(){
     async run(now,extra={}){cut.observedAtMs=now;return runHeartbeat({config,nowMs:now,source:{capture:async()=>structuredClone(cut)},stateStore:{read:async()=>structuredClone(state),write:async value=>{state=structuredClone(value);}},execute:async batch=>{runs.push(batch);return 0;},record:async row=>rows.push(row),...extra});}};
   f.observe(1);return f;
 }
+
+test('profile preparation fails before pending admission and does not block healthy zero-model capture',async()=>{
+  const f=fixture(),prepare=async()=>{throw Object.assign(Error('not configured'),{code:'SCHEDULE_PROFILE_ABSENT'});};
+  await assert.rejects(f.run(100,{prepare}),{code:'SCHEDULE_PROFILE_ABSENT'});
+  assert.equal(f.state,null);assert.equal(f.runs.length,0);
+  f.observe(2,true);assert.equal((await f.run(101,{prepare})).kind,'heartbeat-healthy');
+  f.observe(3);await f.run(102);assert.equal(f.runs.length,1);
+});
 test('same anomaly doubles due intervals to the configured cap; healthy numeric noise is outside identity',async()=>{
   const f=fixture();await f.run(100);assert.equal(f.runs.length,1);await f.run(109);assert.equal(f.runs.length,1);await f.run(110);assert.equal(f.state.nextDueAtMs,130);
   await f.run(130);assert.equal(f.state.nextDueAtMs,170);await f.run(170);assert.equal(f.state.nextDueAtMs,210);assert.equal(f.runs.length,4);

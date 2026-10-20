@@ -25,10 +25,10 @@ const verified=result=>result?.complete===true&&result.failedWrites===0&&Array.i
 /**
  * Admit bounded new user-channel input and retain unresolved side effects across cron invocations.
  * The caller holds the task lock; source returns complete raw cuts, and inspect verifies persisted native tool outcomes.
- * @param options - Validated limits, clock, durable state, read-only source, model dispatch, run inspection and private-free audit.
+ * @param options - Limits, clock, state, source, dispatch, inspection, audit and optional pre-pending preparation.
  * @returns A prompt-free outcome; source, dispatch, verification and persistence failures reject with stable codes.
  */
-export async function runUpkeep({config,nowMs,taskId,stateStore,source,execute,inspect,record}){
+export async function runUpkeep({config,nowMs,taskId,stateStore,source,execute,inspect,record,prepare=async()=>{}}){
   try{
     if(!Number.isSafeInteger(nowMs)||nowMs<0||!object(config))throw fail('UPKEEP_INVALID_CONFIG');
     for(const key of ['initialBackoffMs','maxBackoffMs','maxBatchMessages','maxBatchChars'])
@@ -86,6 +86,7 @@ export async function runUpkeep({config,nowMs,taskId,stateStore,source,execute,i
       return await audit('upkeep-no-signal',{counts,nextDueAtMs:nowMs+backoffMs});
     }
     const batchHash=createHash('sha256').update(JSON.stringify(cut.messages)).digest('hex');
+    await prepare();
     const runId=randomUUID();
     await stateStore.write({...previous,pending:{runId,batchHash,proposedCursors:cut.cursors,...taskId!==undefined?{taskId}:{}}});
     await audit('upkeep-signals',{batchHash,counts});
@@ -96,7 +97,7 @@ export async function runUpkeep({config,nowMs,taskId,stateStore,source,execute,i
     await commit(cut.cursors,0);
     return await audit('upkeep-processed',{batchHash,counts,writes:receipt.writeIds.length});
   }catch(error){
-    if(typeof error?.code==='string'&&/^UPKEEP_[A-Z0-9_]{1,64}$/.test(error.code))throw fail(error.code);
+    if(typeof error?.code==='string'&&/^(UPKEEP|SCHEDULE)_[A-Z0-9_]{1,64}$/.test(error.code))throw fail(error.code);
     throw fail('UPKEEP_FAILED');
   }
 }

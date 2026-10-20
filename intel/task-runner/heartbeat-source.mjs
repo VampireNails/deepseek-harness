@@ -1,8 +1,9 @@
 import {execFile} from 'node:child_process';
-import {open,lstat,constants} from 'node:fs/promises';
+import {open,lstat,constants,realpath} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {isUtf8} from 'node:buffer';
-import {join} from 'node:path';
+import {join,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {storedRows} from '../../intel-plugins/dsh-intelligence-joblog/src/history.js';
 
 const fail=code=>Object.assign(Error(code),{code});
@@ -29,16 +30,22 @@ export function heartbeatConfig(config){
 async function boundedFile(file,maxBytes,{optional=false}={}){
   let handle;
   try{
+    const path=file instanceof URL?fileURLToPath(file):file;
+    // Check ancestors before opening; O_NOFOLLOW only protects the final component.
+    if(await realpath(dirname(path))!==dirname(path))throw fail('HEARTBEAT_SOURCE_READ_FAILED');
     handle=await open(file,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);const before=await handle.stat();
     if(!before.isFile()||before.size>maxBytes)throw fail('HEARTBEAT_SOURCE_TOO_LARGE');
     const buffer=Buffer.alloc(maxBytes+1);let size=0;
     while(size<buffer.length){const part=await handle.read(buffer,size,buffer.length-size,null);if(!part.bytesRead)break;size+=part.bytesRead;}
     if(size>maxBytes)throw fail('HEARTBEAT_SOURCE_TOO_LARGE');
     const after=await handle.stat();
-    if(before.size!==size||after.size!==size||before.mtimeMs!==after.mtimeMs)throw fail('HEARTBEAT_SOURCE_CHANGED');
+    const current=await lstat(file);
+    if(current.dev!==before.dev||current.ino!==before.ino||current.mtimeMs!==after.mtimeMs||
+      before.size!==size||after.size!==size||before.mtimeMs!==after.mtimeMs)throw fail('HEARTBEAT_SOURCE_CHANGED');
     const bytes=buffer.subarray(0,size);if(!isUtf8(bytes))throw fail('HEARTBEAT_INVALID_SOURCE');
     return bytes.toString('utf8');
-  }catch(error){if(optional&&error.code==='ENOENT')return null;if(error.code?.startsWith('HEARTBEAT_'))throw error;throw fail('HEARTBEAT_SOURCE_READ_FAILED');}
+  }catch(error){if(optional&&error.code==='ENOENT')return null;if(error.code?.startsWith('HEARTBEAT_'))throw error;
+    throw fail(error.code==='ENOENT'?'HEARTBEAT_SOURCE_ABSENT':['EACCES','EPERM'].includes(error.code)?'HEARTBEAT_SOURCE_DENIED':'HEARTBEAT_SOURCE_READ_FAILED');}
   finally{await handle?.close();}
 }
 
@@ -140,12 +147,23 @@ export async function captureHeartbeat({home,config,nowMs,scope='production',pro
     probe('systemctl',['show',config.serviceUnit,'--property=ActiveState,SubState,NRestarts,InvocationID'],config),
     probe('ss',['-H','-ltn'],config),probe('df',['-Pk','/'],config),probe('free',['-b'],config),
     probe('journalctl',['-u',config.serviceUnit,'--since','@'+((nowMs-config.windowMs)/1000).toFixed(3),'--until','@'+(nowMs/1000).toFixed(3),'-p','err','-o','json','--no-pager','--quiet'],config),
-    boundedFile(join(root,'route-runs.jsonl'),config.maxSourceBytes),boundedFile(join(root,scope==='test'?'job_test_runs.json':'job_runs.json'),config.maxSourceBytes),
+    boundedFile(join(root,'route-runs.jsonl'),config.maxSourceBytes,{optional:true}),boundedFile(join(root,scope==='test'?'job_test_runs.json':'job_runs.json'),config.maxSourceBytes,{optional:true}),
     boundedFile(join(root,'job_alerts.md'),config.maxSourceBytes,{optional:true}),historyRows(join(root,'job_history.sqlite'),config.maxSourceBytes),
   ]);
   const sources=['service','listener','disk','memory','journal','route','joblog','joblog','joblog'];
   for(const [i,r] of reads.entries())if(r.status==='rejected')throw Object.assign(r.reason,{source:sources[i]});
   const [service,listeners,disk,memory,journal,routes,latest,alertText,history]=reads.map(r=>r.value);
+  // Absent projections establish first use only while no completed history contradicts it.
+  const latestRows=latest===null?{}:json(latest);
+  if(!object(latestRows)||Object.values(latestRows).some(row=>!object(row)))throw fail('HEARTBEAT_INVALID_SOURCE');
+  const selected=row=>row?.scope===undefined||row.scope==='unclassified'||row.scope===scope;
+  const alerts=alertSignals(alertText,nowMs,config,scope),hasAlerts=alerts.id!==hash([]);
+  const hasHistory=history.some(selected);
+  if(routes&&!routes.endsWith('\n'))throw fail('HEARTBEAT_SOURCE_INCOMPLETE');
+  const completedRoute=routes?.split('\n').filter(Boolean).map(json).some(row=>row?.kind==='finish'&&selected(row));
+  if(routes===null&&(Object.values(latestRows).some(selected)||hasHistory||hasAlerts)||
+    latest===null&&(hasHistory||completedRoute||hasAlerts))
+    throw fail('HEARTBEAT_HISTORY_INCOMPLETE');
   const fields=Object.fromEntries(service.trim().split('\n').map(line=>line.split('=')));
   if(!['ActiveState','SubState','NRestarts','InvocationID'].every(k=>typeof fields[k]==='string')||!/^[0-9]+$/.test(fields.NRestarts)||
     !/^[a-z-]+$/.test(fields.ActiveState)||!/^[a-z-]+$/.test(fields.SubState)||!/^([a-f0-9]{1,64})?$/.test(fields.InvocationID))throw fail('HEARTBEAT_INVALID_SOURCE');
@@ -168,8 +186,7 @@ export async function captureHeartbeat({home,config,nowMs,scope='production',pro
     if(!Number.isSafeInteger(timeMs)||timeMs<nowMs-config.windowMs||timeMs>nowMs)throw fail('HEARTBEAT_INVALID_SOURCE');
     return {id:hash(row.__CURSOR),timeMs};
   });
-  const alerts=alertSignals(alertText,nowMs,config,scope);
-  const cron=[...cronSignals(routes,json(latest),history,nowMs,config,scope),...alerts.events];
+  const cron=[...cronSignals(routes??'',latestRows,history,nowMs,config,scope),...alerts.events];
   const signals=[
     {source:'service',status:fields.ActiveState==='active'&&fields.SubState==='running'&&Number(fields.NRestarts)===0?'healthy':'anomaly',id:hash(fields)},
     {source:'listener',status:listening?'healthy':'anomaly',id:hash([address,config.listenPort,listening])},

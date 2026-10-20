@@ -23,6 +23,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO_ROOT="$(pwd)"
 DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
+if [[ "$DSH_HOME" != /* || "$(realpath -m "$DSH_HOME")" != "$DSH_HOME" ]]; then
+  echo 'Refusing noncanonical DSH_HOME' >&2
+  exit 1
+fi
 
 echo "=== dsh-muse bootstrap ==="
 echo "REPO: $REPO_ROOT"
@@ -43,23 +47,31 @@ fi
 
 # 2. 定义 profile 配置（bundles 必须与线上一致）
 declare -A PROFILE_BUNDLES
-PROFILE_BUNDLES[web-intel]='@deepseek-ai/dsh-base @deepseek-ai/dsh-web-app dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile'
-PROFILE_BUNDLES[evolve]='@deepseek-ai/dsh-base @deepseek-ai/dsh-headless dsh-intelligence-memory dsh-intelligence-joblog dsh-intelligence-evolution dsh-intelligence-feed dsh-intelligence-profile'
+PROFILE_BUNDLES[web-intel]='@deepseek-ai/dsh-base @deepseek-ai/dsh-web-app dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile dsh-intelligence-joblog dsh-intelligence-evolution dsh-intelligence-sysevents'
+PROFILE_BUNDLES[evolve]='@deepseek-ai/dsh-base @deepseek-ai/dsh-headless dsh-intelligence-memory dsh-intelligence-joblog dsh-intelligence-evolution dsh-intelligence-feed dsh-intelligence-profile dsh-intelligence-sysevents dsh-intelligence-artifacts dsh-intelligence-execguard dsh-intelligence-goals dsh-intelligence-goalact'
 PROFILE_BUNDLES[hmc-test]='@deepseek-ai/dsh-base @deepseek-ai/dsh-web-app dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile hmc-service-wrapper'
 
 # 树外插件 → 仓库内路径（file: 由 npm 拷贝，离线可装）
 declare -A PLUGIN_SRC
-for p in dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile dsh-intelligence-joblog dsh-intelligence-evolution; do
+for p in dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile dsh-intelligence-joblog dsh-intelligence-evolution dsh-intelligence-sysevents dsh-intelligence-artifacts dsh-intelligence-execguard dsh-intelligence-goals dsh-intelligence-goalact; do
   PLUGIN_SRC[$p]="$REPO_ROOT/intel-plugins/$p"
 done
 PLUGIN_SRC[hmc-service-wrapper]="$REPO_ROOT/intel/hmc-service-wrapper"
 
 declare -A PROFILE_PLUGINS
-PROFILE_PLUGINS[web-intel]='dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile'
-PROFILE_PLUGINS[evolve]='dsh-intelligence-memory dsh-intelligence-joblog dsh-intelligence-evolution dsh-intelligence-feed dsh-intelligence-profile'
+PROFILE_PLUGINS[web-intel]='dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile dsh-intelligence-joblog dsh-intelligence-evolution dsh-intelligence-sysevents'
+PROFILE_PLUGINS[evolve]='dsh-intelligence-memory dsh-intelligence-joblog dsh-intelligence-evolution dsh-intelligence-feed dsh-intelligence-profile dsh-intelligence-sysevents dsh-intelligence-artifacts dsh-intelligence-execguard dsh-intelligence-goals dsh-intelligence-goalact'
 PROFILE_PLUGINS[hmc-test]='dsh-intelligence-memory dsh-intelligence-quiet dsh-intelligence-feed dsh-intelligence-profile hmc-service-wrapper'
 
-# 3. 为每个 profile 生成 package.json 并安装
+# Existing installations require a reviewed configuration merge, never an implicit rebuild.
+for profile in web-intel evolve hmc-test; do
+  if [[ -e "$DSH_HOME/profiles/$profile" || -L "$DSH_HOME/profiles/$profile" ]]; then
+    echo "Refusing existing profile: $profile" >&2
+    exit 1
+  fi
+done
+
+# 3. 为每个新 profile 生成 package.json 并安装
 for profile in web-intel evolve hmc-test; do
   echo ""
   echo "--- 配置 $profile ---"
@@ -112,6 +124,16 @@ YEOF
 []
 YEOF
 
+  if [[ "$profile" = web-intel ]]; then
+    DSH_HOME="$DSH_HOME" node --input-type=module -e '
+      import {writeFileSync} from "node:fs";
+      import {join} from "node:path";
+      const home=process.env.DSH_HOME;
+      writeFileSync(join(home,"profiles/web-intel/cordis.patch.yml"),JSON.stringify([
+        {id:"dsh-intelligence-evolution",config:{upkeepSourceSocket:join(home,"intel-joblog/upkeep/source.sock")}}
+      ])+"\n");'
+  fi
+
   echo "  安装插件 (npm install)..."
   # 注意: 故意不用 npm ci——全新目录没有 package-lock.json，npm ci 必然失败。
   # 不吞 exit code: pipefail 已开，失败直接 abort，不再"假装就绪"。
@@ -129,6 +151,8 @@ YEOF
   (cd "$PDIR" && DSH_HOME="$DSH_HOME" dsh plugin --profile "$profile" install)
   echo "  ✓ $profile 就绪"
 done
+
+DSH_HOME="$DSH_HOME" node intel/task-runner/cli.mjs --initialize-sources
 
 echo ""
 echo "=== 验收: 三个 profile 的 bundles 可被 dsh 解析 ==="

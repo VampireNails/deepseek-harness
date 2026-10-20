@@ -26,10 +26,10 @@ export function createHeartbeatStateStore(file){
  * Preflight every invocation before admitting changed/recovered signals or a due repeated anomaly.
  * The caller holds one scope-specific flock through capture, durable pending write, dispatch and completion.
  * Unknown source data rejects; pending identical side effects are never automatically replayed.
- * @param options - Clock, validated config, safe capture, durable state, model dispatch and audit.
+ * @param options - Clock, config, capture, state, model dispatch, audit and optional pre-pending preparation.
  * @returns Quiet outcome or original model exit, with safe signal/run identities.
  */
-export async function runHeartbeat({config,nowMs,source,stateStore,execute,record,admit=async()=>true}){
+export async function runHeartbeat({config,nowMs,source,stateStore,execute,record,admit=async()=>true,prepare=async()=>{}}){
   const previous=await stateStore.read();if(previous!==null)validate(previous);
   const cut=await source.capture();
   if(!cut||cut.version!==1||cut.complete!==true||cut.observedAtMs!==nowMs||!hash(cut.signalId)||!hash(cut.checklistId)||
@@ -51,6 +51,7 @@ export async function runHeartbeat({config,nowMs,source,stateStore,execute,recor
     if(nowMs<previous.nextDueAtMs)return await audit('heartbeat-backoff',{reason:'same-anomaly-backoff',nextDueAtMs:previous.nextDueAtMs,modelExecutions:0});
   }
   const reason=!previous?'new-anomaly':same?'repeated-anomaly-due':cut.healthy?'recovered':'signal-changed';
+  await prepare();
   if(previous?.pending)await audit('heartbeat-pending-superseded',{reason:'new-signal',previousRunId:previous.pending.runId,previousSignalId:previous.pending.signalId});
   const runId=randomUUID();
   // Pending is durable before launch. Crash/failed completion never permits the same signal to replay.

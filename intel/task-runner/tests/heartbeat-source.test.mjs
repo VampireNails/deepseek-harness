@@ -17,6 +17,32 @@ async function fixture(t){
   const outputs={systemctl:'ActiveState=active\nSubState=running\nNRestarts=0\nInvocationID=aa\n',ss:'LISTEN 0 1 100.73.148.102:43197 0.0.0.0:*\n',df:'Filesystem 1024-blocks Used Available Capacity Mounted on\nx 9000000 1000000 8000000 12% /\n',free:'Mem: 900000000 100000000 400000000 0 400000000 800000000\n',journalctl:''};
   return {home,file,routes,latest,outputs,config,read:(nowMs=Date.now(),scope='production')=>captureHeartbeat({home,config,nowMs,scope,probe:async key=>outputs[key]})};
 }
+
+test('first use has no task history; missing projections after completed runs remain unknown',async t=>{
+  const f=await fixture(t);
+  await rm(f.routes);await rm(f.latest);
+  const cut=await f.read();assert.equal(cut.healthy,true);assert.equal(cut.signals.length,6);
+  await writeFile(f.latest,JSON.stringify({evolve_ideas:{last:new Date().toISOString(),status:'ok'}}));
+  await assert.rejects(f.read,{code:'HEARTBEAT_HISTORY_INCOMPLETE'});
+  await rm(f.latest);await writeFile(f.routes,JSON.stringify({kind:'finish',taskId:'evolve_ideas',runId:'owned',time:new Date().toISOString(),exit:0})+'\n');
+  await assert.rejects(f.read,{code:'HEARTBEAT_HISTORY_INCOMPLETE'});
+});
+
+test('other-scope completions and alerts cannot turn first use into missing history; legacy and corrupt data still reject',async t=>{
+  for(const scope of ['production','test']){
+    const f=await fixture(t),other=scope==='production'?'test':'production';
+    const log=new JobLog(join(f.home,'intel-joblog'),{scope:other});
+    log._recordRun('study','fail','owned-other-scope',{runId:'owned-'+other});log._alert('study','owned-other-scope');
+    const latest=join(f.home,'intel-joblog',scope==='production'?'job_runs.json':'job_test_runs.json');
+    await rm(latest,{force:true});
+    await writeFile(f.routes,JSON.stringify({scope:other,kind:'finish',taskId:'study',runId:'owned-'+other,time:new Date().toISOString(),exit:1})+'\n');
+    assert.equal((await f.read(Date.now(),scope)).healthy,true);
+    await rm(f.routes);assert.equal((await f.read(Date.now(),scope)).healthy,true);
+    await writeFile(f.routes,JSON.stringify({kind:'finish',taskId:'legacy',runId:'legacy',time:new Date().toISOString(),exit:0})+'\n');
+    await assert.rejects(f.read(Date.now(),scope),{code:'HEARTBEAT_HISTORY_INCOMPLETE'});
+    await writeFile(latest,'{');await assert.rejects(f.read(Date.now(),scope),{code:'HEARTBEAT_INVALID_SOURCE'});
+  }
+});
 test('health identity is stable across safe resource fluctuations; each real health threshold changes it',async t=>{
   const f=await fixture(t),first=await f.read();f.outputs.free='Mem: 900000000 100000000 400000000 0 400000000 700000000\n';assert.equal((await f.read()).signalId,first.signalId);
   for(const [key,value,source]of [['free','Mem: 900000000 100000000 400000000 0 400000000 10\n','memory'],['df','Filesystem 1024-blocks Used Available Capacity Mounted on\nx 9000000 8999999 1 99% /\n','disk'],['ss','','listener']]){
@@ -41,13 +67,13 @@ test('missing, corrupt, partial, symlinked, oversized and unknown legacy source 
   await writeFile(f.routes,'');await writeFile(f.latest,'{');await assert.rejects(f.read(),{code:'HEARTBEAT_INVALID_SOURCE'});
   await writeFile(f.latest,'{}');await rm(f.file);await symlink(f.latest,f.file);await assert.rejects(f.read(),{code:'HEARTBEAT_SOURCE_READ_FAILED'});
   await rm(f.file);await writeFile(f.file,'x'.repeat(f.config.maxSourceBytes+1));await assert.rejects(f.read(),{code:'HEARTBEAT_SOURCE_TOO_LARGE'});
-  await rm(f.file);await assert.rejects(f.read(),{code:'HEARTBEAT_SOURCE_READ_FAILED'});
+  await rm(f.file);await assert.rejects(f.read(),{code:'HEARTBEAT_SOURCE_ABSENT'});
 });
 test('real unprivileged source read refusal is explicit and private checkpoint corruption is rejected',{skip:process.platform!=='linux'||process.getuid()!==0},async t=>{
   const f=await fixture(t);await chmod(f.home,0o755);await chmod(f.file,0o000);
   const source=fileURLToPath(new URL('../heartbeat-source.mjs',import.meta.url));
   const script=`import {captureHeartbeat} from ${JSON.stringify('file://'+source)};try{await captureHeartbeat({home:${JSON.stringify(f.home)},config:${JSON.stringify(f.config)},nowMs:Date.now()});process.exitCode=2;}catch(e){console.log(e.code);process.exitCode=0;}`;
-  const child=spawnSync(process.execPath,['--input-type=module','-e',script],{uid:65534,gid:65534,encoding:'utf8',timeout:10000});assert.equal(child.signal,null);assert.equal(child.status,0,child.stderr);assert.match(child.stdout,/HEARTBEAT_SOURCE_READ_FAILED/);
+  const child=spawnSync(process.execPath,['--input-type=module','-e',script],{uid:65534,gid:65534,encoding:'utf8',timeout:10000});assert.equal(child.signal,null);assert.equal(child.status,0,child.stderr);assert.match(child.stdout,/HEARTBEAT_SOURCE_DENIED/);
   const stateFile=join(f.home,'private','state.json'),store=createHeartbeatStateStore(stateFile);assert.equal(await store.read(),null);await store.write({version:1});await writeFile(stateFile,'{');await assert.rejects(store.read(),{code:'HEARTBEAT_STATE_INVALID'});await chmod(stateFile,0o644);await assert.rejects(store.read(),{code:'HEARTBEAT_STATE_INVALID'});
 });
 test('config is opt-in compatible and refuses incomplete or invalid enabled limits',()=>{

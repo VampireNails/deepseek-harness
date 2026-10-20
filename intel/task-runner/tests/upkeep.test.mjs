@@ -13,6 +13,15 @@ const messages=[
 const signal={cursors:proposedCursors,messages,counts:{sessions:2,messages:2,chars:61}};
 const complete={complete:true,failedWrites:0,writeIds:[]};
 const clone=value=>structuredClone(value);
+
+test('profile preparation cannot strand an unlaunched batch in durable pending',async()=>{
+  const {runUpkeep}=await import('../upkeep.mjs');const f=fixture();
+  await assert.rejects(runUpkeep({config,nowMs:1000,stateStore:f.stateStore,source:f.source,
+    execute:request=>f.execute(request),inspect:request=>f.inspect(request),record:entry=>f.record(entry),
+    prepare:async()=>{throw Object.assign(Error('not configured'),{code:'SCHEDULE_PROFILE_ABSENT'});}}),{code:'SCHEDULE_PROFILE_ABSENT'});
+  assert.deepEqual(f.readState(),committed);assert.equal(f.executions.length,0);
+  await f.invoke(runUpkeep);assert.equal(f.executions.length,1);
+});
 test('source authorship labels survive dispatch while unknown legacy inputs remain eligible',async()=>{
   const {runUpkeep}=await import('../upkeep.mjs');
   const f=fixture();
