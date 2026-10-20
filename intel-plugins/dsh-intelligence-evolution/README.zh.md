@@ -33,6 +33,8 @@ kind: "package-bundle"
 
 来源等待三个读取服务全部就绪，包含 Host 启动过程中稍后注册的提供方。服务就绪后才发布 socket；满足依赖后的来源初始化失败会使启动拒绝。来源归 evolution 插件生命周期管理，插件卸载时关闭。
 
+已有 Host 应将 `{ "id": "dsh-intelligence-evolution", "config": { "upkeepSourceSocket": "/absolute/home/intel-joblog/upkeep/source.sock" } }` 合并到个人 patch 列表，保留其余 evolution 配置，并让 runner 的 `upkeep.socketPath` 完全一致。仅配置常驻 Host，不配置 `evolve`；在获准的 Host 重启中启用，再运行 runner 的[初始化与就绪检查](../../intel/task-runner/README.zh.md)。发布方和读取方均拒绝父级别名，缺失 socket 目录创建前即检查。旧监听退出后的所有者私有陈旧 socket 可回收；活跃监听、非 socket、其他所有者或宽权限继续失败。重置会有意删除个人 source 配置、清单和 evolve 安装并停用 cron，不会静默恢复这些内容。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 

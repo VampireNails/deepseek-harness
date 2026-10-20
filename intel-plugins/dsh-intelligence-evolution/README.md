@@ -33,6 +33,8 @@ Configure `upkeepSourceSocket` only in the existing Host profile that supplies s
 
 The source waits for all three reader services, including providers registered later during Host startup. It publishes the socket only after they become available; eligible source setup failures reject startup. The source belongs to the evolution plugin's lifecycle and closes when that plugin is disposed.
 
+For an installed Host, merge `{ "id": "dsh-intelligence-evolution", "config": { "upkeepSourceSocket": "/absolute/home/intel-joblog/upkeep/source.sock" } }` into its personal patch list, retaining other evolution settings. Keep the runner's `upkeep.socketPath` identical. Configure this only in the long-lived Host, never `evolve`; activate it during an approved Host restart, then use the runner's [initialization and readiness commands](../../intel/task-runner/README.md). Parent aliases are rejected by both publisher and reader, before creating a missing socket directory. An owner-only stale socket can be reclaimed after its old listener exits; active listeners, non-sockets and foreign or broad permissions remain failures. Reset intentionally removes personal source configuration, the checklist and evolve installation while disabling cron; it does not silently restore them.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

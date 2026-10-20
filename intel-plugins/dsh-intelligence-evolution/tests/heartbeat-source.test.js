@@ -30,6 +30,12 @@ test('heartbeat serves the current cron checklist through the native tool runtim
     const shown=await execute('heartbeat_check');
     const cronLine=shown.split('\n').find(line=>line.includes('cron 任务健康：'));
     assert.equal(cronLine?.replace(/^\d+\. /,''),(await readFile(new URL('./expected/heartbeat-cron-check.txt',import.meta.url),'utf8')).trimEnd());
+    await writeFile(join(home,'intel-evolution','HEARTBEAT.md'),'');
+    assert.match(await execute('heartbeat_check'),/清单为空/);
+    await rm(join(home,'intel-evolution','HEARTBEAT.md'));
+    const missing=await ctx.tools.execute({callId:'owned-missing',name:'heartbeat_check',arguments:{},agent,signal:new AbortController().signal});
+    assert.equal(missing.isError,true);assert.match(JSON.stringify(missing),/HEARTBEAT_SOURCE_ABSENT/);
+    assert.equal(JSON.stringify(missing).includes(home),false);
   }finally{
     try{await ctx.fiber.dispose();}finally{for(const [key,value] of previous){if(value===undefined)delete process.env[key];else process.env[key]=value;}await rm(home,{recursive:true,force:true});}
   }

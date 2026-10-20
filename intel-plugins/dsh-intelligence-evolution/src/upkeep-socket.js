@@ -1,5 +1,5 @@
 import {createServer,createConnection} from 'node:net';
-import {mkdir,lstat,chmod,unlink,link} from 'node:fs/promises';
+import {mkdir,lstat,chmod,unlink,link,realpath} from 'node:fs/promises';
 import {dirname,isAbsolute,join} from 'node:path';
 import {randomBytes} from 'node:crypto';
 
@@ -32,6 +32,14 @@ function validateRequest(value){
 function privateOwner(info){
   return info.uid===process.getuid()&&(info.mode&0o077)===0;
 }
+async function canonicalParent(path,{allowMissing=false}={}){
+  const directory=dirname(path);
+  try{if(await realpath(directory)!==directory)throw fail('UPKEEP_SOCKET_UNAVAILABLE');}
+  catch(error){
+    if(allowMissing&&error.code==='ENOENT'&&dirname(directory)!==directory)return canonicalParent(directory,{allowMissing:true});
+    throw fail('UPKEEP_SOCKET_UNAVAILABLE');
+  }
+}
 async function removeStale(path,timeoutMs){
   let original;
   try{original=await lstat(path);}catch(error){if(error.code==='ENOENT')return;throw fail('UPKEEP_SOCKET_UNAVAILABLE');}
@@ -57,7 +65,9 @@ async function removeStale(path,timeoutMs){
 export async function startUpkeepServer({socketPath,timeoutMs,source,inspect}){
   pathAndTimeout(socketPath,timeoutMs);
   const directory=dirname(socketPath);
+  await canonicalParent(socketPath,{allowMissing:true});
   await mkdir(directory,{recursive:true,mode:0o700});
+  await canonicalParent(socketPath);
   const parent=await lstat(directory);
   if(!parent.isDirectory()||!privateOwner(parent))throw fail('UPKEEP_SOCKET_UNAVAILABLE');
   const bindPath=join(directory,'.u-'+randomBytes(6).toString('hex'));
@@ -135,6 +145,9 @@ export async function startUpkeepServer({socketPath,timeoutMs,source,inspect}){
  */
 export async function requestUpkeep(socketPath,request,timeoutMs){
   pathAndTimeout(socketPath,timeoutMs);validateRequest(request);
+  await canonicalParent(socketPath);
+  let parent;try{parent=await lstat(dirname(socketPath));}catch(error){throw fail('UPKEEP_SOCKET_UNAVAILABLE');}
+  if(!parent.isDirectory()||!privateOwner(parent))throw fail('UPKEEP_SOCKET_UNAVAILABLE');
   let info;try{info=await lstat(socketPath);}catch{throw fail('UPKEEP_SOCKET_UNAVAILABLE');}
   if(!info.isSocket()||!privateOwner(info))throw fail('UPKEEP_SOCKET_UNAVAILABLE');
   return await new Promise((resolve,reject)=>{

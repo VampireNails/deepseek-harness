@@ -1,6 +1,6 @@
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { TASKS, chunk } from "./src/tasks.js";
@@ -36,8 +36,11 @@ const textBlock = (text) => [{ type: "text", text }];
 
 function readChecklist() {
   const file = heartbeatFile();
-  if (!existsSync(file)) return [];
-  return readFileSync(file, "utf8")
+  let text;
+  try { text = readFileSync(file, "utf8"); }
+  catch (error) { throw Error(error.code === 'ENOENT' ? 'HEARTBEAT_SOURCE_ABSENT' :
+    ['EACCES', 'EPERM'].includes(error.code) ? 'HEARTBEAT_SOURCE_DENIED' : 'HEARTBEAT_SOURCE_READ_FAILED'); }
+  return text
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("#") && !l.startsWith("_"))

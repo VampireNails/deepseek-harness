@@ -1,9 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,stat,writeFile,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,stat,writeFile,readFile,rm,symlink,chmod} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createConnection} from 'node:net';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
 import {startUpkeepServer,requestUpkeep} from '../src/upkeep-socket.js';
 
 async function fixture(t){
@@ -15,6 +17,35 @@ async function fixture(t){
   return {directory,socketPath,calls,source};
 }
 const capture={version:1,operation:'capture',request:{bootstrap:true,cursors:{},maxBatchMessages:3,maxBatchChars:1000}};
+
+test('reader rejects changed socket or parent permissions and a new Host reclaims only an owned stale socket',async t=>{
+  const f=await fixture(t);const server=await startUpkeepServer({...f,timeoutMs:1000,inspect:async()=>({})});
+  t.after(()=>server.close());
+  await chmod(f.socketPath,0o644);await assert.rejects(()=>requestUpkeep(f.socketPath,capture,1000),{code:'UPKEEP_SOCKET_UNAVAILABLE'});
+  await chmod(f.socketPath,0o600);await chmod(join(f.directory,'source'),0o755);
+  await assert.rejects(()=>requestUpkeep(f.socketPath,capture,1000),{code:'UPKEEP_SOCKET_UNAVAILABLE'});
+  await chmod(join(f.directory,'source'),0o700);await server.close();
+  const script=`import {createServer} from 'node:net';import {chmodSync} from 'node:fs';const server=createServer();server.listen(process.argv[1],()=>{chmodSync(process.argv[1],0o600);process.stdout.write('ready');});`;
+  const child=spawn(process.execPath,['--input-type=module','-e',script,f.socketPath],{stdio:['ignore','pipe','pipe']});
+  t.after(()=>{if(child.exitCode===null)child.kill('SIGKILL');});
+  await once(child.stdout,'data');const stopped=once(child,'close');child.kill('SIGKILL');await stopped;
+  assert.equal((await stat(f.socketPath)).isSocket(),true);
+  const restarted=await startUpkeepServer({...f,timeoutMs:1000,inspect:async()=>({})});t.after(()=>restarted.close());
+  assert.deepEqual(await requestUpkeep(f.socketPath,capture,1000),{cursors:{anonymous:2},messages:[],counts:{newMessages:0}});
+});
+
+test('server and reader reject a parent alias even when the final directory and socket are private',async t=>{
+  const f=await fixture(t);await mkdir(join(f.directory,'real'),{mode:0o700});
+  await symlink(join(f.directory,'real'),join(f.directory,'alias'));
+  const socketPath=join(f.directory,'alias','nested','source.sock');
+  await assert.rejects(async()=>{
+    const accidental=await startUpkeepServer({...f,socketPath,timeoutMs:1000,inspect:async()=>({})});
+    await accidental.close();
+  },{code:'UPKEEP_SOCKET_UNAVAILABLE'});
+  const real=join(f.directory,'real','nested','source.sock');
+  const server=await startUpkeepServer({...f,socketPath:real,timeoutMs:1000,inspect:async()=>({})});t.after(()=>server.close());
+  await assert.rejects(()=>requestUpkeep(socketPath,capture,1000),{code:'UPKEEP_SOCKET_UNAVAILABLE'});
+});
 
 test('Unix source socket preserves exact cuts with private permissions and releases its own path',async t=>{
   const f=await fixture(t);
